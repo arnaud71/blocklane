@@ -11,22 +11,37 @@ stateDiagram-v2
     Marche --> Embarquement: place dans la projection
     Embarquement --> A_bord
     Marche --> Sortie: frais ou place insuffisants dans la projection
-    A_bord --> Sortie: priorité modifiée dans un nouvel échantillon
+    A_bord --> Sortie: priorité modifiée et wagon à l'arrêt
+    A_bord --> Transfert: nouveau bloc observé
+    Transfert --> A_bord_observe: arrivée et inclusion confirmée par la source
+    Transfert --> Sortie: arrivée et transaction encore en attente
     Sortie --> Retour
     Retour --> Quai
 ```
 
 Les transactions sont classées selon les frais observés, puis l'identifiant pour stabiliser les égalités. Le candidat possède douze unités **visuelles**. Un voyageur occupe une à trois unités selon ses besoins de ressources : référence de 400 vBytes pour Bitcoin et 100 000 unités de gas pour Ethereum. Le tarif de référence de l'instantané sert de repère pédagogique. Ces règles simplifiées n'intègrent pas les dépendances Bitcoin, les nonces Ethereum, les transactions privées, la sélection des producteurs ni toutes les contraintes du protocole.
 
-Un voyageur moins prioritaire rejoint la porte, revient au quai et peut réessayer. Un nouvel instantané peut déplacer un voyageur précédemment embarqué si un meilleur candidat occupe le budget illustratif. Aucun de ces mouvements n'annonce un rejet du réseau.
+Un voyageur moins prioritaire revient au quai et peut réessayer. Un nouvel instantané peut déplacer un voyageur précédemment embarqué si un meilleur candidat occupe le budget illustratif, lorsque le wagon est à l'arrêt. Aucun de ces mouvements n'annonce un rejet du réseau.
 
-Seules les transactions dont la source fournit le statut `confirmed` rejoignent le wagon observé. Une disparition de l'échantillon n'est pas une confirmation. Une réorganisation signalée par un nouveau statut en attente remet le voyageur dans le parcours correspondant. Les départs en direct restent liés au changement du hash du bloc observé ; en simulation, les départs sont fictifs.
+## Quai et portes
 
-Le wagon du haut représente le bloc observé ; celui du bas représente le candidat illustratif. Lorsqu'un nouveau bloc est observé en direct, le candidat rejoint la position du wagon observé. Les voyageurs précédemment embarqués et désormais confirmés par la source restent dans ce transfert. Ceux dont la source fournit encore le statut en attente sortent, reviennent en file et peuvent rejoindre le candidat suivant. Les identifiants disparus de l'échantillon sont retirés sans leur inventer de statut. Un nouveau candidat apparaît au terme de la transition.
+Chaque rue est verticale. Les wagons partagent une couleur de carrosserie ; le nom du réseau et ses repères orange ou violet identifient la chaîne. Leur position horizontale reste au centre de la chaussée, y compris pendant le transfert vers le bloc observé.
+
+Les voyageurs qui marchent restent sur le quai à droite de la chaussée. L'entrée utilise la porte en haut à droite du wagon ; la sortie utilise une autre porte, en bas à droite. Chaque porte s'ouvre pour le passage correspondant. Les trajets d'approche, de sortie et de retour en file ne traversent pas la route. Seul le passage par la porte rejoint l'intérieur du wagon.
+
+La géométrie de la rue, des wagons, des portes et du quai est partagée dans `src/lib/streetGeometry.ts` entre le moteur de mouvement et le dessin SVG. Cette référence commune permet aux trajets de rejoindre les portes effectivement affichées.
+
+Un voyageur déjà embarqué reste à bord pendant le déplacement du wagon. Une sortie nécessaire attend son arrivée et emprunte alors la porte basse à droite ; les portes restent fermées pendant le trajet. Le changement visuel de wagon n'altère jamais le statut fourni par la source.
+
+## Transfert et statut réseau
+
+Seule la source peut fournir le statut `confirmed`. Un voyageur encore en attente peut rester temporairement dans le véhicule arrivé pour en sortir, sans être présenté comme confirmé. Une disparition de l'échantillon n'est pas une confirmation. Une réorganisation signalée par un nouveau statut en attente remet le voyageur dans le parcours correspondant. Les transferts en direct restent liés au changement du hash du bloc observé.
+
+Le wagon du haut représente le bloc observé ; celui du bas représente le candidat illustratif. Lorsqu'un nouveau bloc est observé en direct, le candidat rejoint la position du wagon observé. Les voyageurs précédemment embarqués restent dans ce transfert, quelle que soit leur priorité actuelle. Après l'arrivée, ceux dont la source confirme l'inclusion restent à bord. Ceux dont la source fournit encore le statut en attente sortent par la porte basse à droite, reviennent en file et peuvent rejoindre le candidat suivant. Les identifiants disparus de l'échantillon sont retirés sans leur inventer de statut. Un nouveau candidat apparaît au terme de la transition.
 
 Pour Bitcoin, le serveur conserve au plus 120 transactions récemment échantillonnées pendant 30 minutes et vérifie leur identifiant dans le dernier bloc. Cette mémoire volatile aide à retrouver les inclusions ; elle ne représente ni toutes les transactions du bloc ni un suivi historique complet. Une vérification indisponible ne provoque aucune confirmation déduite.
 
-Aucune minuterie n'invente un transfert de candidat en direct. En simulation, l'avancée périodique est fictive et sert à montrer la transition. Pause, vitesse, onglet masqué et mouvements réduits s'appliquent au wagon et à ses voyageurs.
+Aucune minuterie n'invente un transfert de candidat en direct. Le déplacement des wagons suit la même horloge que leurs voyageurs ; les anciens déplacements CSS indépendants ont été retirés. En simulation, les données et les embarquements sont fictifs. Pause, vitesse, onglet masqué et mouvements réduits s'appliquent au wagon et à ses voyageurs.
 
 ## Taille des têtes
 

@@ -1,5 +1,11 @@
 # Vérification initiale — 14 octobre 2026
 
+## Quai à droite et portes séparées — non validé
+
+La dernière modification unifie la couleur des wagons, les maintient centrés sur la chaussée et déplace les trajets des voyageurs sur le quai à droite. L'embarquement utilise la porte haute à droite ; la sortie utilise la porte basse à droite et attend l'arrivée du wagon. La géométrie du moteur et du dessin est partagée.
+
+La demande du propriétaire de suspendre les tests reste applicable. Aucun test automatique ni contrôle de compilation n'a été lancé pour cette modification. Le formatage du code et un aperçu de remise ne constituent pas une validation du comportement. Les résultats historiques ci-dessous ne valident donc pas cette nouvelle disposition ni ses trajets. Le réembarquement après transfert et les contraintes de portes, de quai et de mouvement restent à vérifier lors de la reprise des validations.
+
 ## Vue immersive et transfert des wagons — en cours
 
 Bitcoin et Ethereum sont désormais visibles simultanément. La disposition immersive a été contrôlée aux largeurs 1440, 983, 390 et 320 pixels : les deux scènes tiennent dans la fenêtre, sans défilement de la page. La série de 34 parcours navigateur de cette disposition a réussi avant l'ajout du transfert complet.

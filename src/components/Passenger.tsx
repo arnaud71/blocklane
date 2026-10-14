@@ -1,0 +1,143 @@
+import type { KeyboardEvent } from 'react';
+import type { Tx } from '../../shared/model';
+import type { PassengerPose } from '../lib/passengerMotion';
+
+function stableHash(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+const phaseLabels = {
+  queue: 'sur le quai',
+  walking: 'en marche',
+  boarding: 'embarquement illustré',
+  boarded: 'à bord du wagon illustratif',
+  exiting: 'sortie illustrée',
+  returning: 'retour en file illustré',
+  confirmed: 'inclusion observée',
+};
+
+export function Passenger({
+  pose,
+  selected,
+  feeColor,
+  onSelect,
+  originX = 0,
+  originY = 0,
+}: {
+  pose: PassengerPose;
+  selected: boolean;
+  feeColor: string;
+  onSelect: (tx: Tx) => void;
+  originX?: number;
+  originY?: number;
+}) {
+  const tx = pose.tx;
+  const hash = stableHash(tx.id);
+  const skin = ['#ebcba6', '#bf8f65', '#966746', '#d2ad84'][hash % 4];
+  const moving =
+    !pose.inWagon &&
+    !pose.inHandoff &&
+    ['walking', 'boarding', 'exiting', 'returning'].includes(pose.phase);
+  const step = moving ? Math.sin(pose.walkPhase) * 3.5 : 0;
+  const label =
+    'Transaction ' +
+    tx.id.slice(0, 12) +
+    ', ' +
+    tx.feeRate.toFixed(2) +
+    ' ' +
+    (tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei') +
+    ', ' +
+    (tx.status === 'confirmed' ? 'incluse dans un bloc observé' : 'en attente dans la source') +
+    '. ' +
+    (pose.inHandoff ? 'à bord pendant le transfert' : phaseLabels[pose.phase]) +
+    '. Afficher les détails.';
+  const handleKeyDown = (event: KeyboardEvent<SVGGElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelect(tx);
+    }
+  };
+  return (
+    <g
+      className={
+        'street-person street-person--' + pose.phase + (selected ? ' street-person--selected' : '')
+      }
+      transform={
+        'translate(' + (pose.x - originX).toFixed(2) + ' ' + (pose.y - originY).toFixed(2) + ')'
+      }
+      data-tx-id={tx.id}
+      data-motion-state={pose.phase}
+      data-resource-size={tx.size}
+      data-head-scale={pose.headScale.toFixed(3)}
+      data-source-status={tx.status}
+      data-fee-rate={tx.feeRate}
+      data-wagon={pose.wagon ?? undefined}
+      data-in-handoff={pose.inHandoff}
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      aria-pressed={selected}
+      onClick={() => onSelect(tx)}
+      onKeyDown={handleKeyDown}
+      opacity={pose.opacity}
+    >
+      <title>{label}</title>
+      <rect
+        className="street-person-hit"
+        x="-12"
+        y="-33"
+        width="25"
+        height="40"
+        rx="5"
+        fill="transparent"
+      />
+      <ellipse
+        className="street-person-ring"
+        cy="2"
+        rx="11"
+        ry="5"
+        fill="none"
+        stroke="#f5d589"
+        strokeWidth="2"
+      />
+      <g className="street-person-body" aria-hidden="true">
+        <ellipse cy="1" rx="7" ry="3" fill="#0b2925" opacity=".55" />
+        <path
+          d={'M-3-7L' + (-4 + step).toFixed(2) + ' 0M3-7L' + (4 - step).toFixed(2) + ' 0'}
+          stroke="#183d36"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <path d="M-4-17Q0-19 4-17L6-7H-6Z" fill={feeColor} />
+        <path
+          d={'M-5-15L-7 ' + (-8 - step).toFixed(2) + 'M5-15L7 ' + (-9 + step).toFixed(2)}
+          stroke={skin}
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <g
+          className="street-person-head"
+          transform={'translate(0 -22) scale(' + pose.headScale.toFixed(3) + ')'}
+        >
+          <circle r="4.6" fill={skin} />
+          <path
+            d={hash % 3 === 0 ? 'M-5 0q0-7 6-6 6 1 4 7l-4-3Z' : 'M-4-2q4-6 8 0Z'}
+            fill={hash % 2 === 0 ? '#344d39' : '#634d38'}
+          />
+          <circle cx={pose.facing * 2.1} cy=".1" r=".65" fill="#34504a" />
+        </g>
+        {tx.kind === 'contract' && (
+          <rect x="5" y="-12" width="5" height="7" rx="1" fill="#e4c780" />
+        )}
+        {tx.status === 'confirmed' && <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />}
+        {(pose.phase === 'exiting' || pose.phase === 'returning') && (
+          <path d="m-4-38-4 3 4 3m-4-3h10" fill="none" stroke="#f0bd7b" strokeWidth="1.5" />
+        )}
+      </g>
+    </g>
+  );
+}

@@ -610,59 +610,23 @@ main.immersion-main {
 .scene-workspace--immersive .info-flow {
   grid-template-columns: 1fr 1fr;
 }
-.street-scene .street-vertical-wagon.street-tram--observed-departure {
-  animation: street-vertical-departure var(--observed-duration, 4s) ease-in-out 1;
+.street-side-door-top,
+.street-side-door-bottom {
+  transition: transform 180ms ease;
 }
-.street-scene--demo .street-vertical-wagon--observed {
-  animation: street-vertical-departure var(--scene-duration, 18s) ease-in-out infinite;
+.street-side-door--open .street-side-door-top {
+  transform: translateY(-14px);
 }
-.street-scene--demo .street-tram--b {
-  animation: street-candidate-renewal-horizontal var(--scene-duration, 18s) ease-in-out infinite;
+.street-side-door--open .street-side-door-bottom {
+  transform: translateY(14px);
 }
-.street-scene--demo .street-vertical-wagon--candidate {
-  animation: street-candidate-renewal-vertical var(--scene-duration, 18s) ease-in-out infinite;
+.street-scene--paused .street-side-door-top,
+.street-scene--paused .street-side-door-bottom {
+  transition: none;
 }
-@keyframes street-candidate-renewal-horizontal {
-  0%,
-  15%,
-  100% {
-    translate: 0 0;
-  }
-  45%,
-  65% {
-    translate: 72px -2.4px;
-  }
-}
-@keyframes street-candidate-renewal-vertical {
-  0%,
-  15%,
-  100% {
-    translate: 0 0;
-  }
-  45%,
-  65% {
-    translate: 0 -72px;
-  }
-}
-@keyframes street-vertical-departure {
-  0%,
-  25% {
-    translate: 0 0;
-    opacity: 1;
-  }
-  70% {
-    translate: 0 -760px;
-    opacity: 0;
-  }
-  70.01% {
-    translate: 0 760px;
-    opacity: 0;
-  }
-  85%,
-  100% {
-    translate: 0 0;
-    opacity: 1;
-  }
+.street-scene--reduced-motion .street-side-door-top,
+.street-scene--reduced-motion .street-side-door-bottom {
+  transition: none;
 }
 .immersion-controls {
   display: flex;

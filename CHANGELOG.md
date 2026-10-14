@@ -10,7 +10,11 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Vue immersive qui occupe la fenêtre, deux rues verticales sur ordinateur et deux scènes compactes sur mobile.
 - Commandes communes pour les animations et les modes de données, panneau de détails repliable et sélection rattachée au réseau.
 - Navigation pédagogique et provenance des données accessibles sans menu latéral permanent.
-- Transfert du wagon candidat vers le wagon observé lors d'un nouveau bloc : seuls les voyageurs dont la source confirme l'inclusion restent à bord ; les autres encore présents en attente reviennent en file.
+- Transfert du wagon candidat vers le wagon observé lors d'un nouveau bloc : après l'arrivée, les voyageurs dont la source confirme l'inclusion restent à bord ; les autres encore présents en attente reviennent en file.
+- Couleur de carrosserie commune et wagons centrés sur la chaussée verticale pendant leurs déplacements.
+- Quai exclusivement à droite, embarquement par la porte haute à droite et sortie par une porte basse à droite, avec ouverture des portes correspondantes.
+- Voyageurs maintenus à bord pendant le déplacement ; les sorties nécessaires commencent après l'arrivée, avec un retour en file sans traversée de la chaussée.
+- Géométrie commune entre les wagons dessinés, leurs portes et le moteur des trajets.
 - Suivi Bitcoin borné en mémoire et vérification des identifiants dans le dernier bloc pour retrouver les transactions réellement incluses. Une disparition de l'échantillon ne confirme rien.
 
 ## 0.2.0 — 2026-10-14
