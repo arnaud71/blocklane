@@ -30,6 +30,16 @@ Le tag `pending` est facultatif : un résultat égal au dernier bloc confirmé, 
 
 La démonstration utilise une graine déterministe. Tous ses identifiants commencent par `demo-`, les données fictives sont identifiées, et aucun chemin de panne réseau ne substitue une démonstration aux données directes.
 
+## Cours USD indépendant
+
+`marketPrices.ts` lit uniquement `https://api.coinbase.com/v2/prices/BTC-USD/spot` et `https://api.coinbase.com/v2/prices/ETH-USD/spot`. Ces routes publiques fixes ne nécessitent aucune clé et ne sont pas choisies par le navigateur. Le lecteur valide `data.base` selon la chaîne, `data.currency = USD` et `data.amount` comme chaîne décimale de 40 caractères maximum ; le nombre final doit être positif, fini et au plus égal à un milliard. [Contrat Coinbase des prix](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices).
+
+Les deux caches de cours sont partagés par les visiteurs d'une instance et conservent un délai de **60 secondes après chaque tentative**, réussie ou en échec, avec une seule requête simultanée par chaîne. Chaque requête garde le délai HTTP de huit secondes, avec une limite réduite à **16 Kio**. Aucun appel de cours toutes les trois secondes n'est ajouté. Après un échec, un dernier cours valide reste utilisable jusqu'à **cinq minutes depuis sa réception**, signalé `stale` ; au-delà ou sans cours valide, il devient `null`.
+
+`SnapshotService` consulte ce cache indépendamment de la collecte blockchain et ajoute le champ facultatif nullable `usdQuote = { usdPerCoin, observedAt, source: 'Coinbase', status }` à la réponse. `observedAt` est l'heure de réception en millisecondes, pas l'heure du marché. Le renouvellement se lance en arrière-plan et le lecteur retourne immédiatement le dernier cours encore utilisable ou `null` ; une lecture suivante peut récupérer le nouveau cours. Ni le délai de collecte du cours ni son échec ne bloquent la réponse blockchain ou ne changent son état. Le mode démonstration ne lit pas les cours et ne peut porter un cours live non nul. `fetcher`, horloge et lecteur USD sont injectables ; une injection des seuls fournisseurs blockchain ne déclenche pas de lecture Coinbase réelle.
+
+L'interface convertit les taux en USD/vB ou USD/gas et les montants estimés de transaction au cours reçu. Pour Ethereum, la multiplication utilise la limite de gas déclarée, pas le gas consommé ou les frais payés. Les taux natifs, le tri et les couleurs sont conservés. Il n'y a ni nouvelle dépendance ni nouvelle variable d'environnement. Sur un serveur HEG, autoriser la sortie HTTPS vers `api.coinbase.com:443` pour disposer de cette conversion ; un refus réseau laisse les frais natifs utilisables.
+
 ## Configuration et limites
 
 | Variable                    | Défaut                                | Validation                                                             |
@@ -53,6 +63,6 @@ Les fichiers de `dist/` sont servis avec CSP, refus des chemins cachés et de la
 
 ## Vérification
 
-**Le suivi d'inclusions intermédiaires, le journal, l'archive suivie et les nouvelles couleurs ne sont pas validés.** Le propriétaire a suspendu les tests et les contrôles de compilation. Les lectures statiques, le formatage et un aperçu de remise ne garantissent pas le contrat ou le comportement de ces changements. Les fixtures et les suites existantes devront être adaptées lors de leur reprise, sans dépendre des fournisseurs publics.
+**La conversion USD, le suivi d'inclusions intermédiaires, le journal, l'archive suivie et les nouvelles couleurs ne sont pas validés.** Le propriétaire a suspendu les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles. Les lectures statiques, le formatage et un aperçu normal de remise ne garantissent pas le contrat ou le comportement de ces changements. Les fixtures et les suites existantes devront être adaptées lors de leur reprise, sans dépendre des fournisseurs publics.
 
 Les tests `tests/unit/` couvrent les charges invalides, les unités, l’arithmétique EIP1559, le cache concurrent, les pannes et la récupération, les contrôles de routes, la limitation de requêtes, les headers de proxy falsifiés et les échappements des fichiers statiques. Ils simulent les fournisseurs ; les tests HTTP ouvrent seulement un port temporaire local. Les tests ne garantissent pas la disponibilité ou le SLA d’un fournisseur public.

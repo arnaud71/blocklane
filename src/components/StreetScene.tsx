@@ -17,6 +17,7 @@ import {
 } from '../lib/streetGeometry';
 import { number } from '../lib/format';
 import { feeColorForRate } from '../lib/feeColors';
+import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib/feeDisplay';
 import { Passenger } from './Passenger';
 import { InfoPanel } from './InfoPanel';
 import './StreetScene.css';
@@ -36,6 +37,7 @@ export interface StreetSceneProps {
   onClearSelection?: () => void;
   immersive?: boolean;
   showInfo?: boolean;
+  feeDisplayUnit?: FeeDisplayUnit;
 }
 
 function SideDoor({ y, open, purpose }: { y: number; open: boolean; purpose: 'entry' | 'exit' }) {
@@ -88,6 +90,7 @@ function Wagon({
   selectedId,
   onSelect,
   feeColor,
+  feeLabel,
 }: {
   kind: WagonKind | 'handoff';
   y: number;
@@ -105,6 +108,7 @@ function Wagon({
   selectedId?: string;
   onSelect: (tx: Tx) => void;
   feeColor: (pose: PassengerPose) => string;
+  feeLabel?: (tx: Tx) => string;
 }) {
   const clipId = useId().replace(/:/g, '') + '-wagon-interior';
   const entryOpen = !moving && doors.entry;
@@ -176,6 +180,7 @@ function Wagon({
             pose={pose}
             selected={!historical && selectedId === pose.tx.id}
             feeColor={feeColor(pose)}
+            feeLabel={feeLabel?.(pose.tx)}
             onSelect={onSelect}
             interactive={!historical}
           />
@@ -293,6 +298,7 @@ export function StreetScene({
   theme = 'heg',
   onClearSelection,
   showInfo = true,
+  feeDisplayUnit = 'native',
 }: StreetSceneProps) {
   const id = useId().replace(/:/g, '');
   const [compactScene, setCompactScene] = useState(
@@ -342,6 +348,10 @@ export function StreetScene({
       : null;
   }, [motion.passengers]);
   const feeColor = (pose: PassengerPose) => feeColorForRate(pose.tx.feeRate, averageFeeRate);
+  const feeLabel = (tx: Tx) =>
+    feeDisplayUnit === 'usd'
+      ? `${tx.chain === 'ethereum' ? 'estimation avec limite de gas' : 'frais estimés'} : ${formatTransactionFee(tx, 'usd', demo ? null : snapshot.usdQuote)} ; taux observé ${formatFeeRate(tx.chain, tx.feeRate, 'native')}`
+      : formatTransactionFee(tx, 'native');
   const activity = useMemo(
     () => ({
       walking:
@@ -422,6 +432,7 @@ export function StreetScene({
               selectedId={selectedId}
               onSelect={onSelect}
               feeColor={feeColor}
+              feeLabel={feeLabel}
             />
             <Wagon
               kind={moving ? 'handoff' : 'later'}
@@ -439,6 +450,7 @@ export function StreetScene({
               selectedId={selectedId}
               onSelect={onSelect}
               feeColor={feeColor}
+              feeLabel={feeLabel}
             />
             <WaitingArchive
               count={motion.waitingArchiveCount ?? 0}
@@ -451,6 +463,7 @@ export function StreetScene({
                 pose={pose}
                 selected={selectedId === pose.tx.id}
                 feeColor={feeColor(pose)}
+                feeLabel={feeLabel(pose.tx)}
                 onSelect={onSelect}
               />
             ))}
@@ -460,6 +473,7 @@ export function StreetScene({
       {showInfo && (
         <DynamicInfoPanel
           snapshot={snapshot}
+          feeDisplayUnit={feeDisplayUnit}
           selectedTx={
             snapshot.transactions.find((tx) => tx.id === selectedId) ??
             motion.passengers.find(

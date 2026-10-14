@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { Snapshot, Tx } from '../../shared/model';
 import { explorerUrl, number, shortHash } from '../lib/format';
+import {
+  formatFeeRate,
+  formatTransactionFee,
+  usdQuoteNote,
+  type FeeDisplayUnit,
+} from '../lib/feeDisplay';
 import { Icon } from './Icon';
 import './InfoPanel.css';
 
@@ -17,6 +23,7 @@ type InfoPanelProps = {
   activity?: SceneActivity;
   paused: boolean;
   reducedMotion?: boolean;
+  feeDisplayUnit?: FeeDisplayUnit;
   onClearSelection?: () => void;
 };
 
@@ -41,6 +48,7 @@ export function InfoPanel({
   activity,
   paused,
   reducedMotion = false,
+  feeDisplayUnit = 'native',
   onClearSelection,
 }: InfoPanelProps) {
   const [page, setPage] = useState(0);
@@ -59,6 +67,10 @@ export function InfoPanel({
   const chain = snapshot?.chain ?? selectedTx?.chain ?? 'bitcoin';
   const bitcoin = chain === 'bitcoin';
   const demo = snapshot?.mode === 'demo';
+  const quote = demo ? undefined : snapshot?.usdQuote;
+  const displayUsd = feeDisplayUnit === 'usd';
+  const networkRate = formatFeeRate(chain, snapshot?.feeRate ?? null, feeDisplayUnit, quote);
+  const networkRateParts = networkRate.match(/^(.+) (sat\/vB|Gwei|\$ US\/(?:vB|gas))$/);
   const latest = snapshot?.blocks[0];
   const blockLink = latest && !demo ? explorerUrl(chain, latest.hash, 'block') : null;
   const txLink = selectedTx && !demo ? explorerUrl(chain, selectedTx.id, 'tx') : null;
@@ -79,6 +91,7 @@ export function InfoPanel({
       data-testid="info-panel"
       data-page={selectedTx ? 'transaction' : (pages[page] ?? pages[0]).id}
       data-auto-rotating={rotating}
+      data-fee-display={feeDisplayUnit}
     >
       <div className="info-panel-top">
         <span className="info-panel-caption">
@@ -112,8 +125,18 @@ export function InfoPanel({
             <Detail label={demo ? 'État simulé' : 'État dans la source'}>
               {selectedTx.status === 'pending' ? 'En attente' : 'Incluse dans un bloc observé'}
             </Detail>
-            <Detail label={bitcoin ? 'Frais par vByte' : 'Prix du gas observé'}>
-              {number(selectedTx.feeRate, 3)} {bitcoin ? 'sat/vB' : 'Gwei'}
+            <Detail
+              label={
+                displayUsd
+                  ? bitcoin
+                    ? 'Frais estimés'
+                    : 'Estimation avec limite de gas'
+                  : bitcoin
+                    ? 'Frais par vByte'
+                    : 'Prix du gas observé'
+              }
+            >
+              {formatTransactionFee(selectedTx, feeDisplayUnit, quote)}
             </Detail>
             <Detail label={bitcoin ? 'Taille virtuelle' : 'Limite de gas déclarée'}>
               {number(selectedTx.size)} {bitcoin ? 'vB' : 'gas'}
@@ -123,6 +146,17 @@ export function InfoPanel({
               {selectedTx.kind === 'contract' ? 'Données ou création de contrat' : 'Transfert'}
             </Detail>
           </dl>
+          {displayUsd && (
+            <>
+              <p className="info-explanation">
+                Taux natif : {formatFeeRate(chain, selectedTx.feeRate, 'native')}.{' '}
+                {bitcoin
+                  ? 'Coût approximatif calculé avec la taille virtuelle observée.'
+                  : 'Calcul avec la limite de gas déclarée, pas le gas consommé ni les frais réellement payés.'}
+              </p>
+              <p className="info-explanation">{usdQuoteNote(quote, demo)}</p>
+            </>
+          )}
           <p className="info-explanation">
             {bitcoin
               ? 'La tête représente la taille virtuelle. La couleur représente les frais.'
@@ -152,13 +186,25 @@ export function InfoPanel({
             {page === 0 && (
               <>
                 <h3>La vie du réseau.</h3>
-                <p className="info-hero">
-                  {number(snapshot?.feeRate ?? null, 2)}
-                  <span>{bitcoin ? 'sat/vB' : 'Gwei'}</span>
+                <p className={`info-hero ${displayUsd ? 'info-fee-usd' : ''}`}>
+                  {networkRateParts ? (
+                    <>
+                      {networkRateParts[1]}
+                      <span>{networkRateParts[2]}</span>
+                    </>
+                  ) : (
+                    networkRate
+                  )}
                 </p>
                 <p className="info-hero-caption">
                   {bitcoin ? 'Frais conseillés · environ 30 min' : 'Frais de base du dernier bloc'}
                 </p>
+                {displayUsd && (
+                  <p className="info-explanation">
+                    Taux natif : {formatFeeRate(chain, snapshot?.feeRate ?? null, 'native')}.{' '}
+                    {usdQuoteNote(quote, demo)}
+                  </p>
+                )}
                 <dl className="info-details">
                   <Detail label={bitcoin || demo ? 'En attente dans la source' : 'Mempool mondial'}>
                     {snapshot?.pendingCount === null || !snapshot

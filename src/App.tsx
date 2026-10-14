@@ -6,6 +6,12 @@ import { Icon } from './components/Icon';
 import { brand, safeExternalUrl } from './config/brand';
 import { useSnapshot } from './hooks/useSnapshot';
 import { number } from './lib/format';
+import {
+  formatFeeRate,
+  hasUsableUsdQuote,
+  usdQuoteNote,
+  type FeeDisplayUnit,
+} from './lib/feeDisplay';
 
 const chains = {
   bitcoin: { name: 'Bitcoin', symbol: '₿', ticker: 'BTC' },
@@ -19,6 +25,7 @@ export function App() {
   const [view, setView] = useState<'visual' | 'learn' | 'sources'>('visual');
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [feeDisplayUnit, setFeeDisplayUnit] = useState<FeeDisplayUnit>('native');
   const [selection, setSelection] = useState<{
     chain: ChainId;
     id: string;
@@ -245,10 +252,35 @@ export function App() {
                     </div>
                     <div>
                       <dt>{id === 'bitcoin' ? 'Frais conseillés' : 'Frais de base'}</dt>
-                      <dd>
-                        {number(current?.feeRate ?? null, 2)} {id === 'bitcoin' ? 'sat/vB' : 'Gwei'}
+                      <dd
+                        className={feeDisplayUnit === 'usd' ? 'fee-metric-usd' : undefined}
+                        title={
+                          feeDisplayUnit === 'usd'
+                            ? usdQuoteNote(
+                                mode === 'demo' ? null : current?.usdQuote,
+                                mode === 'demo',
+                              )
+                            : undefined
+                        }
+                      >
+                        {formatFeeRate(
+                          id,
+                          current?.feeRate ?? null,
+                          feeDisplayUnit,
+                          mode === 'demo' ? null : current?.usdQuote,
+                        )}
                         <span className="metric-note">
-                          {id === 'bitcoin' ? 'Délai non garanti' : 'Pourboire exclu'}
+                          {feeDisplayUnit === 'usd'
+                            ? mode === 'demo' || !hasUsableUsdQuote(current?.usdQuote)
+                              ? 'Cours indisponible'
+                              : current?.usdQuote?.status === 'stale'
+                                ? 'Cours conservé · estimation'
+                                : id === 'bitcoin'
+                                  ? 'Conversion estimée'
+                                  : 'Pourboire exclu'
+                            : id === 'bitcoin'
+                              ? 'Délai non garanti'
+                              : 'Pourboire exclu'}
                         </span>
                       </dd>
                     </div>
@@ -271,6 +303,7 @@ export function App() {
                       paused={paused}
                       speed={speed}
                       reducedMotion={reducedMotion}
+                      feeDisplayUnit={feeDisplayUnit}
                       onSelect={selectTransaction}
                       selectedId={selected?.chain === id ? selected.id : undefined}
                       theme={theme}
@@ -305,6 +338,7 @@ export function App() {
                   )}
                   {infoOpen && chain === id && (!current || current.status === 'unavailable') && (
                     <InfoPanel
+                      feeDisplayUnit={feeDisplayUnit}
                       snapshot={current}
                       selectedTx={null}
                       paused={paused}
@@ -482,6 +516,21 @@ export function App() {
       </main>
       <div className="immersion-controls">
         <div className="animation-controls">
+          <button
+            className="fee-unit-switch"
+            role="switch"
+            aria-checked={feeDisplayUnit === 'usd'}
+            aria-label="Afficher les frais en dollars américains"
+            title="Basculer entre les frais natifs et leur estimation en dollars américains"
+            onClick={() =>
+              setFeeDisplayUnit((current) => (current === 'native' ? 'usd' : 'native'))
+            }
+          >
+            <span className="fee-unit-switch-track" aria-hidden="true">
+              <i />
+            </span>
+            Frais : {feeDisplayUnit === 'usd' ? '$ US' : 'natifs'}
+          </button>
           <button
             aria-pressed={paused}
             aria-label={paused ? 'Reprendre l’animation' : 'Mettre l’animation en pause'}

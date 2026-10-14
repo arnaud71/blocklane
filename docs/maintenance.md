@@ -21,6 +21,8 @@ Le propriétaire conserve la décision de fusion et de publication. Un hébergem
 
 Les workflows du dépôt sont préparés ; ils ne configurent pas automatiquement ces paramètres GitHub ni l'hébergement.
 
+La suspension des tests et contrôles demandée par le propriétaire reste applicable aux changements locaux actuels : les procédures de vérification ci-dessous décrivent une reprise autorisée ou une future livraison, pas des contrôles effectués pour la conversion USD. L'état précis figure dans [validation.md](validation.md).
+
 ## Chaque semaine
 
 - Lire les alertes de sécurité, les propositions Dependabot et les résultats CI récents.
@@ -49,6 +51,14 @@ Pour une version majeure, lire le guide officiel de migration, proposer les adap
 7. Si un fournisseur doit être remplacé, vérifier le contrat du nouvel endpoint et les tests, puis redémarrer avec la nouvelle configuration. La source affichée doit correspondre à la provenance réelle.
 
 Une panne upstream peut afficher le dernier instantané pendant 120 secondes avec le statut ancien. Au-delà, la source doit être indisponible. Il n'y a aucune bascule automatique vers une simulation.
+
+## Diagnostiquer une conversion USD indisponible
+
+Le cours possède sa propre provenance et fraîcheur, indépendantes de la blockchain. Une chaîne peut rester en direct avec `usdQuote: null` ; les frais natifs restent consultables. Examiner la source Coinbase, l'heure de réception et le statut du cours sans traiter cette panne comme une panne Bitcoin ou Ethereum. Le renouvellement fonctionne en arrière-plan : une première réponse sans cours peut être suivie d'une réponse avec cours, sans bloquer les données blockchain.
+
+Les seules destinations sont les routes spot fixes BTC/USD et ETH/USD de `api.coinbase.com`. Pour HEG, autoriser DNS et HTTPS sortant vers `api.coinbase.com:443` si l'affichage USD est souhaité. Aucun secret, paramètre d'environnement ou fournisseur choisi par le visiteur n'est ajouté. Respecter le cache de cours de 60 secondes après chaque tentative, distinct du cache blockchain de trois secondes ; un redémarrage efface les caches et plusieurs instances multiplient les lectures.
+
+Une requête de cours est limitée à huit secondes et 16 Kio. Un ancien cours peut être conservé au plus cinq minutes depuis sa réception, signalé comme ancien, puis la conversion devient indisponible. Ne pas désactiver ces limites, inventer un cours de démonstration ou substituer zéro. Le total Ethereum reste une estimation avec limite de gas déclarée, pas le coût payé ; le cours relevé n'est pas celui du bloc historique. En cas d'évolution du payload, adapter une fixture contrôlée et le contrat après reprise autorisée des validations. [Documentation Coinbase](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices).
 
 ## Livraison vérifiée
 

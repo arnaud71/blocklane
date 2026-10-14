@@ -1,8 +1,9 @@
-import { snapshotSchema, type ChainId, type Snapshot } from '../shared/model.js';
+import { snapshotSchema, usdQuoteSchema, type ChainId, type Snapshot } from '../shared/model.js';
 import { createBitcoinProvider } from './adapters/bitcoin.js';
 import { createEthereumProvider } from './adapters/ethereum.js';
 import { CACHE_TTL_MS, MAX_STALE_MS, loadConfig, type ServerConfig } from './config.js';
 import { generateDemoSnapshot } from './demo.js';
+import { MarketPrices, type UsdQuoteReader } from './marketPrices.js';
 import { UpstreamError, type Fetcher } from './network.js';
 
 export interface SnapshotReader {
@@ -21,6 +22,7 @@ export interface SnapshotServiceOptions {
   fetcher?: Fetcher;
   now?: () => number;
   providers?: Record<ChainId, Provider>;
+  usdQuotes?: UsdQuoteReader;
 }
 
 /** Two bounded caches shared by all clients; at most one refresh per chain at a time. */
@@ -28,6 +30,7 @@ export class SnapshotService implements SnapshotReader {
   private readonly config: ServerConfig;
   private readonly now: () => number;
   private readonly providers: Record<ChainId, Provider>;
+  private readonly usdQuotes: UsdQuoteReader;
   private readonly cache: Record<ChainId, CacheEntry> = {
     bitcoin: { nextRefreshAt: 0, attemptedAt: 0 },
     ethereum: { nextRefreshAt: 0, attemptedAt: 0 },
@@ -40,10 +43,20 @@ export class SnapshotService implements SnapshotReader {
       bitcoin: createBitcoinProvider(this.config, options.fetcher, this.now),
       ethereum: createEthereumProvider(this.config, options.fetcher, this.now),
     };
+    // Injected chain providers stay fully isolated unless a quote reader is also supplied.
+    this.usdQuotes =
+      options.usdQuotes ??
+      (options.providers
+        ? { get: async () => null }
+        : new MarketPrices({ fetcher: options.fetcher, now: this.now }));
   }
 
   async get(chain: ChainId, mode: 'demo' | 'live'): Promise<Snapshot> {
     if (mode === 'demo') return generateDemoSnapshot(chain, this.now());
+    const quotePromise = Promise.resolve()
+      .then(() => this.usdQuotes.get(chain))
+      .then((quote) => (quote === null ? null : usdQuoteSchema.parse(quote)))
+      .catch(() => null);
     const entry = this.cache[chain];
     if (!entry.inFlight && this.now() >= entry.nextRefreshAt) {
       entry.attemptedAt = this.now();
@@ -51,8 +64,8 @@ export class SnapshotService implements SnapshotReader {
       // Defer execution until after assignment, including providers that throw synchronously.
       entry.inFlight = Promise.resolve().then(() => this.refresh(chain, entry));
     }
-    if (entry.inFlight) await entry.inFlight;
-    return this.current(chain, entry);
+    const [, usdQuote] = await Promise.all([entry.inFlight, quotePromise]);
+    return { ...this.current(chain, entry), usdQuote };
   }
 
   private async refresh(chain: ChainId, entry: CacheEntry): Promise<void> {

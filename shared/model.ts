@@ -11,6 +11,15 @@ export const MAX_CATCHUP_BLOCKS = 8;
 const finiteNonnegative = z.number().finite().nonnegative();
 const safeNonnegativeInteger = z.number().int().nonnegative().safe();
 
+export const usdQuoteSchema = z.object({
+  usdPerCoin: z.number().finite().positive().max(1_000_000_000),
+  /** Receipt time in Unix milliseconds; this is not the time of a market trade. */
+  observedAt: safeNonnegativeInteger,
+  source: z.literal('Coinbase'),
+  status: z.enum(['ok', 'stale']),
+});
+export type UsdQuote = z.infer<typeof usdQuoteSchema>;
+
 export const transactionSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -80,6 +89,8 @@ export const snapshotSchema = z
     pendingCount: safeNonnegativeInteger.nullable(),
     feeRate: finiteNonnegative.nullable(),
     feeUnit: z.enum(['sat/vB', 'Gwei']),
+    /** Optional market conversion; its availability is independent of chain data. */
+    usdQuote: usdQuoteSchema.nullable().optional(),
     transactions: z.array(transactionSchema).max(120),
     blocks: z.array(blockSchema).max(3),
     /** Bounded replay journal; its historical blocks need not appear in blocks. */
@@ -100,6 +111,13 @@ export const snapshotSchema = z
       context.addIssue({
         code: 'custom',
         message: 'A demo cannot represent upstream availability',
+      });
+    }
+    if (snapshot.mode === 'demo' && snapshot.usdQuote != null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['usdQuote'],
+        message: 'Demonstration snapshots cannot carry a live market quote',
       });
     }
     if (

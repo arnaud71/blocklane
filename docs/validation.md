@@ -1,5 +1,15 @@
 # État des vérifications — 14 octobre 2026
 
+## Conversion des frais natifs / USD — non validé
+
+**Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun de ces contrôles n'a été lancé pour cette extension. Seuls une lecture statique, le formatage et un aperçu normal de remise sont prévus ; ils ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas ce changement.
+
+La commande commune modifie l'unité de présentation pour les deux chaînes. Les en-têtes donnent des taux USD/vB et USD/gas ; les détails et infobulles donnent un montant total estimé `≈`, avec taille virtuelle Bitcoin ou limite de gas Ethereum. Cette dernière n'est pas le gas consommé ni le montant réellement payé. La conversion utilise le cours reçu, pas un cours historique du bloc. Les taux natifs, le classement, les couleurs et les animations sont préservés.
+
+Le contrat facultatif nullable `usdQuote` porte un prix positif fini borné, sa source Coinbase, son heure de réception et son état `ok` ou `stale`. Le serveur appelle uniquement deux routes spot publiques fixes, avec cache partagé de 60 secondes par chaîne, déduplication des requêtes simultanées, délai de huit secondes et limite de 16 Kio. La collecte de cours fonctionne en arrière-plan : une réponse retourne immédiatement un cours conservé utilisable ou `null`, puis une lecture suivante peut fournir le nouveau cours sans bloquer les données blockchain. Un cours ancien reste utilisable au plus cinq minutes puis devient `null`, sans changer le statut de la blockchain. Le mode démonstration ne reçoit aucun cours fictif. Aucun manifeste, lockfile, paramètre d'environnement ou secret n'est ajouté.
+
+À la reprise autorisée, couvrir avec des fixtures isolées la paire ou devise incorrecte, les montants invalides et hors bornes, les pannes, le délai, la taille de réponse, la déduplication, le cache après échec, la rétention et l'expiration. Vérifier aussi les unités, les petites valeurs sans faux zéro, les montants Ethereum clairement estimés, la source et l'heure visibles, la démonstration, le clavier et la disposition du switch sur petits écrans. Aucun appel réel ne doit remplacer ces fixtures.
+
 ## File par arrivée et flèches directionnelles — non validé
 
 À la demande du propriétaire, les places des voyageurs déjà présents sont conservées selon l'arrivée observée dans l'application. Les nouveaux identifiants d'une même collecte sont classés par frais pour occuper les seules places restantes ; un identifiant historique retrouvé reçoit une place courante. Les arrivées et retours gardent leur trajet capturé. Les petites flèches suivent le segment réellement parcouru, avec segments nuls ignorés. La stabilité sur rafraîchissement, les nouvelles admissions, les retours, les angles de flèche et les compteurs restent à valider lors de la reprise. Aucun test, lint, contrôle de compilation ni validation automatique n'a été lancé ; lecture statique, formatage et aperçu de remise uniquement.

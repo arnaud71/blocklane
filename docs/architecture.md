@@ -31,6 +31,8 @@ flowchart LR
     V --> ETH[Adaptateur Ethereum]
     BTC --> M[API mempool.space ou équivalent]
     ETH --> R[JSON-RPC Ethereum]
+    A --> P[Cache indépendant des cours USD]
+    P --> CB[Coinbase : cours spot BTC/USD et ETH/USD]
     B -. lien facultatif .-> F[FairOnChain]
 ```
 
@@ -82,6 +84,18 @@ Chaque adaptateur conserve jusqu'à 2 048 identifiants échantillonnés pendant 
 
 Un nœud propre observe lui aussi un mempool local. Aucun prestataire ne rend automatiquement exhaustive la connaissance des transactions privées. Pour le choix du fournisseur, vérifier le support `pending`, les quotas, l'emplacement des données, les règles d'utilisation et la rotation des clés. Ne pas figer des prix ou des promesses fournisseur dans le code.
 
+## Conversion facultative des frais en USD
+
+Le besoin est un changement d'unité d'affichage commun aux deux chaînes. `server/marketPrices.ts` ajoute un lecteur de cours dans le processus Node existant, sans dépendance, service déployé ou stockage supplémentaire. Il appelle uniquement les routes publiques fixes `https://api.coinbase.com/v2/prices/BTC-USD/spot` et `https://api.coinbase.com/v2/prices/ETH-USD/spot`. Aucun visiteur ne choisit une URL et aucune clé n'est requise. Le renouvellement du cours se lance en arrière-plan, sans bloquer la réponse blockchain ; le lecteur retourne immédiatement un ancien cours encore utilisable ou `null`, puis une lecture suivante récupère le nouveau cours.
+
+Deux caches de cours, un par chaîne et partagés entre les visiteurs d'une même instance, limitent les tentatives à une toutes les 60 secondes après leur fin et dédupliquent les requêtes simultanées. Chaque appel garde un délai de huit secondes et une limite HTTP de 16 Kio. Le lecteur valide l'enveloppe, la paire BTC ou ETH, la devise USD et un montant décimal positif, fini et borné à un milliard. Après un échec, le dernier cours reste signalé comme ancien pendant au plus cinq minutes depuis sa réception ; ensuite il devient `null`. Sa disponibilité est indépendante de celle de la blockchain.
+
+Le champ facultatif et nullable `Snapshot.usdQuote` porte `{ usdPerCoin, observedAt, source: 'Coinbase', status: 'ok' | 'stale' }`. Son horodatage en millisecondes est l'heure de réception, pas celle d'une transaction de marché. La source et l'heure restent visibles. Le mode démonstration n'appelle pas le lecteur et ne peut porter un cours live non nul. Les lecteurs de cours, transports et horloges sont injectables ; les fournisseurs blockchain injectés restent isolés des appels de cours sauf injection explicite du lecteur USD.
+
+`src/lib/feeDisplay.ts` convertit uniquement la présentation : un taux Bitcoin en USD/vB vaut `feeRate * usdPerCoin / 100_000_000` ; un taux Ethereum en USD/gas vaut `feeRate * usdPerCoin / 1_000_000_000`. Le montant total estimé d'un voyageur multiplie ce taux par sa taille virtuelle Bitcoin ou sa limite de gas Ethereum et porte `≈`. Cette limite de gas n'est pas le gas consommé ni le montant réellement payé. Le cours relevé ne devient pas un cours historique de confirmation. Les champs natifs, le classement, les couleurs et les animations gardent leur sémantique. Une conversion invalide ou expirée affiche une absence ; les petits montants positifs ne sont pas arrondis en faux zéros.
+
+L'hébergement doit autoriser `api.coinbase.com:443` en sortie si la conversion est souhaitée. Il n'y a aucun nouveau paramètre d'environnement ou appel navigateur direct. Le cache cours de 60 secondes reste distinct du cache blockchain de trois secondes. Sources : [API Coinbase des cours spot](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices), [unités et calcul des frais Ethereum](https://ethereum.org/developers/docs/gas/).
+
 ## Hébergement et évolution
 
 | Option                                          | Coût opérationnel relatif                          | Portabilité          | Condition                                                                    |
@@ -110,3 +124,4 @@ Le lien FairOnChain est optionnel et désactivé par défaut. Il ouvre une resso
 - Préparer CI, Dependabot et maintenance Codex ; garder la revue et la livraison sous contrôle humain.
 - Étendre le contrat par un journal facultatif d'inclusions vérifiées, avec suivi volatile de 2 048 identifiants, expiration de 30 minutes et rattrapage borné ; conserver une archive de présentation indépendante de 512 identifiants et rendre explicites les observations sans suivi.
 - Colorer les t-shirts selon la moyenne des seuls voyageurs en attente affichés dans leur chaîne : jaune faible, orange à la moyenne, rouge à au moins deux fois la moyenne ; ce repère n'est pas une moyenne du réseau.
+- Ajouter une conversion USD facultative par un cours Coinbase indépendant et borné, sans modifier les taux natifs ou prétendre mesurer les frais Ethereum réellement payés.

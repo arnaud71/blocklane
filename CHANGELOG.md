@@ -6,6 +6,8 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
+- Commande commune frais natifs / USD : taux USD/vB pour Bitcoin et USD/gas pour Ethereum ; montants estimés `≈` dans les détails et infobulles des voyageurs, avec taille virtuelle Bitcoin ou limite de gas Ethereum. Les taux natifs, le tri et les couleurs sont conservés.
+- Source et heure du cours visibles ; conversion au cours reçu, sans prétendre fournir le cours historique du bloc ou les frais Ethereum réellement payés. Cours absent ou trop ancien : conversion indisponible, sans prix fictif en démonstration ni faux zéro pour les petits montants.
 - File du quai conservant les places déjà attribuées selon l'arrivée observée ; nouveaux identifiants d'une même collecte classés par frais décroissants pour occuper les places restantes, avec départage stable par identifiant et retours animés.
 - Petites flèches alignées sur la direction réelle de chaque segment de déplacement, horizontal ou vertical.
 - Lecture de l'API locale toutes les 3 secondes après réponse en direct et cache serveur partagé de 3 secondes après collecte ; une seule collecte en cours par chaîne, requêtes clientes séquentielles et suspension dans les onglets masqués conservées.
@@ -40,6 +42,8 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Contrat et suivi
 
+- Champ facultatif nullable `Snapshot.usdQuote` : prix USD positif fini borné, heure de réception en millisecondes, source Coinbase et état `ok` / `stale`, indépendant du statut blockchain.
+- Cours spot Coinbase BTC/USD et ETH/USD via deux URL serveur fixes, sans nouvelle dépendance, clé ou variable d'environnement : cache partagé de 60 secondes après tentative, une requête simultanée par chaîne, délai de huit secondes, réponse limitée à 16 Kio et cours ancien conservé au plus cinq minutes avant `null`. Collecte en arrière-plan sans attente ajoutée à la réponse blockchain.
 - Journal facultatif `Snapshot.inclusions` : blocs vérifiés et identifiants suivis réellement inclus, maximum 16 blocs et 2 048 identifiants au total, en complément des 120 transactions et trois blocs courants.
 - Rattrapage de huit blocs au maximum par collecte, réessai des lacunes et journal rejoué sans consommation par le premier visiteur. Hashes, hauteurs et identifiants validés ; cohérence avec les blocs affichés à hauteur commune.
 - Suivi et journal volatiles, sensibles aux redémarrages, expirations, évictions et réorganisations ; aucune promesse d'historique exhaustif ou de finalité.
@@ -47,7 +51,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Validation
 
-- Tests et contrôles de compilation suspendus à la demande du propriétaire. Le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas.
+- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. La conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Lecture statique, formatage et aperçu normal de remise uniquement.
 
 ## 0.2.0 — 2026-10-14
 

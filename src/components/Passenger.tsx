@@ -29,6 +29,7 @@ export function Passenger({
   pose,
   selected,
   feeColor,
+  feeLabel,
   onSelect,
   originX = 0,
   originY = 0,
@@ -37,6 +38,7 @@ export function Passenger({
   pose: PassengerPose;
   selected: boolean;
   feeColor: string;
+  feeLabel?: string;
   onSelect: (tx: Tx) => void;
   originX?: number;
   originY?: number;
@@ -64,9 +66,7 @@ export function Passenger({
     'Transaction ' +
     tx.id.slice(0, 12) +
     ', ' +
-    tx.feeRate.toFixed(2) +
-    ' ' +
-    (tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei') +
+    (feeLabel ?? `${tx.feeRate.toFixed(2)} ${tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei'}`) +
     ', ' +
     (pose.sourceObserved
       ? tx.status === 'confirmed'

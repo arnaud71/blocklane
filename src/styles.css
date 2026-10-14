@@ -671,6 +671,38 @@ main.immersion-main {
   min-height: 30px;
   padding: 4px;
 }
+
+.fee-unit-switch {
+  border: 1px solid #8bbda629;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.fee-unit-switch[aria-checked='true'] {
+  color: var(--green);
+  background: #8bbda618;
+}
+.fee-unit-switch-track {
+  width: 24px;
+  height: 14px;
+  padding: 2px;
+  border-radius: 12px;
+  background: #78988455;
+}
+.fee-unit-switch-track i {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #dcece7;
+}
+.fee-unit-switch[aria-checked='true'] .fee-unit-switch-track i {
+  transform: translateX(10px);
+  background: #9ad6a0;
+}
+.chain-metrics dd.fee-metric-usd {
+  font-size: clamp(10px, 1.2vw, 14px);
+  overflow-wrap: anywhere;
+}
 .immersion-hint {
   margin: 0;
   font-size: 10px;

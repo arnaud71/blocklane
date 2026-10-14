@@ -30,6 +30,7 @@ La limite API est de 120 requêtes par minute par client par défaut, configurab
 | `pendingCount` | Entier ou `null`               | Compte observé lorsque disponible ; `null` signifie inconnu    |
 | `feeRate`      | Nombre ou `null`               | Mesure ou estimation décrite dans l'interface                  |
 | `feeUnit`      | `sat/vB` / `Gwei`              | Unité correspondant à la chaîne                                |
+| `usdQuote`     | Objet facultatif ou `null`     | Cours de conversion USD indépendant de la source blockchain    |
 | `transactions` | Tableau, maximum 120           | Échantillon ; jamais une liste exhaustive promise              |
 | `blocks`       | Tableau, maximum 3             | Blocs récents observés                                         |
 | `inclusions`   | Tableau facultatif, maximum 16 | Journal roulant des inclusions vérifiées d'identifiants suivis |
@@ -52,6 +53,26 @@ Le serveur suit au plus 2 048 identifiants pendant 30 minutes depuis leur derni�
 Le suivi et le journal sont volatiles. Un redémarrage, une expiration, une éviction ou une interruption dépassant les bornes peut empêcher de retrouver une observation ancienne. Les preuves incompatibles avec une réorganisation sont invalidées ; une inclusion observée n'est pas une garantie de finalité. Le client initialise le journal reçu au premier chargement sans rejouer les départs historiques. Une preuve complémentaire illustrée après un départ est un rattrapage pour ce même hash, pas un nouveau bloc.
 
 Les sources de lecture sont documentées par [Esplora](https://github.com/Blockstream/esplora/blob/master/API.md#get-blockhashtxids), les [routes Bitcoin mempool.space](https://github.com/mempool/mempool/blob/master/backend/src/api/bitcoin/bitcoin.routes.ts) et l'[API JSON-RPC Ethereum](https://ethereum.org/developers/docs/apis/json-rpc/).
+
+## Cours facultatif et affichage USD
+
+`usdQuote` peut être absent ou `null` lorsqu'aucun cours utilisable n'est disponible. Lorsqu'il est présent :
+
+| Champ        | Type / borne                                 | Signification                                                                          |
+| ------------ | -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `usdPerCoin` | Nombre positif fini, au plus `1_000_000_000` | Dollars américains pour un BTC ou un ETH selon `chain`                                 |
+| `observedAt` | Entier sûr non négatif, millisecondes Unix   | Heure de réception du cours, distincte de la collecte blockchain et du temps de marché |
+| `source`     | `Coinbase`                                   | Provenance de la conversion                                                            |
+| `status`     | `ok` / `stale`                               | Cours reçu ou ancien cours conservé                                                    |
+
+Le serveur utilise les routes publiques fixes Coinbase BTC/USD et ETH/USD, avec cache partagé de 60 secondes après chaque tentative, une requête simultanée au plus par chaîne, délai de huit secondes et réponse limitée à 16 Kio. Il valide la devise USD, la base attendue et un montant décimal borné avant conversion. La collecte s'effectue en arrière-plan : la réponse utilise immédiatement un cours valide déjà disponible ou `null`, sans attendre le renouvellement. Une lecture suivante peut fournir le nouveau cours. Un cours ancien ne reste utilisable que cinq minutes depuis sa réception, puis `usdQuote` devient `null`. Une erreur de cours ne modifie pas `Snapshot.status`, qui concerne la blockchain ; même une chaîne indisponible peut porter un cours valide. La démonstration ne collecte aucun cours et le contrat rejette un cours non nul en mode `demo`.
+
+`feeRate` et `feeUnit` restent natifs : le switch de l'interface n'altère pas le contrat ou le classement des transactions. La conversion d'un taux donne des USD/vB pour Bitcoin et des USD/gas pour Ethereum. Les détails et infobulles de transaction donnent un total estimé marqué `≈` :
+
+- Bitcoin : `feeRate * size * usdPerCoin / 100_000_000`, avec `size` en vB.
+- Ethereum : `feeRate * size * usdPerCoin / 1_000_000_000`, avec `size` comme limite de gas déclarée.
+
+La formule Ethereum ne fournit pas le gas consommé ni les frais réellement payés ; aucun reçu d'exécution n'est ajouté. La conversion utilise le cours relevé, jamais un cours supposé à la date du bloc. La source, la date et la conservation d'un cours ancien sont signalées ; un cours absent, invalide ou trop ancien rend la conversion indisponible, sans zéro inventé. Le mode démonstration n'utilise aucun prix fictif. Sources : [cours spot Coinbase](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices), [gas et Gwei Ethereum](https://ethereum.org/developers/docs/gas/).
 
 ## Évolution du contrat
 
