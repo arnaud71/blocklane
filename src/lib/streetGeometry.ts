@@ -4,15 +4,18 @@ export interface StreetPoint {
   y: number;
 }
 
-export type WagonKind = 'candidate' | 'observed';
+export type WagonKind = 'next' | 'later';
 
 export const SCENE_WIDTH = 460;
 export const SCENE_HEIGHT = 740;
 export const WAGON_WIDTH = 85;
 export const WAGON_HEIGHT = 217;
 export const WAGON_X = (SCENE_WIDTH - WAGON_WIDTH) / 2;
-export const OBSERVED_WAGON_Y = 175;
-export const CANDIDATE_WAGON_Y = 460;
+export const NEXT_WAGON_Y = 175;
+export const LATER_WAGON_Y = 460;
+/** Legacy coordinate names kept for existing callers while their model is migrated. */
+export const OBSERVED_WAGON_Y = NEXT_WAGON_Y;
+export const CANDIDATE_WAGON_Y = LATER_WAGON_Y;
 export const PLATFORM_CORRIDOR_X = 298;
 export const ENTRY_DOOR_Y = 64;
 export const EXIT_DOOR_Y = 176;
@@ -20,7 +23,7 @@ const DOOR_INSIDE_X = 270;
 const DOOR_PLATFORM_X = 294;
 
 export function wagonOrigin(kind: WagonKind): StreetPoint {
-  return { x: WAGON_X, y: kind === 'observed' ? OBSERVED_WAGON_Y : CANDIDATE_WAGON_Y };
+  return { x: WAGON_X, y: kind === 'next' ? NEXT_WAGON_Y : LATER_WAGON_Y };
 }
 
 export function boardingApproach(kind: WagonKind): StreetPoint {

@@ -149,10 +149,10 @@ export function Passenger({
         {tx.kind === 'contract' && (
           <rect x="5" y="-12" width="5" height="7" rx="1" fill="#e4c780" />
         )}
-        {pose.sourceObserved && tx.status === 'confirmed' && (
+        {(pose.sourceObserved || !interactive) && tx.status === 'confirmed' && (
           <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />
         )}
-        {!pose.sourceObserved && (
+        {interactive && !pose.sourceObserved && (
           <g>
             <circle cx="10" cy="-27" r="3.2" fill="#365048" stroke="#c7d3c5" />
             <path d="M10-29v2l1.5 1" fill="none" stroke="#c7d3c5" strokeWidth=".8" />

@@ -9,8 +9,8 @@ import {
   WAGON_X,
   WAGON_WIDTH,
   WAGON_HEIGHT,
-  OBSERVED_WAGON_Y,
-  CANDIDATE_WAGON_Y,
+  NEXT_WAGON_Y,
+  LATER_WAGON_Y,
   ENTRY_DOOR_Y,
   EXIT_DOOR_Y,
   type WagonKind,
@@ -74,6 +74,7 @@ function Wagon({
   kind,
   y,
   label,
+  caption,
   passengers,
   doors,
   moving = false,
@@ -90,6 +91,7 @@ function Wagon({
   kind: WagonKind | 'handoff';
   y: number;
   label: string;
+  caption: string;
   passengers: PassengerPose[];
   doors: { entry: boolean; exit: boolean };
   moving?: boolean;
@@ -109,7 +111,8 @@ function Wagon({
   const preservePassages = moving || preparationProgress !== undefined;
   return (
     <g
-      className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'observed' ? 'street-observed-wagon' : 'street-candidate-wagon'}${kind === 'handoff' ? ' street-candidate--handoff' : ''}`}
+      className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
+      data-projection={kind === 'handoff' ? 'next' : kind}
       data-moving={moving}
       data-handoff-progress={handoffProgress}
       data-preparation-progress={preparationProgress}
@@ -117,6 +120,9 @@ function Wagon({
       transform={`translate(0 ${offsetY})`}
       opacity={opacity}
     >
+      <text x="230" y={y - 18} fill="#c3d8bd" fontSize="10" textAnchor="middle" aria-hidden="true">
+        {caption}
+      </text>
       <defs>
         <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
           <rect
@@ -295,33 +301,36 @@ export function StreetScene({
   const moving = motion.handoffProgress !== null;
   const preparing = motion.preparationProgress != null;
   const progress = motion.handoffProgress ?? 0;
-  const arriving = motion.candidateArrivalProgress != null;
-  const arrivalProgress = motion.candidateArrivalProgress ?? 1;
-  const candidateY = SCENE_HEIGHT + 12 + (CANDIDATE_WAGON_Y - SCENE_HEIGHT - 12) * arrivalProgress;
-  const wagonY = moving
-    ? CANDIDATE_WAGON_Y + (OBSERVED_WAGON_Y - CANDIDATE_WAGON_Y) * progress
-    : candidateY;
-  const observed = motion.passengers.filter(
-    (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'observed',
+  const arriving = motion.laterArrivalProgress != null;
+  const arrivalProgress = motion.laterArrivalProgress ?? 1;
+  const laterY = SCENE_HEIGHT + 12 + (LATER_WAGON_Y - SCENE_HEIGHT - 12) * arrivalProgress;
+  const wagonY = moving ? LATER_WAGON_Y + (NEXT_WAGON_Y - LATER_WAGON_Y) * progress : laterY;
+  const next = motion.passengers.filter(
+    (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'next',
   );
-  const candidate = motion.passengers.filter(
-    (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'candidate',
+  const later = motion.passengers.filter(
+    (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'later',
   );
   const carried = motion.passengers.filter((pose) => pose.inWagon && pose.inHandoff);
   const pedestrians = motion.passengers
     .filter((pose) => !pose.inWagon)
     .sort((left, right) => left.y - right.y);
-  const observedLabel = snapshot.blocks[0] ? `#${number(snapshot.blocks[0].height)}` : 'Non fourni';
-  const feeBounds = motion.passengers.reduce(
-    (bounds, pose) => ({
-      min: Math.min(bounds.min, pose.tx.feeRate),
-      max: Math.max(bounds.max, pose.tx.feeRate),
-    }),
-    { min: Infinity, max: 0 },
-  );
+  const blockLabel = motion.departingBlock
+    ? `#${number(motion.departingBlock.height)}`
+    : 'BLOC REÇU';
+  const projectionUsed = motion.projectionUsed ?? { next: motion.candidateUsed ?? 0, later: 0 };
+  const feeBounds = motion.passengers
+    .filter((pose) => pose.sourceObserved)
+    .reduce(
+      (bounds, pose) => ({
+        min: Math.min(bounds.min, pose.tx.feeRate),
+        max: Math.max(bounds.max, pose.tx.feeRate),
+      }),
+      { min: Infinity, max: 0 },
+    );
   const feeColor = (pose: PassengerPose) => {
     const relative =
-      feeBounds.max === feeBounds.min
+      !Number.isFinite(feeBounds.min) || feeBounds.max === feeBounds.min
         ? 0.5
         : (pose.tx.feeRate - feeBounds.min) / (feeBounds.max - feeBounds.min);
     return relative > 0.66 ? '#efaf72' : relative > 0.33 ? '#79bbb3' : '#afc3a3';
@@ -361,9 +370,10 @@ export function StreetScene({
               La rue de {snapshot.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}
             </title>
             <desc id={`${id}-desc`}>
-              Les wagons restent centrés. Les voyageurs circulent sur le quai à droite, entrent par
-              la porte haute et sortent par la porte basse après l’arrêt. Le déplacement ne confirme
-              aucune transaction.{' '}
+              Les deux wagons à l’arrêt projettent les prochains blocs. À réception d’un bloc réel,
+              le premier est ajusté aux inclusions connues avant son départ, le second prend sa
+              place. Les voyageurs circulent sur le quai droit et les portes restent fermées pendant
+              les déplacements. Le déplacement ne confirme aucune transaction.{' '}
               {demo ? 'Données simulées.' : 'Les inclusions sont fournies par la source.'}{' '}
               Sélectionnez un voyageur au clavier ou à la souris.
             </desc>
@@ -372,28 +382,26 @@ export function StreetScene({
               <text x="13" y="35" fill="#c3d8bd" fontSize="11">
                 {demo ? 'SIMULATION' : 'ÉCHANTILLON OBSERVÉ'}
               </text>
-              <text
-                x="230"
-                y={OBSERVED_WAGON_Y - 18}
-                fill="#c3d8bd"
-                fontSize="11"
-                textAnchor="middle"
-              >
-                {moving || preparing ? 'BLOC PRÉCÉDENT' : `BLOC ${demo ? 'SIMULÉ' : 'OBSERVÉ'}`}
-              </text>
               <rect x="304" y="710" width="144" height="22" rx="5" fill="#12382c" />
-              <text x="314" y="725" fill="#d3dec0" fontSize="10">
+              <text x="314" y="725" fill="#d3dec0" fontSize="9.5">
                 {preparing
                   ? `Embarquement · ${motion.preparationPassengerCount}`
-                  : `Candidat · ${motion.candidateUsed} / ${motion.candidateCapacity}`}
+                  : `Proch. ${projectionUsed.next}/12 · Suiv. ${projectionUsed.later}/12`}
               </text>
             </g>
             <Wagon
-              kind="observed"
-              y={OBSERVED_WAGON_Y}
-              label={moving || preparing ? 'PRÉCÉDENT' : observedLabel}
-              passengers={moving ? (motion.departingPassengers ?? []) : observed}
-              doors={moving ? CLOSED_DOORS : (motion.doors?.observed ?? CLOSED_DOORS)}
+              kind="next"
+              y={NEXT_WAGON_Y}
+              label={moving || preparing ? blockLabel : 'PROCHAIN'}
+              caption={
+                moving
+                  ? `${demo ? 'BLOC SIMULÉ' : 'BLOC CONFIRMÉ'} · DÉPART`
+                  : preparing
+                    ? 'BLOC REÇU · AJUSTEMENT'
+                    : 'PROCHAIN BLOC · ESTIMATION'
+              }
+              passengers={moving ? (motion.departingPassengers ?? []) : next}
+              doors={moving ? CLOSED_DOORS : (motion.doors?.next ?? CLOSED_DOORS)}
               moving={moving}
               preparationProgress={
                 preparing ? (motion.preparationProgress ?? undefined) : undefined
@@ -405,13 +413,12 @@ export function StreetScene({
               feeColor={feeColor}
             />
             <Wagon
-              kind={moving ? 'handoff' : 'candidate'}
+              kind={moving ? 'handoff' : 'later'}
               y={wagonY}
-              label={
-                moving ? 'TRANSFERT' : preparing ? 'PRÉPARATION' : arriving ? 'ARRIVÉE' : 'CANDIDAT'
-              }
-              passengers={moving ? carried : candidate}
-              doors={moving || arriving ? CLOSED_DOORS : (motion.doors?.candidate ?? CLOSED_DOORS)}
+              label={moving ? 'PROCHAIN' : arriving ? 'ARRIVÉE' : 'SUIVANT'}
+              caption={moving ? 'PROCHAIN BLOC · ESTIMATION' : 'BLOC SUIVANT · ESTIMATION'}
+              passengers={moving ? carried : later}
+              doors={moving || arriving ? CLOSED_DOORS : (motion.doors?.later ?? CLOSED_DOORS)}
               moving={moving || arriving}
               handoffProgress={moving ? progress : undefined}
               preparationProgress={

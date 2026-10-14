@@ -86,6 +86,7 @@ export const ethereumBlockHeaderSchema = z
   );
 type EthereumBlock = z.infer<typeof ethereumFullBlockSchema>;
 type EthereumBlockHeader = z.infer<typeof ethereumBlockHeaderSchema>;
+const PENDING_FEE_SAMPLE_LIMIT = 96;
 
 /** EIP-1559 effective price is min(maxFeePerGas, baseFeePerGas + maxPriorityFeePerGas). */
 export function effectiveGasPriceWei(tx: EthereumTransaction, baseFeeWei: bigint): bigint {
@@ -149,6 +150,7 @@ function toBlock(block: EthereumBlock | EthereumBlockHeader): Block {
 }
 
 function toTransactions(block: EthereumBlock, status: Tx['status'], limit: number): Tx[] {
+  if (status === 'confirmed' && block.hash === null) throw new UpstreamError('invalid');
   if (
     block.baseFeePerGas === undefined &&
     block.transactions.some((tx) => tx.maxFeePerGas !== undefined)
@@ -156,13 +158,24 @@ function toTransactions(block: EthereumBlock, status: Tx['status'], limit: numbe
     throw new UpstreamError('invalid');
   }
   const baseFeeWei = BigInt(block.baseFeePerGas ?? '0x0');
-  return block.transactions.slice(0, limit).map((tx) => ({
+  const pricedTransactions = block.transactions.map((tx) => ({
+    tx,
+    priceWei: effectiveGasPriceWei(tx, baseFeeWei),
+  }));
+  // Rank the complete provider block before truncation or rounded display conversion.
+  pricedTransactions.sort(
+    (left, right) =>
+      (left.priceWei > right.priceWei ? -1 : left.priceWei < right.priceWei ? 1 : 0) ||
+      left.tx.hash.localeCompare(right.tx.hash),
+  );
+  return pricedTransactions.slice(0, limit).map(({ tx, priceWei }) => ({
     id: tx.hash.toLowerCase(),
     chain: 'ethereum',
-    feeRate: ratioToNumber(effectiveGasPriceWei(tx, baseFeeWei), 1_000_000_000n),
+    feeRate: ratioToNumber(priceWei, 1_000_000_000n),
     // This is the declared transaction gas limit, not a measured receipt gas usage.
     size: bigintToSafeNumber(BigInt(tx.gas)),
     status,
+    ...(status === 'confirmed' ? { blockHash: block.hash!.toLowerCase() } : {}),
     kind: tx.to === null || tx.input.length > 2 ? 'contract' : 'transfer',
     value: formatEther(BigInt(tx.value)),
   }));
@@ -187,6 +200,9 @@ export async function fetchEthereumSnapshot(
   const latestBlock = toBlock(latest);
   const pendingParsed = ethereumFullBlockSchema.safeParse(pendingResult.value);
   const pending = pendingParsed.success ? pendingParsed.data : null;
+  // Proven inclusions take precedence over an inconsistent provider candidate,
+  // before ranking/truncation so they cannot consume a pending sample slot.
+  const confirmedIds = new Set(latest.transactions.map((tx) => tx.hash.toLowerCase()));
   // Some providers resolve the "pending" tag to the latest confirmed block.
   let hasCandidates =
     pending !== null &&
@@ -195,16 +211,21 @@ export async function fetchEthereumSnapshot(
   let pendingTransactions: Tx[] = [];
   if (hasCandidates && pending !== null) {
     try {
-      pendingTransactions = toTransactions(pending, 'pending', 100);
+      pendingTransactions = toTransactions(
+        {
+          ...pending,
+          transactions: pending.transactions.filter(
+            (tx) => !confirmedIds.has(tx.hash.toLowerCase()),
+          ),
+        },
+        'pending',
+        PENDING_FEE_SAMPLE_LIMIT,
+      );
     } catch {
       // An unusable candidate block cannot invalidate a valid confirmed observation.
       hasCandidates = false;
     }
   }
-  // A transaction proved present in the latest block takes precedence over a
-  // provider's inconsistent pending candidate, including outside the display sample.
-  const confirmedIds = new Set(latest.transactions.map((tx) => tx.hash.toLowerCase()));
-  pendingTransactions = pendingTransactions.filter((tx) => !confirmedIds.has(tx.id));
   const confirmedTransactions = toTransactions(latest, 'confirmed', MAX_TRANSACTIONS);
   const transactions = [...pendingTransactions, ...confirmedTransactions].slice(
     0,
@@ -235,7 +256,7 @@ export async function fetchEthereumSnapshot(
     ...previousResults.filter((block): block is Block => block !== null),
   ];
   const candidateCoverage = hasCandidates
-    ? 'Transactions candidates du bloc pending du fournisseur et transactions confirmées du dernier bloc. Ce bloc candidat ne représente pas le mempool global.'
+    ? 'Jusqu’à 96 transactions candidates sélectionnées aux meilleurs prix de gas effectifs dans le bloc pending du fournisseur, classées avant limitation, et confirmations du dernier bloc. Ce classement du fournisseur ne représente pas un top du mempool global.'
     : 'Transactions confirmées du dernier bloc. Ce fournisseur ne fournit pas de bloc candidat distinct et aucun comptage du mempool global n’est disponible.';
   const partialHistory = blocks.length < previousHeights.length + 1;
   return parsePayload(snapshotSchema, {

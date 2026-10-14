@@ -7,6 +7,10 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 ### Interface
 
 - Occupants du wagon précédent conservés pendant son départ jusqu'à sa sortie de l'écran.
+- Deux projections successives comme dans TxStreet : prochain bloc en haut, bloc suivant en bas, avec priorités réévaluées à l'arrêt.
+- Premier wagon ajusté aux seules inclusions vérifiées du bloc reçu avant son départ ; les voyageurs non inclus restent sur le quai.
+- Hash d'inclusion fourni par les adaptateurs Bitcoin et Ethereum, distinct du simple déplacement animé.
+- Échantillonnage des frais élevés dès la collecte : premier bloc projeté mempool.space pour Bitcoin, bloc `pending` du fournisseur classé avant troncature pour Ethereum ; replis annoncés.
 - Transfert du candidat accéléré et arrivée de son remplaçant depuis le bas de l'écran, avec la même horloge que les voyageurs.
 - Nouvelles transactions arrivant depuis le haut du quai ; wagon observé descendu pour dégager leur arrivée.
 - Portes sans marches, avec personnages dessinés au-dessus pendant leur passage.
@@ -19,7 +23,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Vue immersive qui occupe la fenêtre, deux rues verticales sur ordinateur et deux scènes compactes sur mobile.
 - Commandes communes pour les animations et les modes de données, panneau de détails repliable et sélection rattachée au réseau.
 - Navigation pédagogique et provenance des données accessibles sans menu latéral permanent.
-- Transfert du wagon candidat vers le wagon observé lors d'un nouveau bloc : après l'arrivée, les voyageurs dont la source confirme l'inclusion restent à bord ; les autres encore présents en attente reviennent en file.
+- Départ du premier wagon lors d'un nouveau bloc reçu, promotion du second à sa place et arrivée de son remplaçant depuis le bas.
 - Couleur de carrosserie commune et wagons centrés sur la chaussée verticale pendant leurs déplacements.
 - Quai exclusivement à droite, embarquement par la porte haute à droite et sortie par une porte basse à droite, avec ouverture des portes correspondantes.
 - Voyageurs maintenus à bord pendant le déplacement ; les sorties nécessaires commencent après l'arrivée, avec un retour en file sans traversée de la chaussée.

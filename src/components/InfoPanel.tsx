@@ -179,7 +179,7 @@ export function InfoPanel({
             )}
             {page === 1 && (
               <>
-                <h3>Le dernier départ.</h3>
+                <h3>Le dernier bloc reçu.</h3>
                 <p className="info-hero info-block-number">
                   {latest ? `#${number(latest.height)}` : '—'}
                 </p>
@@ -214,8 +214,8 @@ export function InfoPanel({
                   </a>
                 )}
                 <p className="info-explanation">
-                  Le wagon du haut illustre ce bloc ; celui du bas prépare une sélection pour le
-                  suivant.{' '}
+                  À réception de ce bloc, le premier wagon part avec les inclusions connues de notre
+                  échantillon. Les deux wagons à l’arrêt projettent les blocs suivants.{' '}
                   {demo
                     ? 'Ce départ est une illustration pédagogique.'
                     : 'Observé ne signifie pas finalisé. Le prochain départ n’a pas d’échéance garantie.'}
@@ -225,7 +225,7 @@ export function InfoPanel({
             {page === 2 && (
               <>
                 <h3>À chacun sa place.</h3>
-                <span className="info-projection-label">Projection pédagogique</span>
+                <span className="info-projection-label">Deux projections pédagogiques</span>
                 <div className="info-flow">
                   {(
                     [
@@ -243,8 +243,9 @@ export function InfoPanel({
                   ))}
                 </div>
                 <p className="info-explanation">
-                  Les voyageurs avancent selon leurs frais et la place disponible. Les moins
-                  prioritaires peuvent revenir au quai.
+                  Le premier wagon projette le prochain bloc, le second projette le suivant. Les
+                  voyageurs avancent selon leurs frais et la place disponible ; leur sélection peut
+                  changer tant que les wagons sont à l’arrêt.
                 </p>
                 <p className="info-caution">
                   Ces places sont une illustration, pas des inclusions ou des rejets annoncés par le

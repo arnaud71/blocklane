@@ -6,15 +6,27 @@ export type ChainId = z.infer<typeof chainIdSchema>;
 const finiteNonnegative = z.number().finite().nonnegative();
 const safeNonnegativeInteger = z.number().int().nonnegative().safe();
 
-export const transactionSchema = z.object({
-  id: z.string().min(1).max(128),
-  chain: chainIdSchema,
-  feeRate: finiteNonnegative,
-  size: finiteNonnegative,
-  status: z.enum(['pending', 'confirmed']),
-  kind: z.enum(['transfer', 'contract']),
-  value: z.string().max(100),
-});
+export const transactionSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    chain: chainIdSchema,
+    feeRate: finiteNonnegative,
+    size: finiteNonnegative,
+    status: z.enum(['pending', 'confirmed']),
+    /** Inclusion evidence from the provider, never inferred from an animation. */
+    blockHash: z.string().min(1).max(128).optional(),
+    kind: z.enum(['transfer', 'contract']),
+    value: z.string().max(100),
+  })
+  .superRefine((transaction, context) => {
+    if (transaction.status === 'pending' && transaction.blockHash !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['blockHash'],
+        message: 'Pending transactions cannot carry block inclusion evidence',
+      });
+    }
+  });
 export type Tx = z.infer<typeof transactionSchema>;
 
 export const blockSchema = z
@@ -67,7 +79,9 @@ export const snapshotSchema = z
     }
     if (
       snapshot.mode === 'live' &&
-      (snapshot.transactions.some((tx) => tx.id.startsWith('demo-')) ||
+      (snapshot.transactions.some(
+        (tx) => tx.id.startsWith('demo-') || tx.blockHash?.startsWith('demo-'),
+      ) ||
         snapshot.blocks.some((block) => block.hash.startsWith('demo-')))
     ) {
       context.addIssue({

@@ -309,7 +309,13 @@ export function App() {
                 )}
                 <p className="chain-coverage">
                   {mode === 'demo' ? 'Données fictives' : 'Échantillon limité'} ·{' '}
-                  {current ? Math.min(80, current.transactions.length) : 0} observations
+                  {current
+                    ? Math.min(
+                        80,
+                        current.transactions.filter((tx) => tx.status === 'pending').length,
+                      )
+                    : 0}{' '}
+                  en attente échantillonnées
                   {current?.observedAt
                     ? ` · relevé ${new Date(current.observedAt).toLocaleTimeString('fr-CH')}`
                     : ''}
@@ -345,13 +351,13 @@ export function App() {
                   <Lesson
                     n="02"
                     title="Pourquoi deux wagons ?"
-                    detail="À l’arrivée d’un nouveau bloc, l’embarquement accéléré dure une demi-seconde. Le wagon du haut part avec ses occupants ; celui du bas monte à sa place, puis un nouveau candidat vide arrive du bas. Les transactions encore en attente sortent après l’arrêt et retournent sur le quai. Seule une inclusion annoncée par la source confirme une transaction : l’animation ne change pas son statut."
+                    detail="À l’arrivée d’un nouveau bloc, le premier wagon se prépare pendant au moins une demi-seconde : les transactions dont l’inclusion est vérifiée embarquent rapidement, tandis que les autres retournent sur le quai. Il part ensuite avec les inclusions connues. Le second wagon monte à sa place, puis un nouveau second arrive du bas. Les voyageurs sans statut actualisé restent en attente avec leur dernière observation. Seule la source confirme une inclusion : l’animation ne change pas le statut."
                   >
-                    Le wagon du haut représente le dernier bloc observé : ses voyageurs en montrent
-                    seulement un échantillon. Celui du bas est le candidat, une sélection
-                    illustrative pour le prochain bloc. Ses 12 unités de place expliquent la
-                    priorité ; elles ne représentent pas la capacité réelle et ne garantissent ni
-                    l’ordre ni l’inclusion.
+                    Le wagon du haut projette le prochain bloc ; celui du bas projette le bloc qui
+                    pourrait suivre. Leurs voyageurs viennent de notre échantillon de transactions
+                    en attente et leur sélection évolue selon les frais et la place disponible.
+                    Chaque wagon dispose de 12 unités pédagogiques : elles ne représentent pas la
+                    capacité réelle et ne garantissent ni l’ordre ni l’inclusion.
                   </Lesson>
                   <Lesson n="03" title="Bitcoin : partager un espace limité">
                     Les frais s’expriment en satoshis par vByte. Les mineurs choisissent les

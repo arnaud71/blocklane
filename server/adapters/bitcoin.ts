@@ -7,6 +7,7 @@ import {
   type Tx,
 } from '../../shared/model.js';
 import type { ServerConfig } from '../config.js';
+import { fetchBitcoinTopFeeSample, TOP_FEE_SAMPLE_LIMIT } from './bitcoinTopFees.js';
 import {
   parsePayload,
   ratioToNumber,
@@ -63,22 +64,36 @@ interface BitcoinObservations {
   checkedBlock?: { hash: string; transactionIds: Set<string>; confirmed: Tx[] };
 }
 
+export type BitcoinProjectionReader = (config: ServerConfig) => Promise<Tx[]>;
+
 /** Volatile, bounded evidence owned by one service instance; never shared across providers. */
 export function createBitcoinProvider(
   config: ServerConfig,
   fetcher?: Fetcher,
   now: () => number = Date.now,
+  readProjection?: BitcoinProjectionReader,
 ): () => Promise<Snapshot> {
   const observations: BitcoinObservations = { pending: new Map() };
-  return () => collectBitcoinSnapshot(config, fetcher, now, observations);
+  // An injected HTTP transport must not unexpectedly open a real WebSocket.
+  // Provider fixtures can inject a projection reader separately.
+  const projectionReader =
+    readProjection ?? (fetcher === undefined ? fetchBitcoinTopFeeSample : undefined);
+  return () => collectBitcoinSnapshot(config, fetcher, now, observations, projectionReader);
 }
 
 export async function fetchBitcoinSnapshot(
   config: ServerConfig,
   fetcher?: Fetcher,
   now: () => number = Date.now,
+  readProjection?: BitcoinProjectionReader,
 ): Promise<Snapshot> {
-  return collectBitcoinSnapshot(config, fetcher, now, { pending: new Map() });
+  return collectBitcoinSnapshot(
+    config,
+    fetcher,
+    now,
+    { pending: new Map() },
+    readProjection ?? (fetcher === undefined ? fetchBitcoinTopFeeSample : undefined),
+  );
 }
 
 async function collectBitcoinSnapshot(
@@ -86,42 +101,63 @@ async function collectBitcoinSnapshot(
   fetcher: Fetcher | undefined,
   now: () => number,
   observations: BitcoinObservations,
+  projectionReader: BitcoinProjectionReader | undefined,
 ): Promise<Snapshot> {
-  const paths = ['/v1/blocks', '/mempool/recent', '/mempool', '/v1/fees/recommended'];
-  const [blocksRaw, recentRaw, mempoolRaw, feesRaw] = await Promise.all(
-    paths.map((path) =>
-      requestJson(`${config.bitcoinApiUrl}${path}`, fetcher === undefined ? {} : { fetcher }),
+  const paths = ['/v1/blocks', '/mempool', '/v1/fees/recommended'];
+  const options = fetcher === undefined ? {} : { fetcher };
+  const [[blocksRaw, mempoolRaw, feesRaw], recentResult, projectionResult] = await Promise.all([
+    Promise.all(paths.map((path) => requestJson(`${config.bitcoinApiUrl}${path}`, options))),
+    requestJson(`${config.bitcoinApiUrl}/mempool/recent`, options).then(
+      (value) => ({ value, failed: false }),
+      () => ({ value: null, failed: true }),
     ),
-  );
+    (projectionReader?.(config) ?? Promise.reject(new UpstreamError('network'))).then(
+      (value) => ({ value, failed: false }),
+      () => ({ value: null, failed: true }),
+    ),
+  ]);
   const blocks = parsePayload(bitcoinBlocksSchema, blocksRaw);
-  const recent = parsePayload(bitcoinRecentSchema, recentRaw);
   const mempool = parsePayload(bitcoinMempoolSchema, mempoolRaw);
   const fees = parsePayload(bitcoinFeesSchema, feesRaw);
   const observedAt = now();
-  const transactions: Tx[] = recent.slice(0, MAX_TRANSACTIONS).map((tx) => ({
-    id: tx.txid.toLowerCase(),
-    chain: 'bitcoin',
-    feeRate: ratioToNumber(BigInt(tx.fee), BigInt(tx.vsize)),
-    size: tx.vsize,
-    status: 'pending',
-    kind: 'transfer',
-    value: 'Montant non fourni',
-  }));
+  const recentParsed = bitcoinRecentSchema.safeParse(recentResult.value);
+  const hasTopFeeSample = !projectionResult.failed && projectionResult.value !== null;
+  const hasRecentSample = !recentResult.failed && recentParsed.success;
+  const transactions: Tx[] = hasTopFeeSample
+    ? projectionResult.value!.slice(0, TOP_FEE_SAMPLE_LIMIT)
+    : hasRecentSample
+      ? recentParsed
+          .data!.sort((left, right) => {
+            const leftValue = BigInt(left.fee) * BigInt(right.vsize);
+            const rightValue = BigInt(right.fee) * BigInt(left.vsize);
+            return (
+              (leftValue > rightValue ? -1 : leftValue < rightValue ? 1 : 0) ||
+              left.txid.localeCompare(right.txid)
+            );
+          })
+          .slice(0, TOP_FEE_SAMPLE_LIMIT)
+          .map((tx) => ({
+            id: tx.txid.toLowerCase(),
+            chain: 'bitcoin' as const,
+            feeRate: ratioToNumber(BigInt(tx.fee), BigInt(tx.vsize)),
+            size: tx.vsize,
+            status: 'pending' as const,
+            kind: 'transfer' as const,
+            value: 'Montant non fourni',
+          }))
+      : [];
   for (const [id, tracked] of observations.pending) {
     if (observedAt - tracked.lastSeenAt >= BITCOIN_TRACKED_SAMPLE_TTL_MS) {
       observations.pending.delete(id);
     }
   }
-  // The recent endpoint is an arrival sample, not a complete current mempool.
-  // Older samples are retained only as candidates for an explicit inclusion check.
+  const previouslyTrackedIds = new Set(observations.pending.keys());
+  // Neither the first projected block nor the recent arrivals cover the whole mempool.
+  // Older samples remain only as candidates for an explicit inclusion check.
   for (const transaction of transactions) {
     observations.pending.delete(transaction.id);
     observations.pending.set(transaction.id, { transaction, lastSeenAt: observedAt });
   }
-  while (observations.pending.size > BITCOIN_TRACKED_SAMPLE_LIMIT) {
-    observations.pending.delete(observations.pending.keys().next().value!);
-  }
-
   const latest = blocks[0]!;
   const latestHash = latest.id.toLowerCase();
   if (observations.checkedBlock?.hash !== latestHash) delete observations.checkedBlock;
@@ -153,10 +189,35 @@ async function collectBitcoinSnapshot(
     );
     for (const [id, tracked] of observations.pending) {
       if (!checked.transactionIds.has(id)) continue;
-      confirmed.set(id, { ...tracked.transaction, status: 'confirmed' });
+      confirmed.set(id, {
+        ...tracked.transaction,
+        status: 'confirmed',
+        blockHash: checked.hash,
+      });
       observations.pending.delete(id);
     }
     checked.confirmed = [...confirmed.values()].slice(0, MAX_TRANSACTIONS);
+  }
+  // Verify the previous sample before the new fee ranking can evict its IDs.
+  // The refresh temporarily holds at most 120 retained + 96 new transactions.
+  if (confirmationUnavailable) {
+    // A failed optional inclusion check must not evict the IDs needed for its retry.
+    // Keep their refreshed metadata when they are still sampled; fill remaining
+    // watch slots with new IDs without limiting the current public fee sample.
+    const retained = new Map<string, TrackedTransaction>();
+    for (const id of previouslyTrackedIds) {
+      const tracked = observations.pending.get(id);
+      if (tracked) retained.set(id, tracked);
+    }
+    for (const [id, tracked] of observations.pending) {
+      if (retained.size >= BITCOIN_TRACKED_SAMPLE_LIMIT) break;
+      if (!retained.has(id)) retained.set(id, tracked);
+    }
+    observations.pending = retained;
+  } else {
+    while (observations.pending.size > BITCOIN_TRACKED_SAMPLE_LIMIT) {
+      observations.pending.delete(observations.pending.keys().next().value!);
+    }
   }
   const pending = transactions.filter(
     (transaction) => !checked?.transactionIds.has(transaction.id),
@@ -173,8 +234,7 @@ async function collectBitcoinSnapshot(
     status: 'ok',
     source: config.bitcoinSource,
     observedAt,
-    coverage:
-      'Vue du mempool du fournisseur Bitcoin : échantillon de transactions récentes. Les confirmations affichées correspondent uniquement à des transactions échantillonnées dont l’identifiant est présent dans le dernier bloc observé. Chaque nœud peut observer un mempool différent. Taille des blocs en octets virtuels.',
+    coverage: `${hasTopFeeSample ? 'Échantillon regroupant jusqu’à 96 transactions aux meilleurs frais propres (fee/vsize) parmi le premier bloc projeté du fournisseur Bitcoin, sans inventaire exhaustif ni garantie de sélection par un mineur.' : hasRecentSample ? 'Sélection des meilleurs frais parmi les seules transactions récentes du fournisseur Bitcoin : le classement du premier bloc projeté est indisponible, ce repli ne représente pas un top global.' : 'L’échantillon de transactions en attente est temporairement indisponible ; les blocs et indicateurs du fournisseur restent disponibles.'} Les confirmations affichées sont des inclusions vérifiées dans le dernier bloc observé. Chaque nœud peut observer un mempool différent. Tailles en octets virtuels.`,
     pendingCount: mempool.count,
     feeRate: fees.halfHourFee,
     feeUnit: 'sat/vB',
@@ -187,6 +247,6 @@ async function collectBitcoinSnapshot(
       used: block.weight / 4,
       capacity: 1_000_000,
     })),
-    message: `Indicateur de frais : estimation du fournisseur pour environ 30 minutes, sans garantie de confirmation.${confirmationUnavailable ? ' La vérification des confirmations du dernier bloc est temporairement indisponible ; aucune confirmation n’est déduite de la disparition d’une transaction.' : ''}`,
+    message: `Indicateur de frais : estimation du fournisseur pour environ 30 minutes, sans garantie de confirmation.${hasTopFeeSample ? '' : ' Classement des frais du premier bloc projeté indisponible ; aucun top global n’est annoncé.'}${confirmationUnavailable ? ' La vérification des confirmations du dernier bloc est temporairement indisponible ; aucune confirmation n’est déduite de la disparition d’une transaction.' : ''}`,
   });
 }
