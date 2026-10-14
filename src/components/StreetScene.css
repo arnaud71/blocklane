@@ -1,0 +1,189 @@
+.street-scene {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  background: #071c1c;
+}
+
+.street-scene-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: inherit;
+}
+
+.street-scene-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.street-person {
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.street-person-ring {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.street-person:hover .street-person-ring,
+.street-person:focus-visible .street-person-ring,
+.street-person--selected .street-person-ring {
+  opacity: 1;
+}
+
+.street-person:focus-visible .street-person-hit {
+  fill: #f5d589;
+  fill-opacity: 0.14;
+  stroke: #f5d589;
+  stroke-width: 1.5;
+}
+
+.street-person-body {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.street-scene--demo .street-person--demo .street-person-body {
+  animation: street-traveler var(--traveler-duration, 4.8s) ease-in-out infinite;
+  animation-delay: var(--person-delay, 0s);
+}
+
+.street-scene--demo .street-tram--a {
+  animation: street-departure-a var(--scene-duration, 18s) cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+.street-scene--demo .street-tram--b {
+  animation: street-departure-b var(--scene-duration, 18s) cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+.street-scene:not(.street-scene--demo) .street-person--arrival .street-person-body {
+  animation: street-live-arrival 680ms cubic-bezier(0.2, 0.7, 0.3, 1) 1;
+}
+
+.street-scene:not(.street-scene--demo) .street-tram--observed-departure {
+  animation: street-observed-block var(--observed-duration, 4s) cubic-bezier(0.45, 0, 0.2, 1) 1;
+}
+
+.street-scene--paused *,
+.street-scene--paused *::before,
+.street-scene--paused *::after {
+  animation-play-state: paused !important;
+}
+
+.street-scene--reduced-motion *,
+.street-scene--reduced-motion *::before,
+.street-scene--reduced-motion *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+@keyframes street-traveler {
+  0%,
+  38%,
+  100% {
+    rotate: 0deg;
+    translate: 0 0;
+  }
+  45% {
+    rotate: -2deg;
+    translate: 0 -1px;
+  }
+  52% {
+    rotate: 1deg;
+    translate: 0 0;
+  }
+}
+
+@keyframes street-departure-a {
+  0%,
+  33%,
+  100% {
+    translate: 0 0;
+    opacity: 1;
+  }
+  48% {
+    translate: 1040px -35px;
+    opacity: 0;
+  }
+  48.01% {
+    translate: -700px 24px;
+    opacity: 0;
+  }
+  52% {
+    opacity: 1;
+  }
+  72%,
+  99.99% {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+
+@keyframes street-departure-b {
+  0%,
+  64%,
+  100% {
+    translate: 0 0;
+    opacity: 1;
+  }
+  80% {
+    translate: 660px -23px;
+    opacity: 0;
+  }
+  80.01% {
+    translate: -1200px 42px;
+    opacity: 0;
+  }
+  82% {
+    opacity: 1;
+  }
+  99.99% {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+
+@keyframes street-live-arrival {
+  0% {
+    translate: 0 -7px;
+    opacity: 0;
+  }
+  100% {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+
+@keyframes street-observed-block {
+  0% {
+    translate: 0 0;
+    opacity: 1;
+  }
+  40% {
+    translate: 1040px -35px;
+    opacity: 0;
+  }
+  40.01% {
+    translate: -700px 24px;
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
