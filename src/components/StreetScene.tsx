@@ -11,7 +11,11 @@ import {
 import type { ChainId, Snapshot, Tx } from '../../shared/model';
 import { usePassengerMotion } from '../hooks/usePassengerMotion';
 import type { PassengerPose } from '../lib/passengerMotion';
-import { MAX_WAITING_ARCHIVE_COUNT, WAITING_ARCHIVE_POSITION } from '../lib/passengerMotion';
+import {
+  CANDIDATE_CAPACITY,
+  MAX_WAITING_ARCHIVE_COUNT,
+  WAITING_ARCHIVE_POSITION,
+} from '../lib/passengerMotion';
 import {
   SCENE_WIDTH,
   SCENE_HEIGHT,
@@ -162,6 +166,8 @@ function Wagon({
     ((handoffProgress !== undefined && handoffProgress >= 0.7) ||
       (arrivalProgress !== undefined && arrivalProgress >= 0.7));
   const [captionMain, ...captionDetails] = caption.split(' · ');
+  const transactionCount = new Set(passengers.map((pose) => pose.tx.id)).size;
+  const transactionCountDescription = `${number(transactionCount)} transactions représentées à bord de ce wagon. Ce compteur porte sur l’échantillon animé, pas sur toutes les transactions d’un bloc réel.`;
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
@@ -267,7 +273,6 @@ function Wagon({
         </ReadableText>
         <rect x="13" y="46" width="58" height="140" rx="7" fill="#203d35" />
         <path d="M17 91h50M17 121h50M17 151h50" stroke="#567d6c" strokeWidth="2" />
-        <rect x="9" y="195" width="67" height="9" rx="4" fill="#d1dfc0" />
         <g className="street-wagon-brake-emission">
           <ellipse cx="14" cy="207" rx="12" ry="10" fill="#f33f43" opacity=".2" />
           <ellipse cx="71" cy="207" rx="12" ry="10" fill="#f33f43" opacity=".2" />
@@ -308,6 +313,36 @@ function Wagon({
             mirrored={mirrored}
           />
         ))}
+      </g>
+      <g
+        className="street-wagon-transaction-count"
+        role="img"
+        aria-label={transactionCountDescription}
+        data-transaction-count={transactionCount}
+      >
+        <title>{transactionCountDescription}</title>
+        <rect
+          x={WAGON_X + 9}
+          y={y + 190}
+          width="67"
+          height="14"
+          rx="4"
+          fill="#d1dfc0"
+          stroke="#203d35"
+          strokeWidth=".8"
+        />
+        <ReadableText
+          mirrored={mirrored}
+          x={WAGON_X + WAGON_WIDTH / 2}
+          y={y + 201}
+          fill="#173c30"
+          fontSize={transactionCount >= 1_000 ? 9 : 11}
+          fontWeight="700"
+          textAnchor="middle"
+          aria-hidden="true"
+        >
+          {number(transactionCount)} TX
+        </ReadableText>
       </g>
     </g>
   );
@@ -676,7 +711,7 @@ export function StreetScene({
                 >
                   {preparing
                     ? `Embarquement · ${motion.preparationPassengerCount}`
-                    : `Proch. ${projectionUsed.next}/12 · Suiv. ${projectionUsed.later}/12`}
+                    : `Proch. ${projectionUsed.next}/${CANDIDATE_CAPACITY} · Suiv. ${projectionUsed.later}/${CANDIDATE_CAPACITY}`}
                 </ReadableText>
               </g>
               <Wagon

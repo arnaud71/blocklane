@@ -15,6 +15,7 @@ import {
   isInsideDoorway,
   HISTORY_QUEUE_START,
   PLATFORM_CORRIDOR_X,
+  WAGON_SEAT_COUNT,
   queuePosition,
   wagonSeat,
   type StreetPoint,
@@ -30,7 +31,7 @@ const MAX_DEPARTURE_PASSENGERS =
 export const MAX_WAITING_ARCHIVE_COUNT = 1_000_000;
 export const WAITING_ARCHIVE_POSITION: StreetPoint = { x: 360, y: 686 };
 /** This illustrated budget does not describe either chain's consensus capacity. */
-export const CANDIDATE_CAPACITY = 12;
+export const CANDIDATE_CAPACITY = WAGON_SEAT_COUNT;
 const MAX_STEP_MS = 100;
 const QUEUE_RETRY_MS = 8_000;
 export const HANDOFF_DURATION_MS = 1_200;
@@ -38,7 +39,7 @@ export const PREPARATION_DURATION_MS = 1_000;
 const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v12';
+const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v13';
 
 export type PassengerPhase =
   | 'arriving'

@@ -13,6 +13,8 @@ export const SCENE_HEIGHT = 740;
 export const WAGON_WIDTH = 85;
 export const WAGON_HEIGHT = 217;
 export const WAGON_X = (SCENE_WIDTH - WAGON_WIDTH) / 2;
+/** Illustrated places only; this is not the transaction capacity of a real block. */
+export const WAGON_SEAT_COUNT = 48;
 export const NEXT_WAGON_Y = 175;
 export const LATER_WAGON_Y = 460;
 /** Legacy coordinate names kept for existing callers while their model is migrated. */
@@ -26,6 +28,9 @@ export const EXIT_DOOR_Y = 176;
 export const HISTORY_QUEUE_START = PENDING_SAMPLE_LIMIT * 2;
 const DOOR_INSIDE_X = 270;
 const DOOR_PLATFORM_X = 294;
+const WAGON_SEAT_COLUMNS = 4;
+const WAGON_SEAT_COLUMN_SPACING = 49 / (WAGON_SEAT_COLUMNS - 1);
+const WAGON_SEAT_ROW_SPACING = 9;
 const QUEUE_COLUMNS = 8;
 const QUEUE_COLUMN_SPACING = 90 / (QUEUE_COLUMNS - 1);
 const QUEUE_ROW_SPACING = 14;
@@ -51,10 +56,11 @@ export function exitPlatformPoint(kind: WagonKind): StreetPoint {
 }
 
 export function wagonSeat(kind: WagonKind, index: number): StreetPoint {
-  const slot = Math.max(0, index) % 12;
+  const safeIndex = Number.isFinite(index) ? Math.max(0, Math.floor(index)) : 0;
+  const slot = safeIndex % WAGON_SEAT_COUNT;
   return {
-    x: 205 + (slot % 3) * 24.5,
-    y: wagonOrigin(kind).y + 80 + Math.floor(slot / 3) * 30,
+    x: WAGON_X + 17.5 + (slot % WAGON_SEAT_COLUMNS) * WAGON_SEAT_COLUMN_SPACING,
+    y: wagonOrigin(kind).y + 80 + Math.floor(slot / WAGON_SEAT_COLUMNS) * WAGON_SEAT_ROW_SPACING,
   };
 }
 

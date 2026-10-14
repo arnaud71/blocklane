@@ -1,5 +1,15 @@
 # État des vérifications — 14 octobre 2026
 
+## Capacité de 48 unités et compteur arrière des wagons — non validé
+
+Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire. Aucun test n'est écrit ni exécuté pour cette modification ; lecture statique, formatage et aperçu normal de remise uniquement, sans validation du comportement.
+
+Le budget de chaque projection passe de 12 à **48 unités illustratives**, partagé avec les 48 emplacements par la constante de géométrie `WAGON_SEAT_COUNT`. La grille comprend quatre colonnes et douze rangées à pas de 9, de `y=80` à `y=179`, sans agrandir le wagon. Les transactions utilisent toujours une à trois unités : la projection peut représenter jusqu'à 48 voyageurs d'une unité, ou moins selon leurs besoins illustratifs. Les inclusions vérifiées d'un départ peuvent dépasser ces places et se superposer ; les bornes de résidents, départs, archives, données et appels sont conservées.
+
+La plaque arrière au-dessus des feux rouges affiche les identifiants uniques effectivement représentés à bord du wagon. Elle suit les cohortes embarquées, en départ et en promotion, sans modifier les données. Les textes restent lisibles dans le miroir Bitcoin ; zéro et grands effectifs sont affichés, avec une infobulle et un libellé accessible distinguant l'échantillon du total réel du bloc et des unités de ressource.
+
+À la reprise autorisée, adapter les tests et fixtures fondés sur l'ancien budget de 12 unités. Couvrir les distributions de coûts de une à trois unités, les priorités, les deux projections, les cohortes d'inclusions au-delà de 48 et la conservation des bornes. Examiner les passages des portes, les mouvements, les superpositions, les miroirs et la lisibilité des compteurs pendant embarquement, départ, promotion, pause et mouvements réduits. Aucun de ces contrôles n'est exécuté pendant la suspension. Les résultats historiques ci-dessous ne couvrent pas cette modification.
+
 ## File collective du fournisseur en bas des rues — non validé
 
 **Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour ce changement ; aucun contrôle ni appel API réel de validation n'est ajouté. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas ce nouveau bandeau.

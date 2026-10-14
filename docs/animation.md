@@ -27,7 +27,7 @@ stateDiagram-v2
     Groupe_attente --> Preparation: inclusion vérifiée d'un identifiant encore suivi
 ```
 
-Les transactions en attente sont classées selon les frais observés, puis l'identifiant pour stabiliser les égalités. Chaque projection possède douze unités **visuelles** : les plus prioritaires remplissent le premier wagon, les suivantes le second, puis la file. Un voyageur occupe une à trois unités selon ses besoins de ressources : référence de 400 vBytes pour Bitcoin et 100 000 unités de gas pour Ethereum. Le tarif de référence de l'instantané sert de repère pédagogique. Ces règles simplifiées n'intègrent pas les dépendances Bitcoin, les nonces Ethereum, les transactions privées, la sélection des producteurs ni toutes les contraintes du protocole.
+Les transactions en attente sont classées selon les frais observés, puis l'identifiant pour stabiliser les égalités. Chaque projection possède **48 unités visuelles**, contre 12 auparavant : les plus prioritaires remplissent le premier wagon, les suivantes le second, puis la file. Un voyageur occupe une à trois unités selon ses besoins de ressources : référence de 400 vBytes pour Bitcoin et 100 000 unités de gas pour Ethereum. La projection peut donc embarquer jusqu'à 48 voyageurs d'une unité, ou moins pour les transactions de deux ou trois unités. Les 48 emplacements sont répartis sur quatre colonnes et douze rangées dans un wagon de taille inchangée ; les personnages peuvent se superposer. Le tarif de référence de l'instantané sert de repère pédagogique. Ces règles simplifiées n'intègrent pas les dépendances Bitcoin, les nonces Ethereum, les transactions privées, la sélection des producteurs ni toutes les contraintes du protocole.
 
 Un voyageur moins prioritaire revient au quai et peut réessayer. Un nouvel instantané peut déplacer un voyageur précédemment embarqué si un meilleur candidat occupe le budget illustratif, lorsque le wagon est à l'arrêt. Aucun de ces mouvements n'annonce un rejet du réseau.
 
@@ -36,6 +36,8 @@ L'échantillonnage privilégie les frais élevés dès la collecte. Bitcoin lit 
 ## Quai et portes
 
 Chaque rue est verticale. Les wagons partagent une couleur de carrosserie ; le nom du réseau et ses repères orange ou violet identifient la chaîne. Leur position horizontale reste au centre de la chaussée, y compris lorsque le second rejoint la place du premier.
+
+Une plaque à l'arrière de chaque wagon, au-dessus des feux rouges, affiche `N TX`. Elle compte les identifiants uniques des personnages effectivement représentés à bord, y compris ceux encore dans le passage de la porte. Le compteur suit le wagon pendant le départ et la promotion, avec le texte lisible côté Bitcoin comme côté Ethereum. Il ne donne ni le total d'un bloc réel, ni l'occupation en unités de ressource ; cette distinction figure dans son infobulle et son libellé accessible.
 
 Les voyageurs qui marchent restent sur les quais extérieurs : à gauche de la chaussée Bitcoin et à droite de celle d'Ethereum. L'entrée utilise la porte haute du côté du quai ; la sortie utilise une autre porte, en bas du même côté. Chaque porte s'ouvre pour le passage correspondant. Les trajets d'approche, de sortie et de retour en file ne traversent pas la route. Seul le passage par la porte rejoint l'intérieur du wagon.
 
@@ -77,7 +79,7 @@ Une inclusion vérifiée réserve l'observation encore suivie pour son bloc, san
 
 Si une observation suivie revient simplement dans l'échantillon en attente, son personnage est également réutilisé depuis le groupe. Les observations déjà passées dans le compteur sans suivi ne peuvent plus être rapprochées individuellement d'un bloc. Le total du groupe n'est donc ni un nombre de transactions uniques, ni un nombre de transactions encore en attente sur le réseau. Il est plafonné à un million, puis affiché comme une borne minimale.
 
-Les inclusions connues qui embarquent pour le départ réel peuvent se superposer sur les douze emplacements dessinés. La taille de cet échantillon reste bornée et ne représente pas tout le bloc. Les budgets des deux projections restent des règles pédagogiques indépendantes de la capacité du réseau.
+Les inclusions connues qui embarquent pour le départ réel peuvent se superposer sur les 48 emplacements dessinés et dépasser le budget des projections. La taille de cet échantillon reste bornée et ne représente pas tout le bloc. Les budgets des deux projections restent des règles pédagogiques indépendantes de la capacité du réseau.
 
 Pour chaque chaîne, le serveur conserve au plus **2 048 identifiants observés pendant 30 minutes** et vérifie les blocs nécessaires au suivi. Il conserve un journal roulant de **16 blocs et 2 048 identifiants d'inclusion au total**, séparé de l'échantillon courant de 264 transactions et des trois derniers blocs affichés. Jusqu'à huit blocs peuvent être rattrapés par collecte ; les lacunes non vérifiées restent à réessayer. Cette mémoire volatile aide à retrouver les inclusions, sans représenter tout le réseau ou un historique exhaustif. Une vérification indisponible ne provoque aucune confirmation déduite. Une réorganisation peut invalider une preuve d'inclusion ; inclusion observée et finalité restent distinctes.
 
