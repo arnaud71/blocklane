@@ -16,6 +16,8 @@ TxStreet fournit la référence de métaphore. Son dépôt décrit Vue, Bulma, P
 
 Une belle scène ne nécessite pas une transaction visible pour chaque transaction du réseau. Le serveur limite les données et la scène regroupe les voyageurs. Le design privilégie la composition, les couleurs, les détails vectoriels et des mouvements sobres. Le texte et les statistiques restent utilisables lorsque les animations sont en pause ou réduites.
 
+Les personnages absents du nouvel échantillon restent en attente visuelle sur le quai avec leur dernière observation, sans être déclarés encore en attente dans le réseau. Le moteur conserve au plus 160 personnages résidents et 80 admissions différées par chaîne. Jusqu'à 80 anciennes observations immobiles restent individualisées ; les suivantes rejoignent une représentation collective avec un compteur borné, sans liste d'identifiants supplémentaire. Ce compteur représente des observations regroupées, sans suivi individuel ni décompte de transactions uniques. Cette mémoire de présentation reste côté interface et n'ajoute aucun service de stockage.
+
 ## Flux et responsabilités
 
 ```mermaid

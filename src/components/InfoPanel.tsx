@@ -214,6 +214,8 @@ export function InfoPanel({
                   </a>
                 )}
                 <p className="info-explanation">
+                  Le wagon du haut illustre ce bloc ; celui du bas prépare une sélection pour le
+                  suivant.{' '}
                   {demo
                     ? 'Ce départ est une illustration pédagogique.'
                     : 'Observé ne signifie pas finalisé. Le prochain départ n’a pas d’échéance garantie.'}

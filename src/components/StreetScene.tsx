@@ -2,6 +2,7 @@ import { memo, useEffect, useId, useMemo, useState, type CSSProperties } from 'r
 import type { Snapshot, Tx } from '../../shared/model';
 import { usePassengerMotion } from '../hooks/usePassengerMotion';
 import type { PassengerPose } from '../lib/passengerMotion';
+import { MAX_WAITING_ARCHIVE_COUNT, WAITING_ARCHIVE_POSITION } from '../lib/passengerMotion';
 import {
   SCENE_WIDTH,
   SCENE_HEIGHT,
@@ -172,6 +173,45 @@ function Wagon({
             interactive={!historical}
           />
         ))}
+      </g>
+    </g>
+  );
+}
+
+function WaitingArchive({ count }: { count: number }) {
+  if (count === 0) return null;
+  const label = (count >= MAX_WAITING_ARCHIVE_COUNT ? '≥ ' : '') + number(count);
+  return (
+    <g
+      role="img"
+      aria-label={`${label} observations anciennes regroupées sur le quai. Suivi individuel et statut actuel indisponibles.`}
+      data-waiting-archive-count={count}
+    >
+      <title>{label} observations anciennes regroupées. Leur statut actuel n’est plus suivi.</title>
+      <rect x="318" y="655" width="130" height="49" rx="6" fill="#153d2e" stroke="#789884" />
+      <g aria-hidden="true">
+        {[-12, -6, 0].map((offset) => (
+          <g
+            key={offset}
+            transform={`translate(${WAITING_ARCHIVE_POSITION.x + offset} ${WAITING_ARCHIVE_POSITION.y})`}
+          >
+            <ellipse cy="1" rx="7" ry="3" fill="#0b2925" opacity=".55" />
+            <path d="M-3-7-4 0M3-7 4 0" stroke="#183d36" strokeWidth="3" />
+            <path d="M-4-17Q0-19 4-17L6-7H-6Z" fill="#afc3a3" />
+            <path d="M-5-15-7-8M5-15 7-9" stroke="#d2ad84" strokeWidth="2" />
+            <circle cy="-22" r="4.6" fill="#d2ad84" />
+            <path d="M-4-24q4-6 8 0Z" fill="#344d39" />
+          </g>
+        ))}
+        <text x="405" y="668" textAnchor="middle" fill="#d3dec0" fontSize="9">
+          Observations
+        </text>
+        <text x="405" y="680" textAnchor="middle" fill="#d3dec0" fontSize="9">
+          regroupées
+        </text>
+        <text x="405" y="696" textAnchor="middle" fill="#d3dec0" fontSize="11">
+          {label}
+        </text>
       </g>
     </g>
   );
@@ -382,6 +422,7 @@ export function StreetScene({
               onSelect={onSelect}
               feeColor={feeColor}
             />
+            <WaitingArchive count={motion.waitingArchiveCount ?? 0} />
             {pedestrians.map((pose) => (
               <Passenger
                 key={pose.tx.id}

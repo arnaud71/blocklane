@@ -15,6 +15,9 @@ import {
 export const MAX_PASSENGERS = 80;
 /** A rotating sample may coexist with its previous travellers until they leave the scene. */
 export const MAX_RESIDENT_PASSENGERS = MAX_PASSENGERS * 2;
+const MAX_INDIVIDUAL_HISTORY = MAX_PASSENGERS;
+export const MAX_WAITING_ARCHIVE_COUNT = 1_000_000;
+export const WAITING_ARCHIVE_POSITION: StreetPoint = { x: 360, y: 686 };
 /** A deliberately small illustrated budget, never a real network block capacity. */
 export const CANDIDATE_CAPACITY = 12;
 const MAX_STEP_MS = 100;
@@ -24,11 +27,12 @@ export const HANDOFF_DURATION_MS = 1_200;
 export const PREPARATION_DURATION_MS = 500;
 /** The next empty candidate comes from below after the previous one stops. */
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'right-platform-preparation-v5';
+const GEOMETRY_VERSION = 'right-platform-waiting-v6';
 
 export type PassengerPhase =
   | 'arriving'
   | 'queue'
+  | 'parked'
   | 'walking'
   | 'boarding'
   | 'preparing'
@@ -59,6 +63,8 @@ interface Passenger {
   handoffPhase?: PassengerPhase;
   /** Previous-block occupants wait in their stationary vehicle until the preparation ends. */
   waitingForDeparture?: boolean;
+  /** An old observation joins the collective waiting illustration before its individual ID is released. */
+  joiningArchive?: boolean;
   presentInSample: boolean;
 }
 
@@ -82,6 +88,8 @@ export interface PassengerMotionState {
   passengers: Passenger[];
   /** Latest-source arrivals wait here when the visible resident limit is reached. */
   pendingAdmissions: PassengerAdmission[];
+  /** Historical sample observations, not a count of unique pending network transactions. */
+  waitingArchiveCount: number;
   /** Previous-block occupants travel with the departing vehicle, outside current-source state. */
   departingPassengers: PassengerPose[];
 }
@@ -120,6 +128,7 @@ export interface PassengerFrame {
   elapsedMs: number;
   preparationProgress: number | null;
   preparationPassengerCount: number;
+  waitingArchiveCount: number;
   handoffProgress: number | null;
   candidateArrivalProgress: number | null;
   doors: Record<WagonKind, { entry: boolean; exit: boolean }>;
@@ -145,6 +154,7 @@ function stableHash(value: string): number {
 }
 
 function destination(passenger: Passenger): PassengerDestination {
+  if (passenger.phase === 'parked' || passenger.joiningArchive) return 'queue';
   return passenger.tx.status === 'confirmed'
     ? 'observed'
     : passenger.selectedForCandidate
@@ -284,13 +294,12 @@ function startReturning(passenger: Passenger, now: number, from: StreetPoint): P
   };
 }
 
-/** Retained observations leave by walking off the top of the right platform, never by fading. */
-function startRetiring(passenger: Passenger, now: number, from: StreetPoint): Passenger {
-  const path = platformPath(from, { x: PLATFORM_CORRIDOR_X, y: -44 });
+function parkAtQueue(passenger: Passenger, now: number): Passenger {
   return {
-    ...startPhase(passenger, 'retiring', now, path, pathDuration(path)),
+    ...startPhase(passenger, 'parked', now, [queuePosition(passenger.queueIndex)], 0),
     wagon: null,
     selectedForCandidate: false,
+    joiningArchive: false,
   };
 }
 
@@ -369,8 +378,14 @@ function waitForDeparture(passenger: Passenger, now: number): Passenger {
   };
 }
 
-function retirePassenger(passenger: Passenger, now: number): Passenger {
-  if (passenger.inHandoff || passenger.phase === 'retiring') return passenger;
+function waitOutsideSample(passenger: Passenger, now: number): Passenger {
+  if (
+    passenger.inHandoff ||
+    passenger.waitingForDeparture ||
+    ['parked', 'arriving', 'returning'].includes(passenger.phase)
+  ) {
+    return passenger;
+  }
   const point = passengerPosition(passenger, now);
   if (
     passenger.wagon &&
@@ -379,7 +394,55 @@ function retirePassenger(passenger: Passenger, now: number): Passenger {
   ) {
     return passenger.phase === 'exiting' ? passenger : startExit(passenger, now, point);
   }
-  return startRetiring(passenger, now, point);
+  if (passenger.phase === 'queue') return parkAtQueue(passenger, now);
+  return startReturning(passenger, now, point);
+}
+
+/** Merge only after an old, stationary queue traveller has walked into the visible waiting group. */
+function groupWaitingObservations(
+  passengers: Passenger[],
+  waitingArchiveCount: number,
+  now: number,
+) {
+  const merging = passengers.filter(
+    (passenger) =>
+      !passenger.presentInSample && passenger.phase === 'parked' && passenger.joiningArchive,
+  );
+  const mergedIds = new Set(merging.map((passenger) => passenger.tx.id));
+  const residents = passengers.filter((passenger) => !mergedIds.has(passenger.tx.id));
+  const parked = residents
+    .filter(
+      (passenger) =>
+        !passenger.presentInSample &&
+        passenger.phase === 'parked' &&
+        !passenger.wagon &&
+        !passenger.inHandoff &&
+        !passenger.waitingForDeparture,
+    )
+    .sort((left, right) => left.phaseStartedAt - right.phaseStartedAt);
+  const individualHistory = residents.filter(
+    (passenger) => !passenger.presentInSample && !passenger.waitingForDeparture,
+  );
+  const alreadyJoining = individualHistory.filter((passenger) => passenger.joiningArchive).length;
+  const joiningIds = new Set(
+    parked
+      .slice(0, Math.max(0, individualHistory.length - MAX_INDIVIDUAL_HISTORY - alreadyJoining))
+      .map((passenger) => passenger.tx.id),
+  );
+  return {
+    waitingArchiveCount: Math.min(
+      MAX_WAITING_ARCHIVE_COUNT,
+      Math.max(0, waitingArchiveCount) + merging.length,
+    ),
+    passengers: residents.map((passenger) => {
+      if (!joiningIds.has(passenger.tx.id)) return passenger;
+      const path = platformPath(passengerPosition(passenger, now), WAITING_ARCHIVE_POSITION);
+      return {
+        ...startPhase(passenger, 'returning', now, path, pathDuration(path)),
+        joiningArchive: true,
+      };
+    }),
+  };
 }
 
 function admitPassengers(
@@ -446,6 +509,7 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
     candidateArrivalStartedAt: 0,
     departingPassengers: [],
     pendingAdmissions: [],
+    waitingArchiveCount: 0,
     feeThreshold: plan.feeThreshold,
     candidateCount: plan.accepted.size,
     candidateUsed: plan.used,
@@ -541,6 +605,7 @@ export function reconcilePassengerMotion(
       selectedForCandidate: accepted,
       reason: plan.reasons.get(tx.id) ?? 'capacity',
       presentInSample: true,
+      joiningArchive: false,
     };
     if (existing.inHandoff) return [updated];
     if (preparationStartedAt !== null && joinsPreparation(updated, state.elapsedMs)) {
@@ -548,6 +613,20 @@ export function reconcilePassengerMotion(
     }
     if (existing.phase === 'arriving') return [updated];
     const currentPosition = passengerPosition(existing, state.elapsedMs);
+    if (existing.phase === 'parked' || existing.joiningArchive) {
+      if (tx.status === 'confirmed' || accepted) {
+        return [startWalking(updated, state.elapsedMs, currentPosition)];
+      }
+      if (existing.joiningArchive) {
+        return [startReturning(updated, state.elapsedMs, currentPosition)];
+      }
+      return [
+        {
+          ...startPhase(updated, 'queue', state.elapsedMs, [currentPosition], 0),
+          retryAt: state.elapsedMs + QUEUE_RETRY_MS,
+        },
+      ];
+    }
     if (existing.phase === 'retiring') {
       return [startReturning(updated, state.elapsedMs, currentPosition)];
     }
@@ -599,11 +678,16 @@ export function reconcilePassengerMotion(
     passengers.push(
       preparationStartedAt !== null && joinsPreparation(retained, state.elapsedMs)
         ? preparePassenger(retained, state.elapsedMs, preparationStartedAt)
-        : retirePassenger(retained, state.elapsedMs),
+        : waitOutsideSample(retained, state.elapsedMs),
     );
   }
-  const admitted = admitPassengers(
+  const grouped = groupWaitingObservations(
     passengers,
+    state.waitingArchiveCount ?? 0,
+    state.elapsedMs,
+  );
+  const admitted = admitPassengers(
+    grouped.passengers,
     admissions,
     state.elapsedMs,
     new Set([...departingIds, ...heldIds]),
@@ -623,6 +707,7 @@ export function reconcilePassengerMotion(
       preparationStartedAt !== null ? null : (state.candidateArrivalStartedAt ?? null),
     departingPassengers,
     feeThreshold: plan.feeThreshold,
+    waitingArchiveCount: grouped.waitingArchiveCount,
     ...candidateOccupancy(admitted.passengers),
     ...admitted,
   };
@@ -710,6 +795,8 @@ function advancePassenger(
     return { ...passenger, phaseStartedAt: passenger.phaseStartedAt + now - previousTime };
   }
   const currentPosition = passengerPosition(passenger, now);
+  if (passenger.phase === 'parked') return passenger;
+  if (passenger.phase === 'retiring') return startReturning(passenger, now, currentPosition);
   if (passenger.inHandoff) {
     if (now - passenger.phaseStartedAt < HANDOFF_DURATION_MS) return passenger;
     const landedPoint = passengerPosition(passenger, now);
@@ -734,6 +821,7 @@ function advancePassenger(
   }
   if (passenger.phase === 'arriving') {
     if (now - passenger.phaseStartedAt < passenger.durationMs) return passenger;
+    if (!passenger.presentInSample) return parkAtQueue(passenger, now);
     return {
       ...startPhase(passenger, 'queue', now, [queuePosition(passenger.queueIndex)], 0),
       wagon: null,
@@ -741,6 +829,7 @@ function advancePassenger(
     };
   }
   if (passenger.phase === 'queue') {
+    if (!passenger.presentInSample) return parkAtQueue(passenger, now);
     if (moving || now < passenger.retryAt) return passenger;
     return startWalking(passenger, now, currentPosition);
   }
@@ -772,11 +861,18 @@ function advancePassenger(
   }
   if (passenger.phase === 'exiting') {
     if (moving) return passenger;
-    if (!passenger.presentInSample) return startRetiring(passenger, now, currentPosition);
     return startReturning(passenger, now, currentPosition);
   }
   if (passenger.phase === 'returning') {
-    if (!passenger.presentInSample) return startRetiring(passenger, now, currentPosition);
+    if (!passenger.presentInSample) {
+      if (passenger.joiningArchive) {
+        return {
+          ...startPhase(passenger, 'parked', now, [WAITING_ARCHIVE_POSITION], 0),
+          wagon: null,
+        };
+      }
+      return parkAtQueue(passenger, now);
+    }
     return {
       ...startPhase(passenger, 'queue', now, [queuePosition(passenger.queueIndex)], 0),
       wagon: null,
@@ -828,24 +924,21 @@ export function advancePassengerMotion(
     arrivalStartedAt !== null && elapsedMs - arrivalStartedAt < CANDIDATE_ARRIVAL_DURATION_MS
       ? arrivalStartedAt
       : null;
-  const residents = workingState.passengers
-    .map((passenger) =>
-      advancePassenger(
-        passenger,
-        elapsedMs,
-        state.elapsedMs,
-        handoffMoving,
-        candidateArrivalStartedAt !== null,
-      ),
-    )
-    .filter((passenger) => {
-      if (passenger.phase !== 'retiring') return true;
-      // Cleanup only after the whole silhouette has walked beyond the visible top edge.
-      return (
-        elapsedMs - passenger.phaseStartedAt < passenger.durationMs ||
-        passengerPosition(passenger, elapsedMs).y > -40
-      );
-    });
+  const advanced = workingState.passengers.map((passenger) =>
+    advancePassenger(
+      passenger,
+      elapsedMs,
+      state.elapsedMs,
+      handoffMoving,
+      candidateArrivalStartedAt !== null,
+    ),
+  );
+  const grouped = groupWaitingObservations(
+    advanced,
+    workingState.waitingArchiveCount ?? 0,
+    elapsedMs,
+  );
+  const residents = grouped.passengers;
   const blockedIds = new Set([
     ...(handoffMoving ? (workingState.departingPassengers ?? []).map((pose) => pose.tx.id) : []),
     ...residents
@@ -872,6 +965,7 @@ export function advancePassengerMotion(
     handoffStartedAt: handoffMoving ? workingState.handoffStartedAt : null,
     candidateArrivalStartedAt,
     departingPassengers: handoffMoving ? (workingState.departingPassengers ?? []) : [],
+    waitingArchiveCount: grouped.waitingArchiveCount,
     ...candidateOccupancy(admitted.passengers),
     ...admitted,
   };
@@ -883,6 +977,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
   const counts: Record<PassengerPhase, number> = {
     arriving: 0,
     queue: 0,
+    parked: 0,
     walking: 0,
     boarding: 0,
     preparing: 0,
@@ -898,6 +993,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
   };
   const passengers = state.passengers.map((passenger): PassengerPose => {
     if (passenger.presentInSample) counts[passenger.phase] += 1;
+    else if (passenger.phase === 'parked') counts.parked += 1;
     else counts.retiring += 1;
     const point = passengerPosition(passenger, state.elapsedMs);
     const queue = queuePosition(passenger.queueIndex);
@@ -965,6 +1061,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
     preparationPassengerCount: state.passengers.filter(
       (passenger) => passenger.phase === 'preparing',
     ).length,
+    waitingArchiveCount: state.waitingArchiveCount ?? 0,
     handoffProgress:
       state.handoffStartedAt === null
         ? null

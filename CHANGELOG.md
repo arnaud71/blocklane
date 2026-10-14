@@ -11,7 +11,9 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Nouvelles transactions arrivant depuis le haut du quai ; wagon observé descendu pour dégager leur arrivée.
 - Portes sans marches, avec personnages dessinés au-dessus pendant leur passage.
 - Préparation rapide des voyageurs concernés pendant une demi-seconde avant le départ du bloc.
-- Voyageurs conservés lors des changements d'échantillon, avec superposition des occupants du wagon observé et sortie visible avant recyclage hors écran.
+- Voyageurs hors échantillon maintenus en attente sur le quai avec leur dernière observation ; regroupement visible des plus anciennes observations pour borner la mémoire.
+- Wagon observé encore descendu pour dégager l'arrivée des nouvelles transactions.
+- Explication « Pourquoi deux wagons ? » dans la rubrique Comprendre et rappel dans le panneau du dernier bloc.
 - Disposition adaptée aux grands écrans, aux ordinateurs portables et aux petits écrans, avec barres plus compactes pour libérer la scène.
 - Bitcoin et Ethereum visibles simultanément, avec des sources et des états de connexion indépendants.
 - Vue immersive qui occupe la fenêtre, deux rues verticales sur ordinateur et deux scènes compactes sur mobile.

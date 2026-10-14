@@ -342,10 +342,16 @@ export function App() {
                     indique ses frais relatifs et la taille de sa tête illustre ses besoins en
                     espace ou en gas. La ville ne montre pas toutes les transactions.
                   </Lesson>
-                  <Lesson n="02" title="Les transports représentent des blocs">
-                    Un bloc rassemble des transactions. En direct, les transports illustrent des
-                    blocs observés ; ils ne prédisent pas le prochain bloc. En simulation, les
-                    départs sont volontairement animés.
+                  <Lesson
+                    n="02"
+                    title="Pourquoi deux wagons ?"
+                    detail="À l’arrivée d’un nouveau bloc, l’embarquement accéléré dure une demi-seconde. Le wagon du haut part avec ses occupants ; celui du bas monte à sa place, puis un nouveau candidat vide arrive du bas. Les transactions encore en attente sortent après l’arrêt et retournent sur le quai. Seule une inclusion annoncée par la source confirme une transaction : l’animation ne change pas son statut."
+                  >
+                    Le wagon du haut représente le dernier bloc observé : ses voyageurs en montrent
+                    seulement un échantillon. Celui du bas est le candidat, une sélection
+                    illustrative pour le prochain bloc. Ses 12 unités de place expliquent la
+                    priorité ; elles ne représentent pas la capacité réelle et ne garantissent ni
+                    l’ordre ni l’inclusion.
                   </Lesson>
                   <Lesson n="03" title="Bitcoin : partager un espace limité">
                     Les frais s’expriment en satoshis par vByte. Les mineurs choisissent les
@@ -533,12 +539,23 @@ export function App() {
   );
 }
 
-function Lesson({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
+function Lesson({
+  n,
+  title,
+  children,
+  detail,
+}: {
+  n: string;
+  title: string;
+  children: React.ReactNode;
+  detail?: string;
+}) {
   return (
     <article>
       <span className="lesson-number">{n}</span>
       <h3>{title}</h3>
       <p>{children}</p>
+      {detail && <p>{detail}</p>}
     </article>
   );
 }

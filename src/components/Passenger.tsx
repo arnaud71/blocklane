@@ -13,6 +13,7 @@ function stableHash(value: string): number {
 const phaseLabels = {
   arriving: 'arrivée depuis le haut du quai',
   queue: 'sur le quai',
+  parked: 'en attente visuelle sur le quai, statut actuel non suivi',
   walking: 'en marche',
   boarding: 'embarquement illustré',
   preparing: 'embarquement rapide avant le départ',
@@ -148,7 +149,15 @@ export function Passenger({
         {tx.kind === 'contract' && (
           <rect x="5" y="-12" width="5" height="7" rx="1" fill="#e4c780" />
         )}
-        {tx.status === 'confirmed' && <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />}
+        {pose.sourceObserved && tx.status === 'confirmed' && (
+          <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />
+        )}
+        {!pose.sourceObserved && (
+          <g>
+            <circle cx="10" cy="-27" r="3.2" fill="#365048" stroke="#c7d3c5" />
+            <path d="M10-29v2l1.5 1" fill="none" stroke="#c7d3c5" strokeWidth=".8" />
+          </g>
+        )}
         {(pose.phase === 'exiting' || pose.phase === 'returning') && (
           <path d="m-4-38-4 3 4 3m-4-3h10" fill="none" stroke="#f0bd7b" strokeWidth="1.5" />
         )}

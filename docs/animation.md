@@ -19,6 +19,10 @@ stateDiagram-v2
     Transfert --> Sortie: arrivée et transaction encore en attente
     Sortie --> Retour
     Retour --> Quai
+    Quai --> Attente_observation: identifiant absent du nouvel échantillon
+    Retour --> Attente_observation: dernière observation conservée
+    Attente_observation --> Quai: observation de nouveau disponible
+    Attente_observation --> Groupe_attente: regroupement des plus anciennes observations
 ```
 
 Les transactions sont classées selon les frais observés, puis l'identifiant pour stabiliser les égalités. Le candidat possède douze unités **visuelles**. Un voyageur occupe une à trois unités selon ses besoins de ressources : référence de 400 vBytes pour Bitcoin et 100 000 unités de gas pour Ethereum. Le tarif de référence de l'instantané sert de repère pédagogique. Ces règles simplifiées n'intègrent pas les dépendances Bitcoin, les nonces Ethereum, les transactions privées, la sélection des producteurs ni toutes les contraintes du protocole.
@@ -33,7 +37,7 @@ Les voyageurs qui marchent restent sur le quai à droite de la chaussée. L'entr
 
 Les portes sont sans marches. Les personnages sont dessinés au-dessus des portes pendant leur passage, pour que leur silhouette reste visible.
 
-Les nouvelles transactions entrent depuis le haut du quai, avec des arrivées décalées, puis rejoignent leur place dans la file. Le wagon observé commence à la coordonnée verticale 130 pour dégager cette zone. Les petites flèches au-dessus des voyageurs indiquent une sortie ou un retour en file illustré ; elles n'indiquent pas une annulation de transaction.
+Les nouvelles transactions entrent depuis le haut du quai, avec des arrivées décalées, puis rejoignent leur place dans la file. Le wagon observé commence à la coordonnée verticale 175 pour dégager cette zone. Les petites flèches au-dessus des voyageurs indiquent une sortie ou un retour en file illustré ; elles n'indiquent pas une annulation de transaction.
 
 La géométrie de la rue, des wagons, des portes et du quai est partagée dans `src/lib/streetGeometry.ts` entre le moteur de mouvement et le dessin SVG. Cette référence commune permet aux trajets de rejoindre les portes effectivement affichées.
 
@@ -45,7 +49,9 @@ Seule la source peut fournir le statut `confirmed`. Un voyageur encore en attent
 
 Le wagon du haut représente le bloc observé ; celui du bas représente le candidat illustratif. Lorsqu'un nouveau bloc est observé en direct, le candidat rejoint la position du wagon observé. Les voyageurs précédemment embarqués restent dans ce transfert, quelle que soit leur priorité actuelle. Après l'arrivée, ceux dont la source confirme l'inclusion restent à bord. Ceux dont la source fournit encore le statut en attente sortent par la porte basse à droite, reviennent en file et peuvent rejoindre le candidat suivant. Le nouveau candidat entre depuis le bas au terme du transfert.
 
-Une transaction absente du nouvel échantillon conserve sa dernière observation et son personnage. Celui-ci reste à bord pendant un déplacement, puis quitte le wagon à l'arrêt par la porte basse et remonte le quai droit jusqu'à sortir entièrement de la scène. Le moteur recycle le personnage seulement hors écran. Son absence ne modifie jamais son statut réseau ; son libellé précise qu'il s'agit d'une observation précédente, et les détails courants ne s'ouvrent plus pour cet identifiant.
+Une transaction absente du nouvel échantillon conserve sa dernière observation et son personnage. Celui-ci reste à bord pendant un déplacement, puis quitte le wagon à l'arrêt par la porte basse et revient dans la file du quai droit. Il y reste en attente visuelle, sans remonter vers la sortie de la scène ni tenter un nouvel embarquement. Son absence ne modifie jamais son statut réseau ; son libellé et une petite horloge précisent qu'il s'agit d'une observation précédente. Les détails courants ne s'ouvrent plus pour cet identifiant. Si la source retrouve une observation encore individualisée, le moteur réutilise son personnage et reprend le parcours approprié.
+
+Jusqu'à 80 anciennes observations peuvent rester individualisées en attente. Au-delà, les plus anciennes déjà immobiles en file rejoignent un groupe à la coordonnée `(360, 686)`, toujours sur le quai droit. Leur silhouette individuelle fusionne avec la représentation du groupe uniquement à son arrivée ; le compteur augmente dans le même état d'affichage. Ce compteur conserve des **observations regroupées**, avec suivi individuel indisponible. Il n'est ni un nombre de transactions uniques, ni un nombre de transactions encore en attente dans le réseau. Il est plafonné à un million, puis affiché comme une borne minimale. Le groupe reste visible sans accumuler une liste illimitée d'identifiants.
 
 Les occupants du wagon observé peuvent se superposer sur les douze emplacements dessinés. Le moteur ne fait pas sortir un voyageur confirmé simplement pour dégager un emplacement visuel. Le budget de douze unités du candidat reste une règle pédagogique indépendante.
 
@@ -65,7 +71,7 @@ Seule la tête change d'échelle. Elle dépend d'une courbe logarithmique absolu
 
 ## Horloge et accessibilité
 
-`src/lib/passengerMotion.ts` est un moteur pur, indépendant du dessin. Chaque réseau possède son instance de `src/hooks/usePassengerMotion.ts`, avec une horloge `requestAnimationFrame`, un rendu à environ 24 images par seconde et un échantillon courant de 80 voyageurs au maximum. Jusqu'à 160 personnages peuvent coexister le temps de leur sortie, avec 80 admissions différées au maximum si cette limite est atteinte et jusqu'à 160 silhouettes historiques pendant le départ du wagon précédent. Les rafraîchissements remplacent le tampon d'admission par les observations actuelles, sans accumuler un historique illimité. Il n'y a pas de saut de temps après pause ou retour d'un onglet masqué. Le décor est mémorisé pour éviter de le recalculer à chaque mouvement.
+`src/lib/passengerMotion.ts` est un moteur pur, indépendant du dessin. Chaque réseau possède son instance de `src/hooks/usePassengerMotion.ts`, avec une horloge `requestAnimationFrame`, un rendu à environ 24 images par seconde et un échantillon courant de 80 voyageurs au maximum. Jusqu'à 160 personnages peuvent coexister avec les observations précédentes, avec 80 admissions différées au maximum si cette limite est atteinte et jusqu'à 160 silhouettes historiques pendant le départ du wagon précédent. Le regroupement des anciennes observations en attente libère des places pour les nouvelles arrivées. Les rafraîchissements remplacent le tampon d'admission par les observations actuelles, sans accumuler un historique illimité. Il n'y a pas de saut de temps après pause ou retour d'un onglet masqué. Le décor est mémorisé pour éviter de le recalculer à chaque mouvement.
 
 Pause suspend les voyageurs, les wagons, les signaux et le défilement du panneau. Les mouvements réduits placent les observations actuelles à leur destination illustrative sans trajet animé ; une préparation ou un transfert déjà commencé reste figé avec ses occupants. Les observations précédentes restent visibles pendant cette suspension. Les personnages de l'échantillon courant restent sélectionnables au clavier, y compris dans les wagons. Les confirmations et la fraîcheur affichées gardent la sémantique de la source.
 
@@ -73,7 +79,9 @@ Pause suspend les voyageurs, les wagons, les signaux et le défilement du pannea
 
 Le panneau alterne toutes les huit secondes entre Réseau, Bloc et Voyageurs. Une sélection fixe les données actuelles de la transaction ; Échap ou le bouton de libération permet de retrouver le panneau. Les pages restent accessibles manuellement, avec les flèches du clavier. Les détails sélectionnés suivent l'instantané courant et disparaissent lorsque la transaction n'est plus dans l'échantillon disponible.
 
-Les compteurs du panneau concernent les voyageurs de l'échantillon courant. Les observations précédentes conservées pendant leur sortie restent hors de ces compteurs. Le nombre de transactions du réseau reste distinct, et sa valeur absente est affichée comme non mesurée.
+Les compteurs du panneau concernent les voyageurs de l'échantillon courant. Les observations précédentes conservées en attente restent hors de ces compteurs. Le nombre de transactions du réseau reste distinct, et sa valeur absente est affichée comme non mesurée.
+
+La rubrique « Comprendre » explique pourquoi deux wagons sont représentés : le haut montre un échantillon d'un bloc observé et le bas illustre une projection pour le prochain bloc. Elle décrit aussi l'embarquement rapide, le remplacement du wagon du haut, l'arrivée du candidat vide et la distinction entre mouvement illustré et inclusion fournie par la source. Le panneau du dernier bloc rappelle ces rôles.
 
 ## Vue immersive et deux réseaux
 
