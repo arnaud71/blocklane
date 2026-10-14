@@ -192,6 +192,94 @@ describe('Illustrated passenger journeys', () => {
     expect(passengerFrame(state).counts.confirmed).toBe(0);
   });
 
+  it('transfers only source-confirmed passengers on a new block and replans the remaining candidate', () => {
+    const included = Object.freeze(transaction('a'.repeat(64)));
+    const waiting = Object.freeze(transaction('b'.repeat(64), 15));
+    const demo = snapshot([included, waiting]);
+    const first = demo.blocks[0];
+    if (!first) throw new Error('Un bloc est requis par le scénario de transfert.');
+    const baseline: Snapshot = {
+      ...demo,
+      mode: 'live',
+      source: 'Source contrôlée de test',
+      blocks: [{ ...first, hash: 'c'.repeat(64) }],
+    };
+    let state = runFor(createPassengerMotion(baseline), 9_000);
+    expect(passengerFrame(state).counts.boarded).toBe(2);
+    expect(passengerFrame(state).handoffProgress).toBeNull();
+    state = reconcilePassengerMotion(state, { ...baseline, observedAt: 2_000 });
+    expect(passengerFrame(state).handoffProgress).toBeNull();
+
+    const observed: Snapshot = {
+      ...baseline,
+      observedAt: 3_000,
+      blocks: [{ ...first, hash: 'd'.repeat(64) }],
+      transactions: [{ ...included, status: 'confirmed' }, waiting],
+    };
+    const starting = reconcilePassengerMotion(state, observed);
+    const frame = passengerFrame(starting);
+    expect(frame.handoffProgress).toBe(0);
+    expect(frame.passengers.find(({ tx }) => tx.id === included.id)).toMatchObject({
+      inHandoff: true,
+      inWagon: true,
+      destination: 'observed',
+      tx: { status: 'confirmed' },
+    });
+    expect(frame.passengers.find(({ tx }) => tx.id === waiting.id)).toMatchObject({
+      phase: 'exiting',
+      inHandoff: false,
+      inWagon: false,
+      tx: { status: 'pending' },
+    });
+    expect(advancePassengerMotion(starting, 60_000, { paused: true })).toBe(starting);
+    expect(advancePassengerMotion(starting, 60_000, { hidden: true })).toBe(starting);
+    state = runFor(starting, 1_000);
+    expect(passengerFrame(state).handoffProgress).toBeGreaterThan(0);
+    expect(passengerFrame(state).handoffProgress).toBeLessThan(1);
+    const replayed = reconcilePassengerMotion(state, { ...observed, observedAt: 4_000 });
+    expect(passengerFrame(replayed).handoffProgress).toBe(passengerFrame(state).handoffProgress);
+    state = runFor(replayed, 3_000);
+    const arrived = passengerFrame(state);
+    expect(arrived.handoffProgress).toBeNull();
+    expect(arrived.passengers.find(({ tx }) => tx.id === included.id)).toMatchObject({
+      phase: 'confirmed',
+      inHandoff: false,
+      inWagon: true,
+      destination: 'observed',
+    });
+    expect(arrived.passengers.find(({ tx }) => tx.id === waiting.id)?.destination).not.toBe(
+      'observed',
+    );
+    state = runFor(state, 14_000);
+    expect(passengerFrame(state).passengers.find(({ tx }) => tx.id === waiting.id)).toMatchObject({
+      phase: 'boarded',
+      destination: 'candidate',
+      tx: { status: 'pending' },
+    });
+
+    const reduced = passengerFrame(advancePassengerMotion(starting, 100, { reducedMotion: true }));
+    expect(reduced.handoffProgress).toBeNull();
+    expect(reduced.passengers.find(({ tx }) => tx.id === included.id)).toMatchObject({
+      phase: 'confirmed',
+      destination: 'observed',
+      inHandoff: false,
+    });
+    expect(reduced.passengers.find(({ tx }) => tx.id === waiting.id)?.tx.status).toBe('pending');
+    const reversed = passengerFrame(
+      reconcilePassengerMotion(starting, {
+        ...observed,
+        transactions: [included, waiting],
+      }),
+    );
+    expect(reversed.passengers.find(({ tx }) => tx.id === included.id)).toMatchObject({
+      inHandoff: false,
+      inWagon: false,
+      tx: { status: 'pending' },
+    });
+    expect(included.status).toBe('pending');
+    expect(waiting.status).toBe('pending');
+  });
+
   it('caps visible source samples, removes duplicate identifiers, and resets across chain or mode', () => {
     const transactions = Array.from({ length: 120 }, (_, index) => transaction(`tx-${index}`));
     const first = createPassengerMotion(snapshot(transactions));

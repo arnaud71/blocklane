@@ -25,6 +25,8 @@ export interface StreetSceneProps {
   selectedId?: string;
   theme?: 'heg' | 'neutral';
   onClearSelection?: () => void;
+  immersive?: boolean;
+  showInfo?: boolean;
 }
 
 function stableHash(value: string): number {
@@ -192,6 +194,7 @@ function Tram({
   onSelect,
   feeColor,
   doorsOpen,
+  handoffProgress = null,
 }: {
   x: number;
   y: number;
@@ -206,13 +209,18 @@ function Tram({
   onSelect: (tx: Tx) => void;
   feeColor: (pose: PassengerPose) => string;
   doorsOpen: boolean;
+  handoffProgress?: number | null;
 }) {
   const clipId = useId().replace(/:/g, '') + '-windows';
   return (
     <g
-      className={`street-tram street-tram--${variant}${observedDeparture ? ' street-tram--observed-departure' : ''}${doorsOpen ? ' street-tram--doors-open' : ''}`}
+      className={`street-tram street-tram--${variant} ${variant === 'a' ? 'street-observed-wagon' : 'street-candidate-wagon'}${handoffProgress !== null ? ' street-candidate--handoff' : ''}${observedDeparture ? ' street-tram--observed-departure' : ''}${doorsOpen ? ' street-tram--doors-open' : ''}`}
+      data-handoff-progress={handoffProgress ?? undefined}
       transform={`translate(${x} ${y})`}
-      onAnimationEnd={onDepartureComplete}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget) return;
+        onDepartureComplete?.();
+      }}
     >
       <ellipse cx="145" cy="101" rx="155" ry="16" fill="#031a19" opacity=".75" />
       <path d="m3 18 268 0 24-17H27Z" fill="#d9e3cc" />
@@ -400,6 +408,217 @@ function Person({
   );
 }
 
+/** Presentation mapping only: the source and motion state retain their existing semantics. */
+function verticalPose(pose: PassengerPose): PassengerPose {
+  return {
+    ...pose,
+    x: 590 - pose.y * 0.9,
+    y: 72 + (pose.x - 245) * 0.73 + (pose.inWagon ? 50 : 0),
+  };
+}
+
+function VerticalStreet({
+  id,
+  snapshot,
+  theme,
+  queueLabel,
+  passengers,
+  selectedId,
+  onSelect,
+  feeColor,
+  observedLabel,
+  candidateLabel,
+  observedDeparture,
+  onDepartureComplete,
+  handoffProgress,
+}: {
+  id: string;
+  snapshot: Snapshot;
+  theme: 'heg' | 'neutral';
+  queueLabel: string;
+  passengers: PassengerPose[];
+  selectedId?: string;
+  onSelect: (tx: Tx) => void;
+  feeColor: (pose: PassengerPose) => string;
+  observedLabel: string;
+  candidateLabel: string;
+  observedDeparture: boolean;
+  onDepartureComplete: () => void;
+  handoffProgress: number | null;
+}) {
+  const bitcoin = snapshot.chain === 'bitcoin';
+  const accent = bitcoin ? '#e8a362' : '#aea3ed';
+  const demo = snapshot.mode === 'demo';
+  function wagon(kind: 'observed' | 'candidate' | 'handoff', x: number, y: number) {
+    const seated = passengers.filter(
+      (pose) =>
+        pose.inWagon &&
+        (kind === 'handoff'
+          ? pose.inHandoff
+          : !pose.inHandoff &&
+            pose.destination === kind &&
+            (kind !== 'observed' || handoffProgress === null)),
+    );
+    return (
+      <g
+        key={kind}
+        className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'observed' ? 'street-observed-wagon' : 'street-candidate-wagon'}${kind === 'handoff' ? ' street-candidate--handoff' : ''}${kind === 'observed' && observedDeparture ? ' street-tram--observed-departure' : ''}`}
+        data-handoff-progress={kind === 'handoff' ? handoffProgress : undefined}
+        onAnimationEnd={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (kind === 'observed') onDepartureComplete();
+        }}
+      >
+        <g transform={`translate(${x} ${y})`} aria-hidden="true">
+          <ellipse cx="45" cy="115" rx="50" ry="119" fill="#061714" opacity=".4" />
+          <rect x="-5" y="25" width="9" height="35" rx="4" fill="#10231e" />
+          <rect x="80" y="25" width="9" height="35" rx="4" fill="#10231e" />
+          <rect x="-5" y="170" width="9" height="35" rx="4" fill="#10231e" />
+          <rect x="80" y="170" width="9" height="35" rx="4" fill="#10231e" />
+          <rect
+            width="85"
+            height="217"
+            rx="17"
+            fill={kind === 'observed' ? '#79b8a0' : accent}
+            stroke="#172d26"
+            strokeWidth="3"
+          />
+          <rect x="8" y="15" width="69" height="23" rx="8" fill="#203d35" />
+          <path d="M19 29h47" stroke="#cbdaca" strokeWidth="2" opacity=".45" />
+          <rect x="13" y="48" width="58" height="137" rx="8" fill="#203d35" />
+          <path d="M17 81h50M17 115h50M17 149h50" stroke="#567d6c" strokeWidth="2" />
+          <rect x="9" y="195" width="67" height="9" rx="4" fill="#d1dfc0" />
+          <circle cx="14" cy="207" r="3" fill="#e89c73" />
+          <circle cx="71" cy="207" r="3" fill="#e89c73" />
+        </g>
+        {seated.map((pose) => (
+          <Person
+            key={pose.tx.id}
+            pose={verticalPose(pose)}
+            selected={selectedId === pose.tx.id}
+            feeColor={feeColor(pose)}
+            onSelect={onSelect}
+          />
+        ))}
+      </g>
+    );
+  }
+  return (
+    <svg
+      className="street-scene-svg street-scene-svg--vertical"
+      viewBox="0 0 460 740"
+      role="group"
+      aria-labelledby={`${id}-title ${id}-desc`}
+    >
+      <title id={`${id}-title`}>La rue de {bitcoin ? 'Bitcoin' : 'Ethereum'}</title>
+      <desc id={`${id}-desc`}>
+        Deux wagons sur une rue verticale. Un voyageur représente une transaction de l’échantillon.
+        Les embarquements et les retours du candidat sont pédagogiques ; seul le statut de la source
+        indique l’inclusion.{' '}
+        {demo ? 'Données et départs simulés.' : 'Les départs suivent les nouveaux blocs observés.'}{' '}
+        Sélectionnez un voyageur au clavier ou à la souris.
+      </desc>
+      <g aria-hidden="true">
+        <rect width="460" height="740" fill="#234a3b" />
+        <path d="M0 0h129v740H0Z" fill="#1b4034" />
+        <path d="M137 0h116v740H137Z" fill="#15352f" />
+        <path d="M135 0v740M255 0v740" stroke="#739078" strokeWidth="9" />
+        <path
+          d="M196 0v740"
+          stroke="#adc4a3"
+          strokeWidth="2"
+          strokeDasharray="22 23"
+          opacity=".38"
+        />
+        <path d="M276 0h184v740H276Z" fill="#2a5240" />
+        <path
+          d="M287 91v611M310 91v611M333 91v611M356 91v611M379 91v611"
+          stroke="#80a180"
+          strokeDasharray="2 12"
+          opacity=".15"
+        />
+        <rect
+          x="16"
+          y="186"
+          width="99"
+          height="99"
+          rx="7"
+          fill="#829e84"
+          stroke="#183c30"
+          strokeWidth="3"
+        />
+        <path d="m12 185 53-34 54 34" fill="#b8c6a1" stroke="#183c30" strokeWidth="3" />
+        <rect x="30" y="202" width="19" height="23" fill="#294f40" />
+        <rect x="76" y="202" width="19" height="23" fill="#294f40" />
+        <rect x="49" y="246" width="30" height="39" fill="#294f40" />
+        <text x="65" y="240" fill="#183f32" textAnchor="middle" fontSize="14" fontWeight="750">
+          {theme === 'heg' ? 'HEG' : 'CAMPUS'}
+        </text>
+        <rect
+          x="19"
+          y="480"
+          width="91"
+          height="108"
+          rx="6"
+          fill="#497767"
+          stroke="#183c30"
+          strokeWidth="3"
+        />
+        <rect x="29" y="495" width="70" height="37" fill="#1c4436" />
+        <path d="M47 496v35m19-35v35m18-35v35" stroke="#87ad8a" strokeWidth="2" />
+        <text x="65" y="554" textAnchor="middle" fill="#d8dfbc" fontSize="10" fontWeight="700">
+          LAB · DONNÉES
+        </text>
+        <Tree x={67} y={111} scale={1.1} />
+        <Tree x={74} y={411} scale={1.05} />
+        <Tree x={64} y={686} scale={1.1} />
+        <Tree x={417} y={197} scale={0.9} />
+        <Tree x={418} y={428} scale={1} />
+        <Tree x={416} y={700} scale={0.85} />
+        <rect x="271" y="47" width="170" height="28" rx="5" fill="#153d2e" />
+        <text x="281" y="65" fill="#d3dec0" fontSize="10" fontWeight="650">
+          {queueLabel}
+        </text>
+        <text x="14" y="39" fill="#c3d8bd" fontSize="10" letterSpacing="1">
+          {demo ? 'SIMULATION' : 'ÉCHANTILLON OBSERVÉ'}
+        </text>
+        <rect x="9" y="64" width="112" height="51" rx="6" fill="#102e27" />
+        <text x="20" y="82" fill="#92b99e" fontSize="9">
+          {demo ? 'BLOC SIMULÉ' : 'BLOC OBSERVÉ'}
+        </text>
+        <text x="20" y="103" fill="#d8e7c9" fontSize="13" fontWeight="600">
+          {observedLabel}
+        </text>
+        <rect x="266" y="713" width="184" height="22" rx="5" fill="#12382c" />
+        <text x="276" y="728" fill={accent} fontSize="9">
+          CANDIDAT · {candidateLabel}
+        </text>
+        {handoffProgress !== null && (
+          <text x="276" y="700" fill={accent} fontSize="11">
+            Vers le bloc observé
+          </text>
+        )}
+      </g>
+      {wagon('observed', 146.3, 72)}
+      {handoffProgress === null
+        ? wagon('candidate', 166.1, 459.63)
+        : wagon('handoff', 166.1 - 19.8 * handoffProgress, 459.63 - 387.63 * handoffProgress)}
+      {passengers
+        .filter((pose) => !pose.inWagon)
+        .sort((left, right) => left.x - right.x)
+        .map((pose) => (
+          <Person
+            key={pose.tx.id}
+            pose={verticalPose(pose)}
+            selected={selectedId === pose.tx.id}
+            feeColor={feeColor(pose)}
+            onSelect={onSelect}
+          />
+        ))}
+    </svg>
+  );
+}
+
 const CityBackdrop = memo(function CityBackdrop({
   id,
   theme,
@@ -572,8 +791,17 @@ export function StreetScene({
   selectedId,
   theme = 'heg',
   onClearSelection,
+  immersive = false,
+  showInfo = true,
 }: StreetSceneProps) {
   const id = useId().replace(/:/g, '');
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 700px)').matches);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 700px)');
+    const update = () => setCompact(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const demo = snapshot.mode === 'demo';
   const motion = usePassengerMotion({
     snapshot,
@@ -581,24 +809,35 @@ export function StreetScene({
     speed,
     reducedMotion,
   });
-  const previousObservation = useRef<{ context: string; blockHash?: string } | null>(null);
+  const previousObservation = useRef<{
+    context: string;
+    blockHash?: string;
+    height?: number;
+  } | null>(null);
   const [departureHash, setDepartureHash] = useState<string | null>(null);
+  const [departingObservedLabel, setDepartingObservedLabel] = useState<string | null>(null);
 
   useEffect(() => {
     const context = `${snapshot.chain}:${snapshot.mode}`;
     const blockHash = snapshot.blocks[0]?.hash;
     const previous = previousObservation.current;
-    previousObservation.current = { context, blockHash };
+    previousObservation.current = { context, blockHash, height: snapshot.blocks[0]?.height };
 
     // Establish a baseline first; only later source observations may animate.
     if (snapshot.mode !== 'live' || !previous || previous.context !== context || reducedMotion) {
       setDepartureHash(null);
+      setDepartingObservedLabel(null);
       return;
     }
 
     const nextDepartureHash =
       blockHash && previous.blockHash && blockHash !== previous.blockHash ? blockHash : null;
-    if (nextDepartureHash) setDepartureHash(nextDepartureHash);
+    if (nextDepartureHash) {
+      setDepartureHash(nextDepartureHash);
+      setDepartingObservedLabel(
+        previous.height === undefined ? null : `#${previous.height.toLocaleString('fr-CH')}`,
+      );
+    }
   }, [snapshot, reducedMotion]);
 
   const visibleTransactions = snapshot.transactions
@@ -618,11 +857,12 @@ export function StreetScene({
     return relative > 0.66 ? '#efaf72' : relative > 0.33 ? '#79bbb3' : '#afc3a3';
   };
   const seatedObserved = motion.passengers.filter(
-    (pose) => pose.inWagon && pose.destination === 'observed',
+    (pose) => pose.inWagon && !pose.inHandoff && pose.destination === 'observed',
   );
   const seatedCandidate = motion.passengers.filter(
-    (pose) => pose.inWagon && pose.destination === 'candidate',
+    (pose) => pose.inWagon && !pose.inHandoff && pose.destination === 'candidate',
   );
+  const carriedPassengers = motion.passengers.filter((pose) => pose.inWagon && pose.inHandoff);
   const observedOnPlatform = motion.passengers.filter(
     (pose) => pose.phase === 'confirmed' && !pose.inWagon,
   ).length;
@@ -647,174 +887,221 @@ export function StreetScene({
   const block = snapshot.blocks[0];
   const observedLabel = block ? `#${block.height.toLocaleString('fr-CH')}` : 'EN ATTENTE';
   const blockLabel = demo ? 'BLOC SIMULÉ' : block ? 'BLOC OBSERVÉ' : 'CANDIDAT ILLUSTRATIF';
-  const secondLabel = demo ? 'PROCHAIN DÉPART' : 'CANDIDAT ILLUSTRATIF';
+  const secondLabel = demo ? 'PROJECTION SIMULÉE' : 'CANDIDAT ILLUSTRATIF';
   const capacity = motion.candidateUsed + ' / ' + motion.candidateCapacity + ' UNITÉS VISUELLES';
   const animationSpeed = Math.max(0.25, Math.min(4, speed));
   const styles = {
     '--scene-duration': `${18 / animationSpeed}s`,
     '--traveler-duration': `${4.8 / animationSpeed}s`,
     '--observed-duration': `${4 / animationSpeed}s`,
+    '--candidate-duration': `${3 / animationSpeed}s`,
   } as CSSProperties;
 
   return (
-    <div className="scene-workspace">
+    <div className={`scene-workspace${immersive ? ' scene-workspace--immersive' : ''}`}>
       <div className="street-scene-viewport">
         <div
-          className={`street-scene${paused ? ' street-scene--paused' : ''}${reducedMotion ? ' street-scene--reduced-motion' : ''}${demo ? ' street-scene--demo' : ''}`}
+          className={`street-scene${paused || snapshot.status !== 'ok' ? ' street-scene--paused' : ''}${reducedMotion ? ' street-scene--reduced-motion' : ''}${demo ? ' street-scene--demo' : ''}`}
           style={styles}
         >
-          <svg
-            className="street-scene-svg"
-            viewBox="0 0 1200 600"
-            role="group"
-            aria-labelledby={`${id}-title ${id}-desc`}
-          >
-            <title id={`${id}-title`}>
-              La rue de {snapshot.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}
-            </title>
-            <desc id={`${id}-desc`}>
-              Une ville-campus où les voyageurs représentent les transactions et les véhicules les
-              blocs.{' '}
-              {demo
-                ? 'Les déplacements et blocs sont simulés.'
-                : 'Les données sont observées ; le véhicule candidat est une illustration. Un nouveau voyageur apparaît uniquement à réception de son identifiant dans la source. Un départ se produit uniquement lorsque le hash du bloc observé change après la première observation ; aucun bloc n’est inventé par une minuterie.'}{' '}
-              Les voyageurs peuvent être sélectionnés au clavier ou à la souris. L’ordre visuel par
-              frais est indicatif et ne prédit pas l’inclusion dans un bloc.
-            </desc>
-            <defs>
-              <linearGradient id={`${id}-sky`} x1="0" x2="0" y1="0" y2="1">
-                <stop stopColor="#071c1c" />
-                <stop offset="1" stopColor="#153c33" />
-              </linearGradient>
-              <linearGradient id={`${id}-ground`} x1="0" x2="1" y1="0" y2="1">
-                <stop stopColor="#2d5341" />
-                <stop offset="1" stopColor="#244b3e" />
-              </linearGradient>
-              <radialGradient id={`${id}-lamp`}>
-                <stop stopColor="#e9d88e" stopOpacity=".14" />
-                <stop offset="1" stopColor="#e9d88e" stopOpacity="0" />
-              </radialGradient>
-              <linearGradient id={`${id}-fade`}>
-                <stop stopColor="#071c1c" stopOpacity=".8" />
-                <stop offset=".3" stopColor="#071c1c" stopOpacity="0" />
-                <stop offset=".75" stopColor="#071c1c" stopOpacity="0" />
-                <stop offset="1" stopColor="#071c1c" stopOpacity=".7" />
-              </linearGradient>
-            </defs>
+          {immersive && !compact ? (
+            <VerticalStreet
+              id={id}
+              snapshot={snapshot}
+              theme={theme}
+              queueLabel={queueLabel}
+              passengers={motion.passengers}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              feeColor={feeColor}
+              observedLabel={
+                motion.handoffProgress === null
+                  ? observedLabel
+                  : (departingObservedLabel ?? observedLabel)
+              }
+              candidateLabel={`${motion.candidateUsed} / ${motion.candidateCapacity} unités visuelles`}
+              observedDeparture={
+                !demo && departureHash === block?.hash && motion.handoffProgress !== null
+              }
+              handoffProgress={motion.handoffProgress}
+              onDepartureComplete={() => setDepartureHash(null)}
+            />
+          ) : (
+            <svg
+              className="street-scene-svg"
+              viewBox="0 0 1200 600"
+              role="group"
+              aria-labelledby={`${id}-title ${id}-desc`}
+            >
+              <title id={`${id}-title`}>
+                La rue de {snapshot.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}
+              </title>
+              <desc id={`${id}-desc`}>
+                Une ville-campus où les voyageurs représentent les transactions et les véhicules les
+                blocs.{' '}
+                {demo
+                  ? 'Les déplacements et blocs sont simulés.'
+                  : 'Les données sont observées ; le véhicule candidat est une illustration. Un nouveau voyageur apparaît uniquement à réception de son identifiant dans la source. Un départ se produit uniquement lorsque le hash du bloc observé change après la première observation ; aucun bloc n’est inventé par une minuterie.'}{' '}
+                Les voyageurs peuvent être sélectionnés au clavier ou à la souris. L’ordre visuel
+                par frais est indicatif et ne prédit pas l’inclusion dans un bloc.
+              </desc>
+              <defs>
+                <linearGradient id={`${id}-sky`} x1="0" x2="0" y1="0" y2="1">
+                  <stop stopColor="#071c1c" />
+                  <stop offset="1" stopColor="#153c33" />
+                </linearGradient>
+                <linearGradient id={`${id}-ground`} x1="0" x2="1" y1="0" y2="1">
+                  <stop stopColor="#2d5341" />
+                  <stop offset="1" stopColor="#244b3e" />
+                </linearGradient>
+                <radialGradient id={`${id}-lamp`}>
+                  <stop stopColor="#e9d88e" stopOpacity=".14" />
+                  <stop offset="1" stopColor="#e9d88e" stopOpacity="0" />
+                </radialGradient>
+                <linearGradient id={`${id}-fade`}>
+                  <stop stopColor="#071c1c" stopOpacity=".8" />
+                  <stop offset=".3" stopColor="#071c1c" stopOpacity="0" />
+                  <stop offset=".75" stopColor="#071c1c" stopOpacity="0" />
+                  <stop offset="1" stopColor="#071c1c" stopOpacity=".7" />
+                </linearGradient>
+              </defs>
 
-            <CityBackdrop id={id} theme={theme} chain={snapshot.chain} queueLabel={queueLabel} />
+              <CityBackdrop id={id} theme={theme} chain={snapshot.chain} queueLabel={queueLabel} />
 
-            <g>
-              <Tram
-                key={`observed-${snapshot.chain}-${demo ? 'demo' : (block?.hash ?? 'empty')}`}
-                x={245}
-                y={393}
-                accent="#81c6b3"
-                label={blockLabel}
-                capacity={observedLabel}
-                variant="a"
-                passengers={seatedObserved}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                feeColor={feeColor}
-                doorsOpen={motion.passengers.some(
-                  (pose) =>
-                    pose.destination === 'observed' && ['walking', 'boarding'].includes(pose.phase),
-                )}
-                observedDeparture={!demo && departureHash === block?.hash}
-                onDepartureComplete={() =>
-                  setDepartureHash((current) => (current === block?.hash ? null : current))
-                }
-              />
-              <Tram
-                x={776}
-                y={371}
-                accent="#e6a16c"
-                label={secondLabel}
-                capacity={capacity}
-                variant="b"
-                passengers={seatedCandidate}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                feeColor={feeColor}
-                doorsOpen={
-                  motion.counts.walking +
-                    motion.counts.boarding +
-                    motion.counts.exiting +
-                    motion.counts.returning >
-                  0
-                }
-              />
-
-              <g transform="translate(68 531)">
-                <path d="m0 0 99-4 18 13-100 4Z" fill="#729068" />
-                <path d="m0 0 17 13v19L0 18Z" fill="#445f40" />
-                <path d="m17 13 100-4v18l-100 5Z" fill="#35583e" />
-                <path d="M16-4q7-22 22-4 10-34 25-3 15-19 27 1" fill="#71986a" />
-                <path
-                  d="M26-5q6-13 12-3m24-1q8-13 14 0"
-                  fill="none"
-                  stroke="#a0b37b"
-                  strokeWidth="3"
-                />
-              </g>
-              <Tree x={1120} y={559} scale={1.28} />
-              <Tree x={1170} y={578} scale={1.03} />
-              <g transform="translate(842 548)">
-                <path d="m0-6 101-4 16 8-101 4Z" fill="#c1ae7e" />
-                <path d="M15-1v14m94-18v14M9-18l99-4v9L9-9Z" stroke="#9d926b" strokeWidth="4" />
-                <path d="m8-12 10 13m91-17 8 11" stroke="#60755c" strokeWidth="3" />
-              </g>
-              <path d="M0 598h1200" stroke="#4e6d50" strokeWidth="3" />
-              <rect width="1200" height="600" fill={`url(#${id}-fade)`} pointerEvents="none" />
-
-              <text x="36" y="39" fill="#6d9c8d" fontSize="9" fontWeight="700" letterSpacing="2.8">
-                {theme === 'heg' ? 'HEG · BLOCKCHAIN CAMPUS' : 'BLOCKCHAIN · OPEN CAMPUS'}
-              </text>
-              <text x="36" y="69" fill="#d7e5cf" fontSize="24" fontWeight="600" letterSpacing="-.5">
-                Les échanges prennent vie.
-              </text>
-              <text
-                x="1164"
-                y="40"
-                fill="#aec5ac"
-                fontSize="9"
-                textAnchor="end"
-                letterSpacing="1.7"
-              >
-                VOYAGEURS = TRANSACTIONS
-              </text>
-              <text x="1164" y="58" fill="#668e7e" fontSize="9" textAnchor="end">
-                Sélectionnez un voyageur pour l’explorer
-              </text>
-              <rect
-                x="37"
-                y="559"
-                width={demo ? 196 : 266}
-                height="23"
-                rx="11.5"
-                fill="#0a2a23"
-                stroke="#52795b"
-                strokeOpacity=".35"
-              />
-              <circle cx="50" cy="570.5" r="3" fill={demo ? '#e1b57b' : '#8cc6a5'} />
-              <text x="61" y="574" fill="#bcd0b0" fontSize="8.5" letterSpacing=".5">
-                {demo ? 'DÉPLACEMENTS SIMULÉS' : 'DONNÉES OBSERVÉES · SCÈNE ILLUSTRATIVE'}
-              </text>
-            </g>
-            {motion.passengers
-              .filter((pose) => !pose.inWagon)
-              .sort((left, right) => left.y - right.y)
-              .map((pose) => (
-                <Person
-                  key={pose.tx.id}
-                  pose={pose}
-                  selected={selectedId === pose.tx.id}
-                  feeColor={feeColor(pose)}
+              <g>
+                <Tram
+                  key={`observed-${snapshot.chain}-${demo ? 'demo' : (block?.hash ?? 'empty')}`}
+                  x={245}
+                  y={393}
+                  accent="#81c6b3"
+                  label={blockLabel}
+                  capacity={
+                    motion.handoffProgress === null
+                      ? observedLabel
+                      : (departingObservedLabel ?? observedLabel)
+                  }
+                  variant="a"
+                  passengers={motion.handoffProgress === null ? seatedObserved : []}
+                  selectedId={selectedId}
                   onSelect={onSelect}
+                  feeColor={feeColor}
+                  doorsOpen={motion.passengers.some(
+                    (pose) =>
+                      pose.destination === 'observed' &&
+                      ['walking', 'boarding'].includes(pose.phase),
+                  )}
+                  observedDeparture={
+                    !demo && departureHash === block?.hash && motion.handoffProgress !== null
+                  }
+                  onDepartureComplete={() =>
+                    setDepartureHash((current) => (current === block?.hash ? null : current))
+                  }
                 />
-              ))}
-          </svg>
+                <Tram
+                  x={776 - 531 * (motion.handoffProgress ?? 0)}
+                  y={371 + 22 * (motion.handoffProgress ?? 0)}
+                  accent="#e6a16c"
+                  label={motion.handoffProgress === null ? secondLabel : 'VERS LE BLOC OBSERVÉ'}
+                  capacity={capacity}
+                  variant="b"
+                  handoffProgress={motion.handoffProgress}
+                  passengers={motion.handoffProgress === null ? seatedCandidate : carriedPassengers}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  feeColor={feeColor}
+                  doorsOpen={
+                    motion.counts.walking +
+                      motion.counts.boarding +
+                      motion.counts.exiting +
+                      motion.counts.returning >
+                    0
+                  }
+                />
+
+                <g transform="translate(68 531)">
+                  <path d="m0 0 99-4 18 13-100 4Z" fill="#729068" />
+                  <path d="m0 0 17 13v19L0 18Z" fill="#445f40" />
+                  <path d="m17 13 100-4v18l-100 5Z" fill="#35583e" />
+                  <path d="M16-4q7-22 22-4 10-34 25-3 15-19 27 1" fill="#71986a" />
+                  <path
+                    d="M26-5q6-13 12-3m24-1q8-13 14 0"
+                    fill="none"
+                    stroke="#a0b37b"
+                    strokeWidth="3"
+                  />
+                </g>
+                <Tree x={1120} y={559} scale={1.28} />
+                <Tree x={1170} y={578} scale={1.03} />
+                <g transform="translate(842 548)">
+                  <path d="m0-6 101-4 16 8-101 4Z" fill="#c1ae7e" />
+                  <path d="M15-1v14m94-18v14M9-18l99-4v9L9-9Z" stroke="#9d926b" strokeWidth="4" />
+                  <path d="m8-12 10 13m91-17 8 11" stroke="#60755c" strokeWidth="3" />
+                </g>
+                <path d="M0 598h1200" stroke="#4e6d50" strokeWidth="3" />
+                <rect width="1200" height="600" fill={`url(#${id}-fade)`} pointerEvents="none" />
+
+                <text
+                  x="36"
+                  y="39"
+                  fill="#6d9c8d"
+                  fontSize="9"
+                  fontWeight="700"
+                  letterSpacing="2.8"
+                >
+                  {theme === 'heg' ? 'HEG · BLOCKCHAIN CAMPUS' : 'BLOCKCHAIN · OPEN CAMPUS'}
+                </text>
+                <text
+                  x="36"
+                  y="69"
+                  fill="#d7e5cf"
+                  fontSize="24"
+                  fontWeight="600"
+                  letterSpacing="-.5"
+                >
+                  Les échanges prennent vie.
+                </text>
+                <text
+                  x="1164"
+                  y="40"
+                  fill="#aec5ac"
+                  fontSize="9"
+                  textAnchor="end"
+                  letterSpacing="1.7"
+                >
+                  VOYAGEURS = TRANSACTIONS
+                </text>
+                <text x="1164" y="58" fill="#668e7e" fontSize="9" textAnchor="end">
+                  Sélectionnez un voyageur pour l’explorer
+                </text>
+                <rect
+                  x="37"
+                  y="559"
+                  width={demo ? 196 : 266}
+                  height="23"
+                  rx="11.5"
+                  fill="#0a2a23"
+                  stroke="#52795b"
+                  strokeOpacity=".35"
+                />
+                <circle cx="50" cy="570.5" r="3" fill={demo ? '#e1b57b' : '#8cc6a5'} />
+                <text x="61" y="574" fill="#bcd0b0" fontSize="8.5" letterSpacing=".5">
+                  {demo ? 'DÉPLACEMENTS SIMULÉS' : 'DONNÉES OBSERVÉES · SCÈNE ILLUSTRATIVE'}
+                </text>
+              </g>
+              {motion.passengers
+                .filter((pose) => !pose.inWagon)
+                .sort((left, right) => left.y - right.y)
+                .map((pose) => (
+                  <Person
+                    key={pose.tx.id}
+                    pose={pose}
+                    selected={selectedId === pose.tx.id}
+                    feeColor={feeColor(pose)}
+                    onSelect={onSelect}
+                  />
+                ))}
+            </svg>
+          )}
           <div className="street-activity-bar" aria-label="Activité pédagogique des voyageurs">
             <span>
               <i className="street-activity-dot" />
@@ -857,14 +1144,16 @@ export function StreetScene({
           </div>
         </div>
       </div>
-      <DynamicInfoPanel
-        snapshot={snapshot}
-        selectedTx={snapshot.transactions.find((tx) => tx.id === selectedId) ?? null}
-        activity={activity}
-        paused={paused || snapshot.status !== 'ok'}
-        reducedMotion={reducedMotion}
-        onClearSelection={onClearSelection}
-      />
+      {showInfo && (
+        <DynamicInfoPanel
+          snapshot={snapshot}
+          selectedTx={snapshot.transactions.find((tx) => tx.id === selectedId) ?? null}
+          activity={activity}
+          paused={paused || snapshot.status !== 'ok'}
+          reducedMotion={reducedMotion}
+          onClearSelection={onClearSelection}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { snapshotSchema, type ChainId, type Snapshot } from '../shared/model.js';
-import { fetchBitcoinSnapshot } from './adapters/bitcoin.js';
+import { createBitcoinProvider } from './adapters/bitcoin.js';
 import { fetchEthereumSnapshot } from './adapters/ethereum.js';
 import { CACHE_TTL_MS, MAX_STALE_MS, loadConfig, type ServerConfig } from './config.js';
 import { generateDemoSnapshot } from './demo.js';
@@ -37,7 +37,7 @@ export class SnapshotService implements SnapshotReader {
     this.config = options.config ?? loadConfig();
     this.now = options.now ?? Date.now;
     this.providers = options.providers ?? {
-      bitcoin: () => fetchBitcoinSnapshot(this.config, options.fetcher, this.now),
+      bitcoin: createBitcoinProvider(this.config, options.fetcher, this.now),
       ethereum: () => fetchEthereumSnapshot(this.config, options.fetcher, this.now),
     };
   }

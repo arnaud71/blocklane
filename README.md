@@ -2,7 +2,7 @@
 
 Une ville animée pour comprendre Bitcoin et Ethereum : les transactions deviennent des voyageurs, les blocs des transports. Une interprétation originale de l'esprit de [TxStreet](https://github.com/txstreet/txstreet), avec une scène vectorielle SVG, une interface française et un socle conçu pour rester maintenable.
 
-Version initiale **0.1.0**. L'application démarre en mode **direct**. La démonstration pédagogique est un mode séparé, annoncé à l'écran. Une source indisponible ne déclenche jamais une simulation présentée comme réelle.
+L'application démarre en mode **direct**. Bitcoin et Ethereum sont visibles ensemble dans une ville qui occupe la fenêtre. La démonstration pédagogique est un mode séparé, annoncé à l'écran. Une source indisponible ne déclenche jamais une simulation présentée comme réelle.
 
 ## Démarrer
 

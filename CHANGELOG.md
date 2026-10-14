@@ -2,6 +2,17 @@
 
 Le projet suit le versionnement sémantique. Les dates utilisent le calendrier Europe/Zurich. Une entrée représente le contenu de la version ; sa livraison publique est une opération distincte.
 
+## À venir
+
+### Interface
+
+- Bitcoin et Ethereum visibles simultanément, avec des sources et des états de connexion indépendants.
+- Vue immersive qui occupe la fenêtre, deux rues verticales sur ordinateur et deux scènes compactes sur mobile.
+- Commandes communes pour les animations et les modes de données, panneau de détails repliable et sélection rattachée au réseau.
+- Navigation pédagogique et provenance des données accessibles sans menu latéral permanent.
+- Transfert du wagon candidat vers le wagon observé lors d'un nouveau bloc : seuls les voyageurs dont la source confirme l'inclusion restent à bord ; les autres encore présents en attente reviennent en file.
+- Suivi Bitcoin borné en mémoire et vérification des identifiants dans le dernier bloc pour retrouver les transactions réellement incluses. Une disparition de l'échantillon ne confirme rien.
+
 ## 0.2.0 — 2026-10-14
 
 ### Ajouts

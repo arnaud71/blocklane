@@ -1,5 +1,11 @@
 # Vérification initiale — 14 octobre 2026
 
+## Vue immersive et transfert des wagons — en cours
+
+Bitcoin et Ethereum sont désormais visibles simultanément. La disposition immersive a été contrôlée aux largeurs 1440, 983, 390 et 320 pixels : les deux scènes tiennent dans la fenêtre, sans défilement de la page. La série de 34 parcours navigateur de cette disposition a réussi avant l'ajout du transfert complet.
+
+Le transfert du candidat vers le wagon observé et le suivi Bitcoin ont ensuite été ajoutés. Le propriétaire a demandé d'arrêter les tests : aucun nouveau lancement n'est prévu pour le moment. Cette dernière extension n'est donc pas présentée comme entièrement validée. Un parcours ciblé de réembarquement d'un voyageur encore en attente sur ordinateur reste à examiner lors de la reprise des validations. Les changements restent locaux, sans publication ni déploiement.
+
 ## Extension 0.2.0 — animations et panneau
 
 Vérification locale de la version 0.2.0 : **42 tests unitaires et 32 tests navigateur réussis**, TypeScript strict, ESLint, Prettier et compilation Vite réussis. L'audit npm ne signale aucune vulnérabilité connue à la date du contrôle. Aucun ajout de dépendance ni modification des connecteurs.

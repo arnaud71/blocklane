@@ -5,6 +5,7 @@ export const MAX_PASSENGERS = 80;
 export const CANDIDATE_CAPACITY = 12;
 const MAX_STEP_MS = 100;
 const QUEUE_RETRY_MS = 8_000;
+export const HANDOFF_DURATION_MS = 3_000;
 
 export type PassengerPhase =
   'queue' | 'walking' | 'boarding' | 'boarded' | 'exiting' | 'returning' | 'confirmed';
@@ -27,11 +28,14 @@ interface Passenger {
   durationMs: number;
   retryAt: number;
   path: Point[];
+  inHandoff: boolean;
 }
 
 export interface PassengerMotionState {
   context: string;
   elapsedMs: number;
+  observedBlockHash: string | null;
+  handoffStartedAt: number | null;
   feeThreshold: number | null;
   candidateCount: number;
   candidateUsed: number;
@@ -49,6 +53,7 @@ export interface PassengerPose {
   reason: PassengerReason;
   selectedForCandidate: boolean;
   inWagon: boolean;
+  inHandoff: boolean;
   headScale: number;
   resourceUnits: number;
   opacity: number;
@@ -65,6 +70,7 @@ export interface PassengerFrame {
   candidateCapacity: number;
   feeThreshold: number | null;
   elapsedMs: number;
+  handoffProgress: number | null;
 }
 
 export interface PassengerClockOptions {
@@ -212,7 +218,7 @@ function startPhase(
   path: Point[],
   durationMs: number,
 ): Passenger {
-  return { ...passenger, phase, phaseStartedAt: now, durationMs, path };
+  return { ...passenger, inHandoff: false, phase, phaseStartedAt: now, durationMs, path };
 }
 
 function walkingPath(from: Point, to: Point): Point[] {
@@ -225,6 +231,8 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
   return {
     context: `${snapshot.chain}:${snapshot.mode}`,
     elapsedMs: 0,
+    observedBlockHash: snapshot.blocks[0]?.hash ?? null,
+    handoffStartedAt: null,
     feeThreshold: plan.feeThreshold,
     candidateCount: plan.accepted.size,
     candidateUsed: plan.used,
@@ -241,6 +249,7 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
         durationMs: 0,
         retryAt: (queueIndex % 16) * 110 + (stableHash(tx.id) % 190),
         path: [queue],
+        inHandoff: false,
       };
     }),
   };
@@ -254,6 +263,13 @@ export function reconcilePassengerMotion(
   if (state.context !== `${snapshot.chain}:${snapshot.mode}`)
     return createPassengerMotion(snapshot);
   const plan = planSnapshot(snapshot);
+  const blockHash = snapshot.blocks[0]?.hash ?? null;
+  const newObservedBlock =
+    snapshot.mode === 'live' &&
+    snapshot.status === 'ok' &&
+    blockHash !== null &&
+    state.observedBlockHash !== null &&
+    blockHash !== state.observedBlockHash;
   const previous = new Map(state.passengers.map((passenger) => [passenger.tx.id, passenger]));
   const retainedIndices = new Set(
     plan.transactions.flatMap((tx) => {
@@ -281,12 +297,35 @@ export function reconcilePassengerMotion(
       durationMs: existing?.durationMs ?? 0,
       retryAt: existing?.retryAt ?? state.elapsedMs + (stableHash(tx.id) % 800),
       path: existing?.path ?? [queuePosition(queueIndex)],
+      inHandoff: existing?.inHandoff ?? false,
     };
     if (!existing) return updated;
     const currentPosition = passengerPosition(existing, state.elapsedMs);
     if (tx.status === 'confirmed' && existing.tx.status !== 'confirmed') {
+      if (newObservedBlock && existing.phase === 'boarded') {
+        return {
+          ...startPhase(
+            updated,
+            'boarding',
+            state.elapsedMs,
+            [currentPosition, seatPosition(updated)],
+            HANDOFF_DURATION_MS,
+          ),
+          inHandoff: true,
+        };
+      }
       const path = walkingPath(currentPosition, observedDoor);
       return startPhase(updated, 'walking', state.elapsedMs, path, pathDuration(path));
+    }
+    if (
+      newObservedBlock &&
+      tx.status === 'pending' &&
+      ['boarded', 'boarding'].includes(existing.phase)
+    ) {
+      return {
+        ...startPhase(updated, 'exiting', state.elapsedMs, [currentPosition, candidateDoor], 650),
+        inHandoff: false,
+      };
     }
     if (tx.status === 'pending' && existing.tx.status === 'confirmed') {
       const target = accepted ? candidateDoor : queuePosition(updated.queueIndex);
@@ -321,6 +360,8 @@ export function reconcilePassengerMotion(
   });
   return {
     ...state,
+    observedBlockHash: blockHash,
+    handoffStartedAt: newObservedBlock ? state.elapsedMs : state.handoffStartedAt,
     feeThreshold: plan.feeThreshold,
     candidateCount: plan.accepted.size,
     candidateUsed: plan.used,
@@ -337,6 +378,7 @@ function stationaryPassenger(passenger: Passenger, now: number): Passenger {
         : 'queue';
   return {
     ...passenger,
+    inHandoff: false,
     phase,
     phaseStartedAt: now,
     durationMs: 0,
@@ -366,13 +408,16 @@ function advancePassenger(passenger: Passenger, now: number): Passenger {
     return startPhase(passenger, 'exiting', now, [currentPosition, { x: 1_024, y: 450 }], 500);
   }
   if (passenger.phase === 'boarding') {
-    return startPhase(
-      passenger,
-      passenger.tx.status === 'confirmed' ? 'confirmed' : 'boarded',
-      now,
-      [seatPosition(passenger)],
-      0,
-    );
+    return {
+      ...startPhase(
+        passenger,
+        passenger.tx.status === 'confirmed' ? 'confirmed' : 'boarded',
+        now,
+        [seatPosition(passenger)],
+        0,
+      ),
+      inHandoff: false,
+    };
   }
   if (passenger.phase === 'exiting') {
     const path = walkingPath(currentPosition, queuePosition(passenger.queueIndex));
@@ -396,6 +441,7 @@ export function advancePassengerMotion(
   if (reducedMotion) {
     return {
       ...state,
+      handoffStartedAt: null,
       passengers: state.passengers.map((passenger) =>
         stationaryPassenger(passenger, state.elapsedMs),
       ),
@@ -407,6 +453,10 @@ export function advancePassengerMotion(
   return {
     ...state,
     elapsedMs,
+    handoffStartedAt:
+      state.handoffStartedAt !== null && elapsedMs - state.handoffStartedAt >= HANDOFF_DURATION_MS
+        ? null
+        : state.handoffStartedAt,
     passengers: state.passengers.map((passenger) => advancePassenger(passenger, elapsedMs)),
   };
 }
@@ -444,8 +494,9 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
       reason: passenger.reason,
       selectedForCandidate: passenger.selectedForCandidate,
       inWagon:
-        (passenger.phase === 'boarded' || passenger.phase === 'confirmed') &&
+        (passenger.inHandoff || passenger.phase === 'boarded' || passenger.phase === 'confirmed') &&
         passenger.seatIndex < 12,
+      inHandoff: passenger.inHandoff,
       headScale: transactionHeadScale(passenger.tx),
       resourceUnits: transactionResourceUnits(passenger.tx),
       opacity: passenger.phase === 'boarded' || passenger.phase === 'confirmed' ? 0.82 : 1,
@@ -462,5 +513,12 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
     candidateCapacity: CANDIDATE_CAPACITY,
     feeThreshold: state.feeThreshold,
     elapsedMs: state.elapsedMs,
+    handoffProgress:
+      state.handoffStartedAt === null
+        ? null
+        : Math.min(
+            1,
+            Math.max(0, (state.elapsedMs - state.handoffStartedAt) / HANDOFF_DURATION_MS),
+          ),
   };
 }

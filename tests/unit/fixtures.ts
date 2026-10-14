@@ -42,6 +42,9 @@ export function bitcoinFetcher(overrides: Record<string, unknown> = {}) {
     '/mempool/recent': [btcTx],
     '/mempool': { count: 9_000, vsize: 1_000_000, total_fee: 5_000_000 },
     '/v1/fees/recommended': { fastestFee: 10, halfHourFee: 7, hourFee: 5 },
+    [`/block/${btcBlock.id}/txids`]: Array.from({ length: btcBlock.tx_count }, (_, index) =>
+      index.toString(16).padStart(64, '0'),
+    ),
     ...overrides,
   };
   return vi.fn<Fetcher>(async (input) => {
