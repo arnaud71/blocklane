@@ -79,7 +79,7 @@ export function App() {
           <span>Bitcoin & Ethereum</span>
         </div>
         <div className="topbar-right">
-          <span className="version">BÊTA 0.1</span>
+          <span className="version">BÊTA 0.2</span>
           <span className="institution-mark">
             {theme === 'heg' ? brand.institution : 'BL'}
             <span>{theme === 'heg' ? 'ÉDITION CAMPUS' : 'OBSERVATOIRE'}</span>
@@ -282,6 +282,7 @@ export function App() {
               <div className="scene-stage">
                 {snapshot && snapshot.status !== 'unavailable' ? (
                   <StreetScene
+                    key={`${chain}:${mode}`}
                     snapshot={snapshot}
                     paused={paused}
                     speed={speed}
@@ -289,6 +290,7 @@ export function App() {
                     onSelect={setSelected}
                     selectedId={selected?.id}
                     theme={theme}
+                    onClearSelection={() => setSelected(null)}
                   />
                 ) : (
                   <div className="empty-state">
@@ -343,20 +345,18 @@ export function App() {
                     <Icon name={paused ? 'play' : 'pause'} size={16} />
                     {paused ? 'Reprendre' : 'Pause'}
                   </button>
-                  {mode === 'demo' && (
-                    <label>
-                      Vitesse{' '}
-                      <select
-                        value={speed}
-                        onChange={(event) => setSpeed(Number(event.target.value))}
-                        aria-label="Vitesse de simulation"
-                      >
-                        <option value={0.5}>0,5×</option>
-                        <option value={1}>1×</option>
-                        <option value={2}>2×</option>
-                      </select>
-                    </label>
-                  )}
+                  <label>
+                    Vitesse{' '}
+                    <select
+                      value={speed}
+                      onChange={(event) => setSpeed(Number(event.target.value))}
+                      aria-label="Vitesse de simulation"
+                    >
+                      <option value={0.5}>0,5×</option>
+                      <option value={1}>1×</option>
+                      <option value={2}>2×</option>
+                    </select>
+                  </label>
                   <button
                     aria-pressed={reducedMotion}
                     onClick={() => setReducedMotion(!reducedMotion)}
@@ -365,6 +365,12 @@ export function App() {
                   </button>
                 </div>
               </div>
+              <p className="motion-explanation">
+                Tête ={' '}
+                {chain === 'bitcoin' ? 'taille virtuelle en vBytes' : 'limite de gas déclarée'}.
+                Embarquements et retours du wagon candidat : projection pédagogique selon les frais
+                et un budget visuel limité. Le statut réel reste celui de la source.
+              </p>
               <div className="coverage-note">
                 <Icon name="signal" size={14} />
                 <p>
@@ -519,8 +525,8 @@ export function App() {
             <div className="learning-grid">
               <Lesson n="01" title="Les voyageurs sont des transactions">
                 Chaque personnage représente une transaction de notre échantillon. Sa couleur
-                indique ses frais relatifs et sa taille illustre ses besoins en espace ou en gas. La
-                ville ne montre pas toutes les transactions.
+                indique ses frais relatifs et la taille de sa tête illustre ses besoins en espace ou
+                en gas. La ville ne montre pas toutes les transactions.
               </Lesson>
               <Lesson n="02" title="Les transports représentent des blocs">
                 Un bloc rassemble des transactions. En direct, les transports illustrent des blocs
@@ -642,7 +648,7 @@ export function App() {
                 FairOnChain ↗
               </a>
             )}
-            Lecture seule · Bêta 0.1.0
+            Lecture seule · Bêta 0.2.0
           </span>
         </footer>
       </main>

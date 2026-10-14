@@ -643,6 +643,15 @@ h1 em {
   background: #081d20;
   color: #759a87;
 }
+.motion-explanation {
+  margin: 0;
+  padding: 12px 21px;
+  border-top: 1px solid #ffffff09;
+  color: #90b2a0;
+  font-size: 11px;
+  line-height: 1.65;
+  background: #0b2224;
+}
 .coverage-note svg {
   flex-shrink: 0;
   margin-top: 1px;

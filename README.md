@@ -83,6 +83,8 @@ Ce dépôt contient le socle applicatif et les procédures. La mise en ligne pub
 
 ## Maintenance
 
+La version 0.2.0 ajoute les trajets vers les wagons, les retours en file selon la priorité illustrative, les têtes proportionnelles aux ressources des transactions et un panneau du quai dynamique. Voir [le fonctionnement des animations](docs/animation.md) pour les règles, les limites et les contrôles.
+
 Les résultats et les limites de la première vérification sont consignés dans [docs/validation.md](docs/validation.md).
 
 Une automatisation Codex est enregistrée pour ce chat : **Maintenance hebdomadaire BlockLane**, chaque lundi à **09 h, Europe/Zurich**. Elle contrôle les dépendances, les tests et les connecteurs, prépare des correctifs à revoir et signale les changements utiles. Aucune fusion ni mise en production automatique. Le Mac doit être éveillé, l'application ouverte et le projet accessible à l'heure prévue.

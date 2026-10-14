@@ -1,3 +1,147 @@
+.scene-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  align-items: start;
+  width: 100%;
+}
+.street-scene-viewport {
+  min-width: 0;
+  overflow: hidden;
+}
+.scene-workspace > .info-panel {
+  align-self: stretch;
+}
+.street-activity-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 19px;
+  padding: 15px 20px;
+  color: #a1c1b0;
+  font-size: 11px;
+  border-top: 1px solid #ffffff09;
+  background: #0b2523;
+}
+.street-activity-bar span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.street-wagon-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 17px 20px 20px;
+  background: #0b2523;
+}
+.street-wagon-summary article {
+  border: 1px solid #ffffff10;
+  border-radius: 7px;
+  padding: 15px;
+  background: #0d2a28;
+}
+.street-wagon-summary article > span {
+  font-size: 9px;
+  color: #89afa0;
+  letter-spacing: 1px;
+  display: block;
+}
+.street-wagon-summary strong {
+  font-size: 20px;
+  font-weight: 500;
+  color: #cae8d7;
+  display: block;
+  margin-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.street-wagon-summary small {
+  font-size: 10px;
+  font-weight: 400;
+  color: #89afa0;
+}
+.street-wagon-summary p {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #90b4a3;
+  margin: 9px 0 0;
+}
+.street-candidate-budget {
+  height: 4px;
+  background: #739f8922;
+  margin-top: 10px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.street-candidate-budget i {
+  display: block;
+  height: 100%;
+  background: #e6a16c;
+  border-radius: inherit;
+}
+.street-activity-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a4e7be;
+  box-shadow: 0 0 9px #a4e7be88;
+}
+.street-door-left,
+.street-door-right {
+  transition: translate 300ms ease;
+}
+.street-tram--doors-open .street-door-left {
+  translate: -10px 0;
+}
+.street-tram--doors-open .street-door-right {
+  translate: 10px 0;
+}
+.street-door-light {
+  opacity: 0.4;
+}
+.street-tram--doors-open .street-door-light {
+  opacity: 1;
+  animation: street-door-pulse 1.2s ease-in-out infinite;
+}
+@keyframes street-door-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.street-scene--paused .street-door-left,
+.street-scene--paused .street-door-right {
+  transition: none;
+}
+@media (max-width: 1200px) {
+  .scene-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .scene-workspace > .info-panel {
+    border-left: 0;
+    border-top: 1px solid #ffffff12;
+  }
+}
+@media (max-width: 600px) {
+  .scene-workspace {
+    min-width: 0 !important;
+  }
+  .street-scene-viewport {
+    overflow-x: auto;
+  }
+  .street-scene {
+    min-width: 630px;
+  }
+  .street-activity-bar {
+    padding: 12px;
+    font-size: 11px;
+  }
+  .street-wagon-summary {
+    padding: 12px;
+  }
+}
 .street-scene {
   position: relative;
   width: 100%;

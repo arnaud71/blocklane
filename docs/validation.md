@@ -1,5 +1,15 @@
 # Vérification initiale — 14 octobre 2026
 
+## Extension 0.2.0 — animations et panneau
+
+Vérification locale de la version 0.2.0 : **42 tests unitaires et 32 tests navigateur réussis**, TypeScript strict, ESLint, Prettier et compilation Vite réussis. L'audit npm ne signale aucune vulnérabilité connue à la date du contrôle. Aucun ajout de dépendance ni modification des connecteurs.
+
+Les nouveaux parcours testent la marche réelle des coordonnées SVG, l'embarquement, le retour pour frais faibles, l'éviction par un nouveau voyageur plus prioritaire, l'échelle de tête Bitcoin/Ethereum, la pause, les mouvements réduits, la rotation du panneau et la mise à jour d'une transaction sélectionnée. Ils vérifient explicitement qu'une animation ne transforme pas une transaction en attente en confirmation réseau. Le moteur pur vérifie aussi la disparition de l'échantillon, les données répétées, les limites, le temps de pause et une confirmation annulée par la source.
+
+La scène a été inspectée sur ordinateur et mobile, ainsi que dans l'aperçu local avec les données Bitcoin en direct. Les règles d'animation sont documentées dans [animation.md](animation.md).
+
+## Socle initial 0.1.0
+
 Version concernée : **0.1.0**. Vérification locale avec Node **24.19.0**.
 
 | Contrôle                            | Résultat                                                                                                                   |

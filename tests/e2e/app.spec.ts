@@ -189,7 +189,9 @@ test('selected transaction follows new observations and disappears when data exp
   await expect(page.getByText('En attente dans la source', { exact: true })).toBeVisible();
   phase = 'confirmed';
   await page.clock.fastForward(11_000);
-  await expect(page.getByText('Incluse dans un bloc observé', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.transaction-card').getByText('Incluse dans un bloc observé', { exact: true }),
+  ).toBeVisible();
   phase = 'unavailable';
   await page.clock.fastForward(11_000);
   await expect(page.getByRole('status')).toHaveText('Source indisponible');

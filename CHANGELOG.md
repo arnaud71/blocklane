@@ -2,6 +2,23 @@
 
 Le projet suit le versionnement sémantique. Les dates utilisent le calendrier Europe/Zurich. Une entrée représente le contenu de la version ; sa livraison publique est une opération distincte.
 
+## 0.2.0 — 2026-10-14
+
+### Ajouts
+
+- Trajets vers les wagons, embarquement, sortie et retour en file lorsqu'une transaction plus prioritaire prend une place dans la projection.
+- Taille de tête liée à la taille virtuelle Bitcoin ou à la limite de gas Ethereum, sur une échelle stable et bornée.
+- Panneau du quai avec pages Réseau, Bloc et Voyageurs, rotation automatique et détails fixés par sélection.
+- Voyageurs visibles à bord, portes animées, compteurs d'activité et budget du candidat illustratif.
+- Horloge d'animation commune bornée à 24 images par seconde, pause, vitesse, onglet masqué et mouvements réduits.
+- Tests du moteur et parcours navigateur vérifiant les déplacements et l'absence de confirmations inventées.
+
+### Sémantique
+
+- Embarquements et retours du candidat restent une projection pédagogique. Les statuts réels proviennent exclusivement de la source.
+- Les douze unités du wagon candidat sont un budget de représentation, pas la capacité d'un bloc du réseau.
+- Les transactions confirmées ne tiennent pas toutes dans un wagon illustré ; l'excédent reste sur le quai observé.
+
 ## 0.1.0 — 2026-10-14
 
 ### Ajouts
