@@ -20,6 +20,21 @@ export const usdQuoteSchema = z.object({
 });
 export type UsdQuote = z.infer<typeof usdQuoteSchema>;
 
+/** Counts from the observed Ethereum provider's local pool, never a global total. */
+export const ethereumMempoolSchema = z
+  .object({
+    pending: safeNonnegativeInteger,
+    queued: safeNonnegativeInteger,
+    /** Receipt time in Unix milliseconds, independent of the block observation. */
+    observedAt: safeNonnegativeInteger,
+    status: z.enum(['ok', 'stale']),
+    method: z.literal('txpool_status'),
+  })
+  .refine((pool) => Number.isSafeInteger(pool.pending + pool.queued), {
+    message: 'The local transaction pool total exceeds the safe integer limit',
+  });
+export type EthereumMempool = z.infer<typeof ethereumMempoolSchema>;
+
 export const transactionSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -86,7 +101,10 @@ export const snapshotSchema = z
     /** Unix timestamp in milliseconds; stale snapshots retain their original time. */
     observedAt: safeNonnegativeInteger,
     coverage: z.string().min(1).max(700),
+    /** Observed provider's local pool total; null when no total is available. */
     pendingCount: safeNonnegativeInteger.nullable(),
+    /** Optional Ethereum local pool breakdown with its own observation time. */
+    mempool: ethereumMempoolSchema.nullable().optional(),
     feeRate: finiteNonnegative.nullable(),
     feeUnit: z.enum(['sat/vB', 'Gwei']),
     /** Optional market conversion; its availability is independent of chain data. */
@@ -119,6 +137,22 @@ export const snapshotSchema = z
         path: ['usdQuote'],
         message: 'Demonstration snapshots cannot carry a live market quote',
       });
+    }
+    if (snapshot.mempool != null) {
+      if (snapshot.chain !== 'ethereum' || snapshot.mode !== 'live') {
+        context.addIssue({
+          code: 'custom',
+          path: ['mempool'],
+          message: 'A txpool_status observation must belong to live Ethereum data',
+        });
+      }
+      if (snapshot.pendingCount !== snapshot.mempool.pending + snapshot.mempool.queued) {
+        context.addIssue({
+          code: 'custom',
+          path: ['pendingCount'],
+          message: 'The local pool total must match its pending and queued counts',
+        });
+      }
     }
     if (
       snapshot.mode === 'live' &&
@@ -203,7 +237,10 @@ export const snapshotSchema = z
     }
     if (
       snapshot.status === 'unavailable' &&
-      (snapshot.transactions.length || snapshot.blocks.length || inclusions.length)
+      (snapshot.transactions.length ||
+        snapshot.blocks.length ||
+        inclusions.length ||
+        snapshot.mempool != null)
     ) {
       context.addIssue({
         code: 'custom',

@@ -203,6 +203,43 @@
   transition: fill 300ms ease;
 }
 
+.street-wagon-headlight-emission,
+.street-wagon-brake-emission {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.street-wagon-headlight-lamp {
+  fill: #8e9e79;
+  transition: fill 120ms ease;
+}
+
+.street-wagon-brake-lamp {
+  fill: #743d3b;
+  transition: fill 120ms ease;
+}
+
+.street-vertical-wagon[data-headlights='true'] .street-wagon-headlight-emission,
+.street-vertical-wagon[data-brake-lights='true'] .street-wagon-brake-emission {
+  opacity: 1;
+}
+
+.street-vertical-wagon[data-headlights='true'] .street-wagon-headlight-lamp {
+  fill: #fff8cc;
+}
+
+.street-vertical-wagon[data-brake-lights='true'] .street-wagon-brake-lamp {
+  fill: #ff6663;
+}
+
+.street-scene--paused .street-wagon-headlight-emission,
+.street-scene--paused .street-wagon-brake-emission,
+.street-scene--paused .street-wagon-headlight-lamp,
+.street-scene--paused .street-wagon-brake-lamp {
+  transition: none;
+}
+
 .street-scene--demo .street-person--demo .street-person-body {
   animation: street-traveler var(--traveler-duration, 4.8s) ease-in-out infinite;
   animation-delay: var(--person-delay, 0s);

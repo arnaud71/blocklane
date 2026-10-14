@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Snapshot, Tx } from '../../shared/model';
 import { explorerUrl, number, shortHash } from '../lib/format';
+import { providerMempool } from '../lib/mempoolDisplay';
 import {
   formatFeeRate,
   formatEstimatedFeeAmount,
@@ -56,15 +57,31 @@ export function InfoPanel({
 }: InfoPanelProps) {
   const [page, setPage] = useState(0);
   const [rotationEnabled, setRotationEnabled] = useState(true);
-  const rotating = rotationEnabled && !selectedTx && !paused && !reducedMotion && snapshot !== null;
+  const [interacting, setInteracting] = useState(false);
+  const rotating =
+    rotationEnabled &&
+    !interacting &&
+    !selectedTx &&
+    !paused &&
+    !reducedMotion &&
+    snapshot?.status === 'ok';
 
   useEffect(() => {
     if (!rotating) return;
-    const timer = window.setInterval(
-      () => setPage((current) => (current + 1) % pages.length),
-      8_000,
-    );
-    return () => window.clearInterval(timer);
+    let timer: number | undefined;
+    const syncVisibility = () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      timer = undefined;
+      if (!document.hidden) {
+        timer = window.setInterval(() => setPage((current) => (current + 1) % pages.length), 3_000);
+      }
+    };
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', syncVisibility);
+    };
   }, [rotating]);
 
   const chain = snapshot?.chain ?? selectedTx?.chain ?? 'bitcoin';
@@ -73,6 +90,7 @@ export function InfoPanel({
   const quote = demo ? undefined : snapshot?.usdQuote;
   const displayUsd = feeDisplayUnit === 'usd';
   const medianFee = medianTransactionFee(snapshot);
+  const mempool = providerMempool(snapshot);
   const medianAmount = formatEstimatedFeeAmount(
     chain,
     medianFee.nativeAmount,
@@ -101,6 +119,10 @@ export function InfoPanel({
       data-page={selectedTx ? 'transaction' : (pages[page] ?? pages[0]).id}
       data-auto-rotating={rotating}
       data-fee-display={feeDisplayUnit}
+      onFocusCapture={() => setInteracting(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setInteracting(false);
+      }}
     >
       <div className="info-panel-top">
         <span className="info-panel-caption">
@@ -219,11 +241,16 @@ export function InfoPanel({
                   </p>
                 )}
                 <dl className="info-details">
-                  <Detail label={bitcoin || demo ? 'En attente dans la source' : 'Mempool mondial'}>
-                    {snapshot?.pendingCount === null || !snapshot
+                  <Detail label={demo ? 'Mempool simulée' : 'Mempool du fournisseur'}>
+                    {mempool.total === null
                       ? 'Non mesuré'
-                      : `${number(snapshot.pendingCount)} transactions`}
+                      : `${number(mempool.total)} transactions`}
                   </Detail>
+                  {!bitcoin && mempool.pending !== null && mempool.queued !== null && (
+                    <Detail label="Pending / queued">
+                      {number(mempool.pending)} / {number(mempool.queued)}
+                    </Detail>
+                  )}
                   <Detail label="Échantillon reçu">
                     {snapshot ? `${number(snapshot.transactions.length)} transactions` : '—'}
                   </Detail>
@@ -234,6 +261,7 @@ export function InfoPanel({
                   </Detail>
                   <Detail label="Source">{snapshot?.source ?? 'En attente'}</Detail>
                 </dl>
+                <p className="info-explanation">{mempool.note}</p>
                 <p className="info-explanation">
                   {bitcoin
                     ? 'Les frais influencent la priorité. Le délai d’inclusion reste incertain.'
@@ -362,8 +390,11 @@ export function InfoPanel({
             aria-pressed={rotationEnabled}
           >
             <Icon name={rotationEnabled ? 'pause' : 'play'} size={11} />
-            {rotationEnabled ? 'Défilement automatique' : 'Activer le défilement'}
-            {(paused || reducedMotion) && rotationEnabled ? ' · en pause' : ''}
+            {rotationEnabled ? 'Défilement · 3 s' : 'Activer le défilement · 3 s'}
+            {(paused || reducedMotion || interacting || snapshot?.status !== 'ok') &&
+            rotationEnabled
+              ? ' · en pause'
+              : ''}
           </button>
         </>
       )}

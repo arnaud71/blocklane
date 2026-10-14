@@ -60,7 +60,7 @@
 }
 .info-panel h3 {
   margin: 0;
-  font-size: 24px;
+  font-size: 28px;
   line-height: 1.15;
   letter-spacing: -0.9px;
   font-weight: 500;
@@ -81,14 +81,14 @@
   letter-spacing: 0;
 }
 .info-panel .info-hero.info-fee-amount {
-  font-size: clamp(20px, 2vw, 28px);
+  font-size: clamp(28px, 3vw, 42px);
   letter-spacing: -0.5px;
   overflow-wrap: anywhere;
 }
 .info-hero-caption {
   margin: 0 0 25px;
   color: #a4bfba;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 .info-block-number {
@@ -107,11 +107,11 @@
 }
 .info-detail dt {
   color: #92aaa7;
-  font-size: 11px;
+  font-size: 12px;
 }
 .info-detail dd {
   margin: 0;
-  font-size: 12px;
+  font-size: 15px;
   line-height: 1.5;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
@@ -120,7 +120,7 @@
 .info-caution {
   margin: 15px 0 0;
   color: #a4bbb7;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.65;
 }
 .info-caution {

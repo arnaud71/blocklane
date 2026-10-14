@@ -19,7 +19,7 @@ import { number } from '../lib/format';
 import { feeColorForRate } from '../lib/feeColors';
 import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib/feeDisplay';
 import { Passenger } from './Passenger';
-import { InfoPanel } from './InfoPanel';
+import { InfoPanel, type SceneActivity } from './InfoPanel';
 import './StreetScene.css';
 
 const DynamicInfoPanel = memo(InfoPanel);
@@ -39,6 +39,7 @@ export interface StreetSceneProps {
   showInfo?: boolean;
   feeDisplayUnit?: FeeDisplayUnit;
   onDeparture?: (chain: ChainId, departedAt: number) => void;
+  onActivity?: (chain: ChainId, activity: SceneActivity) => void;
 }
 
 function SideDoor({ y, open, purpose }: { y: number; open: boolean; purpose: 'entry' | 'exit' }) {
@@ -112,9 +113,16 @@ function Wagon({
   feeLabel?: (tx: Tx) => string;
 }) {
   const clipId = useId().replace(/:/g, '') + '-wagon-interior';
+  const headlightGradientId = `${clipId}-headlight-beam`;
   const entryOpen = !moving && doors.entry;
   const exitOpen = !moving && doors.exit;
   const preservePassages = moving || preparationProgress !== undefined;
+  const headlightsOn = moving || preparationProgress !== undefined;
+  const brakeLightsOn =
+    moving &&
+    kind !== 'next' &&
+    ((handoffProgress !== undefined && handoffProgress >= 0.7) ||
+      (arrivalProgress !== undefined && arrivalProgress >= 0.7));
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
@@ -123,6 +131,8 @@ function Wagon({
       data-handoff-progress={handoffProgress}
       data-preparation-progress={preparationProgress}
       data-arrival-progress={arrivalProgress}
+      data-headlights={headlightsOn}
+      data-brake-lights={brakeLightsOn}
       transform={`translate(0 ${offsetY})`}
       opacity={opacity}
     >
@@ -130,6 +140,10 @@ function Wagon({
         {caption}
       </text>
       <defs>
+        <linearGradient id={headlightGradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff4bb" stopOpacity="0" />
+          <stop offset="1" stopColor="#fff4bb" stopOpacity=".38" />
+        </linearGradient>
         <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
           <rect
             x={WAGON_X + 3}
@@ -147,6 +161,10 @@ function Wagon({
         </clipPath>
       </defs>
       <g transform={`translate(${WAGON_X} ${y})`} aria-hidden="true">
+        <g className="street-wagon-headlight-emission">
+          <path d="M10 11 -3-48 34-48 21 11Z" fill={`url(#${headlightGradientId})`} />
+          <path d="M64 11 51-48 88-48 75 11Z" fill={`url(#${headlightGradientId})`} />
+        </g>
         <ellipse cx="43" cy="116" rx="47" ry="117" fill="#061714" opacity=".4" />
         <rect x="-5" y="25" width="9" height="35" rx="4" fill="#10231e" />
         <rect x="81" y="25" width="9" height="35" rx="4" fill="#10231e" />
@@ -160,6 +178,32 @@ function Wagon({
           stroke="#172d26"
           strokeWidth="3"
         />
+        <g className="street-wagon-headlight-emission">
+          <ellipse cx="15.5" cy="10" rx="13" ry="10" fill="#fff4bb" opacity=".16" />
+          <ellipse cx="69.5" cy="10" rx="13" ry="10" fill="#fff4bb" opacity=".16" />
+          <ellipse cx="15.5" cy="10" rx="8" ry="6" fill="#fff4bb" opacity=".36" />
+          <ellipse cx="69.5" cy="10" rx="8" ry="6" fill="#fff4bb" opacity=".36" />
+        </g>
+        <rect
+          className="street-wagon-headlight-lamp"
+          x="10"
+          y="7"
+          width="11"
+          height="6"
+          rx="3"
+          stroke="#40564a"
+          strokeWidth="1"
+        />
+        <rect
+          className="street-wagon-headlight-lamp"
+          x="64"
+          y="7"
+          width="11"
+          height="6"
+          rx="3"
+          stroke="#40564a"
+          strokeWidth="1"
+        />
         <rect x="8" y="14" width="69" height="24" rx="7" fill="#203d35" />
         <text x="42.5" y="30" fill="#d5e3c7" fontSize="8" textAnchor="middle">
           {label}
@@ -167,8 +211,28 @@ function Wagon({
         <rect x="13" y="46" width="58" height="140" rx="7" fill="#203d35" />
         <path d="M17 91h50M17 121h50M17 151h50" stroke="#567d6c" strokeWidth="2" />
         <rect x="9" y="195" width="67" height="9" rx="4" fill="#d1dfc0" />
-        <circle cx="14" cy="207" r="3" fill="#e89c73" />
-        <circle cx="71" cy="207" r="3" fill="#e89c73" />
+        <g className="street-wagon-brake-emission">
+          <ellipse cx="14" cy="207" rx="12" ry="10" fill="#f33f43" opacity=".2" />
+          <ellipse cx="71" cy="207" rx="12" ry="10" fill="#f33f43" opacity=".2" />
+          <ellipse cx="14" cy="207" rx="7" ry="6" fill="#ff7670" opacity=".34" />
+          <ellipse cx="71" cy="207" rx="7" ry="6" fill="#ff7670" opacity=".34" />
+        </g>
+        <circle
+          className="street-wagon-brake-lamp"
+          cx="14"
+          cy="207"
+          r="3.5"
+          stroke="#612d30"
+          strokeWidth="1"
+        />
+        <circle
+          className="street-wagon-brake-lamp"
+          cx="71"
+          cy="207"
+          r="3.5"
+          stroke="#612d30"
+          strokeWidth="1"
+        />
       </g>
       <g transform={`translate(${WAGON_X} ${y})`}>
         <SideDoor y={ENTRY_DOOR_Y} open={entryOpen} purpose="entry" />
@@ -301,6 +365,7 @@ export function StreetScene({
   showInfo = true,
   feeDisplayUnit = 'native',
   onDeparture,
+  onActivity,
 }: StreetSceneProps) {
   const id = useId().replace(/:/g, '');
   const [compactScene, setCompactScene] = useState(
@@ -357,6 +422,9 @@ export function StreetScene({
     feeDisplayUnit === 'usd'
       ? `${tx.chain === 'ethereum' ? 'estimation avec limite de gas' : 'frais estimés'} : ${formatTransactionFee(tx, 'usd', demo ? null : snapshot.usdQuote)} ; taux observé ${formatFeeRate(tx.chain, tx.feeRate, 'native')}`
       : formatTransactionFee(tx, 'native');
+  const boardedCount = motion.passengers.filter(
+    (pose) => pose.inWagon && pose.sourceObserved,
+  ).length;
   const activity = useMemo(
     () => ({
       walking:
@@ -365,13 +433,26 @@ export function StreetScene({
         motion.counts.walking +
         motion.counts.boarding +
         motion.counts.preparing,
-      boarded: motion.passengers.filter((pose) => pose.inWagon && pose.sourceObserved).length,
+      boarded: boardedCount,
       returning: motion.counts.exiting + motion.counts.returning,
       waiting: motion.counts.queue,
     }),
-    [motion.counts, motion.passengers],
+    [
+      motion.counts.arriving,
+      motion.counts.reordering,
+      motion.counts.walking,
+      motion.counts.boarding,
+      motion.counts.preparing,
+      motion.counts.exiting,
+      motion.counts.returning,
+      motion.counts.queue,
+      boardedCount,
+    ],
   );
   const styles = { '--scene-duration': `${18 / speed}s` } as CSSProperties;
+  useEffect(() => {
+    onActivity?.(snapshot.chain, activity);
+  }, [onActivity, snapshot.chain, activity]);
   return (
     <div className="scene-workspace scene-workspace--immersive">
       <div className="street-scene-viewport">

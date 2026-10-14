@@ -1,26 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChainId, Tx } from '../shared/model';
 import { StreetScene } from './components/StreetScene';
-import { InfoPanel } from './components/InfoPanel';
+import { InfoPanel, type SceneActivity } from './components/InfoPanel';
+import { InfoBillboard } from './components/InfoBillboard';
 import { DepartureTimer } from './components/DepartureTimer';
 import { Icon } from './components/Icon';
 import { brand, safeExternalUrl } from './config/brand';
 import { useSnapshot } from './hooks/useSnapshot';
-import { number } from './lib/format';
-import {
-  formatEstimatedFeeAmount,
-  hasUsableUsdQuote,
-  medianTransactionFee,
-  medianTransactionFeeNote,
-  usdQuoteNote,
-  type FeeDisplayUnit,
-} from './lib/feeDisplay';
+import type { FeeDisplayUnit } from './lib/feeDisplay';
 
 const chains = {
   bitcoin: { name: 'Bitcoin', symbol: '₿', ticker: 'BTC' },
   ethereum: { name: 'Ethereum', symbol: '◆', ticker: 'ETH' },
 } as const;
 const chainIds: ChainId[] = ['bitcoin', 'ethereum'];
+const EMPTY_ACTIVITY: SceneActivity = { walking: 0, boarded: 0, returning: 0, waiting: 0 };
 
 export function App() {
   const [chain, setChain] = useState<ChainId>('bitcoin');
@@ -36,6 +30,20 @@ export function App() {
   const recordDeparture = useCallback((id: ChainId, departedAt: number) => {
     setLastDepartures((current) =>
       current[id] === departedAt ? current : { ...current, [id]: departedAt },
+    );
+  }, []);
+  const [sceneActivity, setSceneActivity] = useState<Record<ChainId, SceneActivity>>({
+    bitcoin: EMPTY_ACTIVITY,
+    ethereum: EMPTY_ACTIVITY,
+  });
+  const recordActivity = useCallback((id: ChainId, activity: SceneActivity) => {
+    setSceneActivity((current) =>
+      current[id].walking === activity.walking &&
+      current[id].boarded === activity.boarded &&
+      current[id].returning === activity.returning &&
+      current[id].waiting === activity.waiting
+        ? current
+        : { ...current, [id]: activity },
     );
   }, []);
   const [selection, setSelection] = useState<{
@@ -93,7 +101,10 @@ export function App() {
     setSelection(null);
   }
   function changeMode(value: 'live' | 'demo') {
-    if (value !== mode) setLastDepartures({ bitcoin: null, ethereum: null });
+    if (value !== mode) {
+      setLastDepartures({ bitcoin: null, ethereum: null });
+      setSceneActivity({ bitcoin: EMPTY_ACTIVITY, ethereum: EMPTY_ACTIVITY });
+    }
     setMode(value);
     setSelection(null);
   }
@@ -200,9 +211,6 @@ export function App() {
             const feed = feeds[id];
             const current = feed.snapshot;
             const network = chains[id];
-            const medianFee = medianTransactionFee(current);
-            const quote = mode === 'demo' ? null : current?.usdQuote;
-            const medianNote = medianTransactionFeeNote(id, medianFee.sampleSize, mode === 'demo');
             const label =
               mode === 'demo'
                 ? 'Simulation pédagogique'
@@ -250,57 +258,26 @@ export function App() {
                       </span>
                     </span>
                   </div>
-                  <dl className="chain-metrics">
-                    <div>
-                      <dt>
-                        {id === 'ethereum' && mode === 'live' ? 'Mempool global' : 'En attente'}
-                      </dt>
-                      <dd>
-                        {id === 'ethereum' && mode === 'live'
-                          ? 'Non mesuré'
-                          : number(current?.pendingCount ?? null)}
-                        <span className="metric-note">
-                          {id === 'ethereum' && mode === 'live'
-                            ? 'Non mesuré par cette source'
-                            : 'transactions dans la source'}
-                        </span>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Frais médians / tx</dt>
-                      <dd
-                        className="fee-metric-total"
-                        title={`${medianNote}${
-                          feeDisplayUnit === 'usd' ? ` ${usdQuoteNote(quote, mode === 'demo')}` : ''
-                        }`}
-                      >
-                        {formatEstimatedFeeAmount(
-                          id,
-                          medianFee.nativeAmount,
-                          feeDisplayUnit,
-                          quote,
-                        )}
-                        <span className="metric-note">
-                          {medianFee.sampleSize === 0
-                            ? 'Aucune tx exploitable'
-                            : `${mode === 'demo' ? 'Simulation' : 'Échantillon'} · ${medianFee.sampleSize} tx${id === 'ethereum' ? ' · limite gas' : ''}${feeDisplayUnit === 'usd' ? (!hasUsableUsdQuote(quote) ? ' · cours indisponible' : quote.status === 'stale' ? ' · cours conservé' : '') : ''}`}
-                        </span>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Dernier bloc</dt>
-                      <dd>
-                        {current?.blocks[0] ? `#${number(current.blocks[0].height)}` : '—'}
-                        <span className="metric-note">
-                          {mode === 'demo' ? 'Bloc synthétique' : 'Inclusion observée'}
-                        </span>
-                        <span className="metric-note departure-note">
-                          {mode === 'demo' ? 'Départ simulé' : 'Depuis départ'}{' '}
-                          <DepartureTimer departedAt={lastDepartures[id]} demo={mode === 'demo'} />
-                        </span>
-                      </dd>
-                    </div>
-                  </dl>
+                  {current ? (
+                    <InfoBillboard
+                      snapshot={current}
+                      activity={
+                        current.status === 'unavailable' ? EMPTY_ACTIVITY : sceneActivity[id]
+                      }
+                      paused={paused}
+                      reducedMotion={reducedMotion}
+                      selected={selected?.chain === id}
+                      feeDisplayUnit={feeDisplayUnit}
+                      theme={theme}
+                      top
+                    />
+                  ) : (
+                    <div className="billboard-loading">Connexion à la source…</div>
+                  )}
+                  <p className="chain-departure-line">
+                    {mode === 'demo' ? 'Depuis le départ simulé' : 'Depuis le dernier départ'}{' '}
+                    <DepartureTimer departedAt={lastDepartures[id]} demo={mode === 'demo'} />
+                  </p>
                 </header>
                 <div className="scene-stage">
                   {current && current.status !== 'unavailable' ? (
@@ -312,6 +289,7 @@ export function App() {
                       reducedMotion={reducedMotion}
                       feeDisplayUnit={feeDisplayUnit}
                       onDeparture={recordDeparture}
+                      onActivity={recordActivity}
                       onSelect={selectTransaction}
                       selectedId={selected?.chain === id ? selected.id : undefined}
                       theme={theme}
@@ -436,7 +414,10 @@ export function App() {
                   <Lesson n="05" title="Un mempool est une vue locale">
                     Chaque nœud voit sa propre file. Pour Ethereum, le bloc candidat du fournisseur
                     n’est pas un mempool global. Une absence à l’écran ne signifie pas qu’une
-                    transaction n’existe pas.
+                    transaction n’existe pas. « Mempool source » affiche le comptage du fournisseur
+                    observé, lorsqu’il le donne. Sur Ethereum, il réunit pending et queued ; les
+                    transactions différées peuvent attendre un nonce précédent. L’échantillon
+                    visible ne remplace jamais un compteur indisponible.
                   </Lesson>
                   <Lesson n="06" title="Un départ n’est pas une finalité">
                     Une inclusion récente peut être remise en cause par une réorganisation. Ethereum

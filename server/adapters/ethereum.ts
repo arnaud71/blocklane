@@ -7,9 +7,11 @@ import {
   MAX_TRANSACTIONS,
   TRACKED_TRANSACTION_TTL_MS,
   blockSchema,
+  ethereumMempoolSchema,
   snapshotSchema,
   type Block,
   type BlockInclusions,
+  type EthereumMempool,
   type Snapshot,
   type Tx,
 } from '../../shared/model.js';
@@ -105,6 +107,12 @@ export const ethereumBlockHeaderSchema = z
 type EthereumBlock = z.infer<typeof ethereumFullBlockSchema>;
 type EthereumBlockHeader = z.infer<typeof ethereumBlockHeaderSchema>;
 const PENDING_FEE_SAMPLE_LIMIT = 96;
+const MEMPOOL_REFRESH_MS = 30_000;
+const MEMPOOL_MAX_AGE_MS = 120_000;
+const ethereumTxpoolStatusSchema = z.object({
+  pending: hexQuantitySchema,
+  queued: hexQuantitySchema,
+});
 
 /** EIP-1559 effective price is min(maxFeePerGas, baseFeePerGas + maxPriorityFeePerGas). */
 export function effectiveGasPriceWei(tx: EthereumTransaction, baseFeeWei: bigint): bigint {
@@ -131,7 +139,7 @@ let nextRpcId = 0;
 
 async function rpc(
   config: ServerConfig,
-  method: 'eth_chainId' | 'eth_getBlockByNumber',
+  method: 'eth_chainId' | 'eth_getBlockByNumber' | 'txpool_status',
   params: unknown[],
   fetcher?: Fetcher,
 ): Promise<unknown> {
@@ -139,6 +147,7 @@ async function rpc(
   const id = nextRpcId;
   const raw = await requestJson(config.ethereumRpcUrl, {
     ...(fetcher === undefined ? {} : { fetcher }),
+    ...(method === 'txpool_status' ? { maxBytes: 64 * 1_024 } : {}),
     body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
   });
   const envelope = parsePayload(
@@ -232,6 +241,50 @@ export function createEthereumProvider(
   let lastHead: Block | null = null;
   let cursor: number | null = null;
   let skippedHistory = false;
+  let lastMempool: EthereumMempool | null = null;
+  let mempoolRefreshFailed = false;
+  let mempoolNextRefreshAt = 0;
+  let mempoolInFlight: Promise<void> | null = null;
+
+  async function refreshMempool(): Promise<void> {
+    try {
+      const status = parsePayload(
+        ethereumTxpoolStatusSchema,
+        await rpc(config, 'txpool_status', [], fetcher),
+      );
+      const pending = bigintToSafeNumber(BigInt(status.pending));
+      const queued = bigintToSafeNumber(BigInt(status.queued));
+      lastMempool = parsePayload(ethereumMempoolSchema, {
+        pending,
+        queued,
+        observedAt: now(),
+        status: 'ok',
+        method: 'txpool_status',
+      });
+      mempoolRefreshFailed = false;
+    } catch {
+      // An optional local pool method must not invalidate or delay valid chain data.
+      mempoolRefreshFailed = true;
+    } finally {
+      mempoolNextRefreshAt = now() + MEMPOOL_REFRESH_MS;
+      mempoolInFlight = null;
+    }
+  }
+
+  function scheduleMempoolRefresh(): void {
+    if (mempoolInFlight !== null || now() < mempoolNextRefreshAt) return;
+    mempoolInFlight = Promise.resolve().then(refreshMempool);
+  }
+
+  function currentMempool(): EthereumMempool | null {
+    if (lastMempool === null) return null;
+    const age = now() - lastMempool.observedAt;
+    if (age < 0 || age > MEMPOOL_MAX_AGE_MS) return null;
+    return {
+      ...lastMempool,
+      status: mempoolRefreshFailed || age > MEMPOOL_REFRESH_MS ? 'stale' : 'ok',
+    };
+  }
 
   function resetBranch(): void {
     checked.clear();
@@ -296,6 +349,8 @@ export function createEthereumProvider(
     }
     // Validate the complete required latest observation before mutating tracker state.
     const confirmedTransactions = toTransactions(latest, 'confirmed', MAX_TRANSACTIONS);
+    // Background refresh on the same fixed, chain-verified RPC; never await this optional call.
+    scheduleMempoolRefresh();
     const collectedAt = now();
     for (const [id, lastObservedAt] of tracked) {
       if (collectedAt - lastObservedAt >= TRACKED_TRANSACTION_TTL_MS) tracked.delete(id);
@@ -469,7 +524,12 @@ export function createEthereumProvider(
     ];
     const candidateCoverage = hasCandidates
       ? 'Jusqu’à 96 transactions candidates aux meilleurs prix de gas effectifs du bloc pending du fournisseur, classées avant limitation, et confirmations du dernier bloc. Ce classement ne représente pas un top du mempool global.'
-      : 'Transactions confirmées du dernier bloc. Le fournisseur ne fournit pas de candidat distinct ni de comptage du mempool global.';
+      : 'Transactions confirmées du dernier bloc. Aucun candidat distinct exploitable fourni.';
+    const mempool = currentMempool();
+    const mempoolCoverage =
+      mempool === null
+        ? 'Comptage du mempool local du fournisseur indisponible.'
+        : `Mempool local du fournisseur : pending + queued via txpool_status, collecte séparée (~30 s)${mempool.status === 'stale' ? ', dernière valeur conservée' : ''}.`;
     const partialHistory = blocks.length < previousHeights.length + 1 || invalidHistory;
     const incompleteCatchup = cursor === null || cursor < latestBlock.height;
     return parsePayload(snapshotSchema, {
@@ -478,8 +538,9 @@ export function createEthereumProvider(
       status: 'ok',
       source: config.ethereumSource,
       observedAt: now(),
-      coverage: `${candidateCoverage} Taille des blocs en gas ; passagers = limite de gas déclarée. Suivi borné à 2 048 IDs observés pendant 30 min, journal de 16 blocs ; rattrapage de 8 blocs au maximum.`,
-      pendingCount: null,
+      coverage: `${candidateCoverage} ${mempoolCoverage} Taille des blocs en gas ; passagers = limite de gas déclarée. Suivi borné à 2 048 IDs observés pendant 30 min, journal de 16 blocs ; rattrapage de 8 blocs au maximum.`,
+      pendingCount: mempool === null ? null : mempool.pending + mempool.queued,
+      mempool,
       feeRate:
         latest.baseFeePerGas === undefined
           ? null

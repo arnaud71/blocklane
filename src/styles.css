@@ -572,6 +572,25 @@ main.immersion-main {
   height: 100%;
   position: relative;
 }
+.chain-departure-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 7px 0 0;
+  color: #adc9b6;
+  font-size: 11px;
+}
+.chain-departure-line .departure-timer {
+  font-size: 13px;
+}
+.billboard-loading {
+  min-height: 115px;
+  display: flex;
+  align-items: center;
+  margin-top: 9px;
+  font-size: 22px;
+  color: #adc9b6;
+}
 .scene-workspace--immersive .street-scene-viewport,
 .scene-workspace--immersive .street-scene {
   width: 100%;
@@ -615,7 +634,7 @@ main.immersion-main {
   gap: 0 12px;
 }
 .scene-workspace--immersive .info-panel h3 {
-  font-size: 22px;
+  font-size: 27px;
 }
 .scene-workspace--immersive .info-hero {
   font-size: 39px;
@@ -770,7 +789,7 @@ main.immersion-main {
     grid-template-columns: 1fr;
   }
   .scene-workspace--immersive .info-panel h3 {
-    font-size: 19px;
+    font-size: 25px;
   }
   .scene-workspace--immersive .info-hero {
     font-size: 31px;

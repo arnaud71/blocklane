@@ -19,28 +19,51 @@ La limite API est de 120 requêtes par minute par client par défaut, configurab
 
 ## Instantané
 
-| Champ          | Type / unités                  | Signification                                                  |
-| -------------- | ------------------------------ | -------------------------------------------------------------- |
-| `chain`        | `bitcoin` / `ethereum`         | Réseau représenté                                              |
-| `mode`         | `live` / `demo`                | Provenance réelle ou pédagogique                               |
-| `status`       | `ok` / `stale` / `unavailable` | Fraîcheur du résultat                                          |
-| `source`       | Texte borné                    | Libellé de provenance ; aucune URL privée ni clé               |
-| `observedAt`   | Millisecondes Unix             | Date de collecte ; conservée pour un résultat ancien           |
-| `coverage`     | Texte borné                    | Limites de la vue fournie                                      |
-| `pendingCount` | Entier ou `null`               | Compte observé lorsque disponible ; `null` signifie inconnu    |
-| `feeRate`      | Nombre ou `null`               | Mesure ou estimation décrite dans l'interface                  |
-| `feeUnit`      | `sat/vB` / `Gwei`              | Unité correspondant à la chaîne                                |
-| `usdQuote`     | Objet facultatif ou `null`     | Cours de conversion USD indépendant de la source blockchain    |
-| `transactions` | Tableau, maximum 120           | Échantillon ; jamais une liste exhaustive promise              |
-| `blocks`       | Tableau, maximum 3             | Blocs récents observés                                         |
-| `inclusions`   | Tableau facultatif, maximum 16 | Journal roulant des inclusions vérifiées d'identifiants suivis |
-| `message`      | Texte facultatif               | Explication d'une limite ou d'un incident                      |
+| Champ          | Type / unités                  | Signification                                                                               |
+| -------------- | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `chain`        | `bitcoin` / `ethereum`         | Réseau représenté                                                                           |
+| `mode`         | `live` / `demo`                | Provenance réelle ou pédagogique                                                            |
+| `status`       | `ok` / `stale` / `unavailable` | Fraîcheur du résultat                                                                       |
+| `source`       | Texte borné                    | Libellé de provenance ; aucune URL privée ni clé                                            |
+| `observedAt`   | Millisecondes Unix             | Date de collecte ; conservée pour un résultat ancien                                        |
+| `coverage`     | Texte borné                    | Limites de la vue fournie                                                                   |
+| `pendingCount` | Entier sûr ou `null`           | Total du mempool local du fournisseur observé, lorsque disponible ; `null` signifie inconnu |
+| `mempool`      | Objet facultatif ou `null`     | Détail du comptage local Ethereum, avec sa propre date et fraîcheur                         |
+| `feeRate`      | Nombre ou `null`               | Mesure ou estimation décrite dans l'interface                                               |
+| `feeUnit`      | `sat/vB` / `Gwei`              | Unité correspondant à la chaîne                                                             |
+| `usdQuote`     | Objet facultatif ou `null`     | Cours de conversion USD indépendant de la source blockchain                                 |
+| `transactions` | Tableau, maximum 120           | Échantillon ; jamais une liste exhaustive promise                                           |
+| `blocks`       | Tableau, maximum 3             | Blocs récents observés                                                                      |
+| `inclusions`   | Tableau facultatif, maximum 16 | Journal roulant des inclusions vérifiées d'identifiants suivis                              |
+| `message`      | Texte facultatif               | Explication d'une limite ou d'un incident                                                   |
 
 Une transaction possède un identifiant, sa chaîne, une taille, un taux de frais, `pending` ou `confirmed`, un type `transfer` ou `contract`, et une valeur textuelle. Les nombres doivent être finis et non négatifs. Les transactions d'un instantané doivent appartenir à sa chaîne. Le champ facultatif `blockHash` porte une preuve d'inclusion dans ce bloc ; une transaction `pending` ne peut pas le porter. Une ancienne confirmation sans hash reste lisible, mais ne prouve pas l'appartenance au départ animé.
 
 Un bloc possède une hauteur, un hash, un `timestamp` en **secondes Unix**, un nombre de transactions, une capacité et une utilisation. La capacité s'exprime en octets virtuels pour Bitcoin et en gas pour Ethereum. L'utilisation ne peut pas dépasser la capacité déclarée. Ne pas confondre `timestamp` et `observedAt` lors d'une conversion de date.
 
-Un instantané `unavailable` n'a ni bloc, ni transaction, ni entrée d'inclusion à animer. Une démonstration a le statut `ok` et ne représente jamais la disponibilité upstream. L'adaptateur Ethereum distingue les transactions du bloc en attente de celles des blocs confirmés ; le client ne doit pas modifier cette sémantique pour les faire apparaître comme des voyageurs en attente.
+Un instantané `unavailable` n'a ni bloc, ni transaction, ni entrée d'inclusion à animer, ni objet `mempool` non nul. Une démonstration a le statut `ok` et ne représente jamais la disponibilité upstream. L'adaptateur Ethereum distingue les transactions du bloc en attente de celles des blocs confirmés ; le client ne doit pas modifier cette sémantique pour les faire apparaître comme des voyageurs en attente.
+
+## Comptage du mempool du fournisseur
+
+En direct Bitcoin, `pendingCount` reprend le compteur validé de `/mempool` du fournisseur configuré. Ce total local ne se déduit pas du nombre de voyageurs visibles. En direct Ethereum, il vaut la somme **pending + queued** renvoyée par la méthode facultative `txpool_status` du RPC configuré. Les transactions `queued` sont conservées pour une exécution future et ne sont pas nécessairement admissibles au prochain bloc. Ce champ n'annonce jamais un total mondial du réseau. Un bloc candidat `pending` et son échantillon ne servent jamais de remplacement à un comptage indisponible.
+
+Le champ facultatif nullable `mempool` détaille une observation Ethereum :
+
+| Champ        | Type / borne                               | Signification                                                    |
+| ------------ | ------------------------------------------ | ---------------------------------------------------------------- |
+| `pending`    | Entier sûr non négatif                     | Transactions localement en attente d'inclusion                   |
+| `queued`     | Entier sûr non négatif                     | Transactions localement en file pour une exécution future        |
+| `observedAt` | Entier sûr non négatif, millisecondes Unix | Heure de réception du comptage, distincte de la collecte du bloc |
+| `status`     | `ok` / `stale`                             | Comptage reçu ou dernière valeur conservée                       |
+| `method`     | `txpool_status`                            | Capacité RPC à l'origine de ce comptage                          |
+
+La somme doit elle aussi rester un entier sûr et correspondre exactement à `pendingCount`. Le contrat réserve un objet `mempool` non nul à Ethereum en mode `live` ; les instantanés Bitcoin, les anciennes versions du contrat et la démonstration peuvent l'omettre. Le total pédagogique de démonstration ne devient pas une observation RPC.
+
+Le service lance la collecte en arrière-plan après validation de la chaîne principale et du dernier bloc, sur le même RPC serveur. Une seule requête peut être en cours, avec **30 secondes minimum après chaque tentative**, délai de huit secondes et réponse limitée à **64 Kio**. Les compteurs RPC doivent être des quantités hexadécimales complètes et valides, puis sont convertis en entiers sûrs ; une réponse invalide, un refus ou une méthode non prise en charge ne produit aucun zéro inventé. Une lecture utilise immédiatement un dernier comptage utilisable ou `null`, sans attendre cette méthode facultative ; le prochain instantané peut récupérer une collecte terminée depuis.
+
+La dernière valeur est signalée `stale` après un échec ou lorsqu'elle dépasse 30 secondes. Elle reste utilisable au plus **120 secondes depuis `mempool.observedAt`**, puis `mempool` et `pendingCount` deviennent `null`. La fraîcheur de ce comptage est indépendante de `Snapshot.observedAt` et `Snapshot.status` : une panne de cette capacité ne rend pas les blocs anciens ou indisponibles. Un consommateur doit également tenir compte de l'âge propre du comptage, notamment lorsque l'instantané blockchain conservé vieillit. Le cache est partagé entre les visiteurs d'une même instance, volatile et distinct de la collecte blockchain de trois secondes. Le transport et l'horloge injectés dans l'adaptateur s'appliquent aussi à cette méthode ; les futures fixtures doivent simuler son résultat ou son indisponibilité, sans dépendre d'un RPC public.
+
+Sources : [méthode Geth `txpool_status`](https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-txpool#txpool-status), [implémentation Geth des compteurs hexadécimaux](https://github.com/ethereum/go-ethereum/blob/master/internal/ethapi/api.go).
 
 ## Journal d'inclusions
 
