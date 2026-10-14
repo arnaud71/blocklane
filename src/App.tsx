@@ -7,8 +7,10 @@ import { brand, safeExternalUrl } from './config/brand';
 import { useSnapshot } from './hooks/useSnapshot';
 import { number } from './lib/format';
 import {
-  formatFeeRate,
+  formatEstimatedFeeAmount,
   hasUsableUsdQuote,
+  medianTransactionFee,
+  medianTransactionFeeNote,
   usdQuoteNote,
   type FeeDisplayUnit,
 } from './lib/feeDisplay';
@@ -187,6 +189,9 @@ export function App() {
             const feed = feeds[id];
             const current = feed.snapshot;
             const network = chains[id];
+            const medianFee = medianTransactionFee(current);
+            const quote = mode === 'demo' ? null : current?.usdQuote;
+            const medianNote = medianTransactionFeeNote(id, medianFee.sampleSize, mode === 'demo');
             const label =
               mode === 'demo'
                 ? 'Simulation pédagogique'
@@ -251,36 +256,23 @@ export function App() {
                       </dd>
                     </div>
                     <div>
-                      <dt>{id === 'bitcoin' ? 'Frais conseillés' : 'Frais de base'}</dt>
+                      <dt>Frais médians / tx</dt>
                       <dd
-                        className={feeDisplayUnit === 'usd' ? 'fee-metric-usd' : undefined}
-                        title={
-                          feeDisplayUnit === 'usd'
-                            ? usdQuoteNote(
-                                mode === 'demo' ? null : current?.usdQuote,
-                                mode === 'demo',
-                              )
-                            : undefined
-                        }
+                        className="fee-metric-total"
+                        title={`${medianNote}${
+                          feeDisplayUnit === 'usd' ? ` ${usdQuoteNote(quote, mode === 'demo')}` : ''
+                        }`}
                       >
-                        {formatFeeRate(
+                        {formatEstimatedFeeAmount(
                           id,
-                          current?.feeRate ?? null,
+                          medianFee.nativeAmount,
                           feeDisplayUnit,
-                          mode === 'demo' ? null : current?.usdQuote,
+                          quote,
                         )}
                         <span className="metric-note">
-                          {feeDisplayUnit === 'usd'
-                            ? mode === 'demo' || !hasUsableUsdQuote(current?.usdQuote)
-                              ? 'Cours indisponible'
-                              : current?.usdQuote?.status === 'stale'
-                                ? 'Cours conservé · estimation'
-                                : id === 'bitcoin'
-                                  ? 'Conversion estimée'
-                                  : 'Pourboire exclu'
-                            : id === 'bitcoin'
-                              ? 'Délai non garanti'
-                              : 'Pourboire exclu'}
+                          {medianFee.sampleSize === 0
+                            ? 'Aucune tx exploitable'
+                            : `${mode === 'demo' ? 'Simulation' : 'Échantillon'} · ${medianFee.sampleSize} tx${id === 'ethereum' ? ' · limite gas' : ''}${feeDisplayUnit === 'usd' ? (!hasUsableUsdQuote(quote) ? ' · cours indisponible' : quote.status === 'stale' ? ' · cours conservé' : '') : ''}`}
                         </span>
                       </dd>
                     </div>
@@ -412,12 +404,18 @@ export function App() {
                   <Lesson n="03" title="Bitcoin : partager un espace limité">
                     Les frais s’expriment en satoshis par vByte. Les mineurs choisissent les
                     transactions selon plusieurs contraintes, dont les dépendances entre
-                    transactions. Un tarif élevé ne garantit ni place ni délai.
+                    transactions. Un tarif élevé ne garantit ni place ni délai. L’indicateur du haut
+                    affiche le coût médian estimé par transaction en attente de notre échantillon,
+                    en BTC ou en dollars. Cet échantillon privilégie les frais élevés et ne
+                    représente pas la médiane de tout le réseau.
                   </Lesson>
                   <Lesson n="04" title="Ethereum : le gas et la priorité">
                     Le gas mesure le travail demandé. Avec EIP-1559, le prix effectif dépend
                     notamment des frais de base, du plafond et du pourboire. Le nonce, les
-                    contraintes de gas et les transactions privées influencent aussi l’inclusion.
+                    contraintes de gas et les transactions privées influencent aussi l’inclusion. Le
+                    coût médian affiché utilise le prix du gas observé et la limite de gas déclarée
+                    de chaque transaction de l’échantillon. Il ne mesure pas les frais réellement
+                    payés.
                   </Lesson>
                   <Lesson n="05" title="Un mempool est une vue locale">
                     Chaque nœud voit sa propre file. Pour Ethereum, le bloc candidat du fournisseur

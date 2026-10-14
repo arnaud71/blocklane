@@ -3,7 +3,10 @@ import type { Snapshot, Tx } from '../../shared/model';
 import { explorerUrl, number, shortHash } from '../lib/format';
 import {
   formatFeeRate,
+  formatEstimatedFeeAmount,
   formatTransactionFee,
+  medianTransactionFee,
+  medianTransactionFeeNote,
   usdQuoteNote,
   type FeeDisplayUnit,
 } from '../lib/feeDisplay';
@@ -69,8 +72,14 @@ export function InfoPanel({
   const demo = snapshot?.mode === 'demo';
   const quote = demo ? undefined : snapshot?.usdQuote;
   const displayUsd = feeDisplayUnit === 'usd';
-  const networkRate = formatFeeRate(chain, snapshot?.feeRate ?? null, feeDisplayUnit, quote);
-  const networkRateParts = networkRate.match(/^(.+) (sat\/vB|Gwei|\$ US\/(?:vB|gas))$/);
+  const medianFee = medianTransactionFee(snapshot);
+  const medianAmount = formatEstimatedFeeAmount(
+    chain,
+    medianFee.nativeAmount,
+    feeDisplayUnit,
+    quote,
+  );
+  const medianAmountParts = medianAmount.match(/^(.+) (BTC|ETH|\$ US)$/);
   const latest = snapshot?.blocks[0];
   const blockLink = latest && !demo ? explorerUrl(chain, latest.hash, 'block') : null;
   const txLink = selectedTx && !demo ? explorerUrl(chain, selectedTx.id, 'tx') : null;
@@ -186,22 +195,26 @@ export function InfoPanel({
             {page === 0 && (
               <>
                 <h3>La vie du réseau.</h3>
-                <p className={`info-hero ${displayUsd ? 'info-fee-usd' : ''}`}>
-                  {networkRateParts ? (
+                <p className="info-hero info-fee-amount">
+                  {medianAmountParts ? (
                     <>
-                      {networkRateParts[1]}
-                      <span>{networkRateParts[2]}</span>
+                      {medianAmountParts[1]}
+                      <span>{medianAmountParts[2]}</span>
                     </>
                   ) : (
-                    networkRate
+                    medianAmount
                   )}
                 </p>
                 <p className="info-hero-caption">
-                  {bitcoin ? 'Frais conseillés · environ 30 min' : 'Frais de base du dernier bloc'}
+                  Frais médians estimés / transaction · {medianFee.sampleSize} en attente
+                </p>
+                <p className="info-explanation">
+                  {medianTransactionFeeNote(chain, medianFee.sampleSize, demo)}
                 </p>
                 {displayUsd && (
                   <p className="info-explanation">
-                    Taux natif : {formatFeeRate(chain, snapshot?.feeRate ?? null, 'native')}.{' '}
+                    Médiane en {bitcoin ? 'BTC' : 'ETH'} :{' '}
+                    {formatEstimatedFeeAmount(chain, medianFee.nativeAmount, 'native')}.{' '}
                     {usdQuoteNote(quote, demo)}
                   </p>
                 )}
@@ -214,12 +227,17 @@ export function InfoPanel({
                   <Detail label="Échantillon reçu">
                     {snapshot ? `${number(snapshot.transactions.length)} transactions` : '—'}
                   </Detail>
+                  <Detail
+                    label={bitcoin ? 'Taux conseillé · ~30 min' : 'Frais de base · sans pourboire'}
+                  >
+                    {formatFeeRate(chain, snapshot?.feeRate ?? null, 'native')}
+                  </Detail>
                   <Detail label="Source">{snapshot?.source ?? 'En attente'}</Detail>
                 </dl>
                 <p className="info-explanation">
                   {bitcoin
                     ? 'Les frais influencent la priorité. Le délai d’inclusion reste incertain.'
-                    : 'Les frais de base excluent le pourboire. Aucun inventaire mondial des transactions en attente n’est fourni.'}
+                    : 'Le taux de base ci-dessus exclut le pourboire. La médiane des coûts utilise le prix du gas des transactions. Aucun inventaire mondial des transactions en attente n’est fourni.'}
                 </p>
               </>
             )}

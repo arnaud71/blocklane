@@ -1,7 +1,12 @@
-import type { ChainId, Tx, UsdQuote } from '../../shared/model';
+import type { ChainId, Snapshot, Tx, UsdQuote } from '../../shared/model';
 import { number } from './format';
 
 export type FeeDisplayUnit = 'native' | 'usd';
+
+export type MedianTransactionFee = {
+  nativeAmount: number | null;
+  sampleSize: number;
+};
 
 const QUOTE_MAX_AGE_MS = 5 * 60 * 1_000;
 const QUOTE_FUTURE_TOLERANCE_MS = 5_000;
@@ -35,6 +40,78 @@ function dollars(amount: number): string {
     minimumFractionDigits: Math.min(2, digits),
     maximumFractionDigits: digits,
   }).format(amount)} $ US`;
+}
+
+function estimatedNativeFee(transaction: Tx): number | null {
+  if (
+    !validAmount(transaction.feeRate) ||
+    !validAmount(transaction.size) ||
+    transaction.size <= 0
+  ) {
+    return null;
+  }
+  const denomination = transaction.chain === 'bitcoin' ? 100_000_000 : 1_000_000_000;
+  const amount = (transaction.feeRate / denomination) * transaction.size;
+  if (!validAmount(amount) || (amount === 0 && transaction.feeRate > 0)) return null;
+  return amount;
+}
+
+/** Median of individual estimated totals in the received pending sample, never the whole network. */
+export function medianTransactionFee(snapshot: Snapshot | null): MedianTransactionFee {
+  if (!snapshot || snapshot.status === 'unavailable') return { nativeAmount: null, sampleSize: 0 };
+  const seen = new Set<string>();
+  const amounts: number[] = [];
+  for (const transaction of snapshot.transactions.slice(0, 120)) {
+    if (transaction.chain !== snapshot.chain || transaction.status !== 'pending') continue;
+    const id = transaction.id.toLowerCase();
+    if (seen.has(id)) continue;
+    const amount = estimatedNativeFee(transaction);
+    if (amount === null) continue;
+    seen.add(id);
+    amounts.push(amount);
+  }
+  amounts.sort((a, b) => a - b);
+  const middle = Math.floor(amounts.length / 2);
+  const upper = amounts[middle];
+  if (upper === undefined) return { nativeAmount: null, sampleSize: 0 };
+  const lower = amounts[middle - 1] ?? upper;
+  const nativeAmount = amounts.length % 2 === 0 ? lower + (upper - lower) / 2 : upper;
+  return { nativeAmount, sampleSize: amounts.length };
+}
+
+export function formatEstimatedFeeAmount(
+  chain: ChainId,
+  nativeAmount: number | null,
+  unit: FeeDisplayUnit,
+  quote?: UsdQuote | null,
+): string {
+  const coin = chain === 'bitcoin' ? 'BTC' : 'ETH';
+  if (!validAmount(nativeAmount)) return unit === 'usd' ? '— $ US' : `— ${coin}`;
+  if (unit === 'usd') {
+    if (!hasUsableUsdQuote(quote)) return '— $ US';
+    const amount = nativeAmount * quote.usdPerCoin;
+    if (amount === 0 && nativeAmount > 0) return '≈ < 0,00000001 $ US';
+    return validAmount(amount) ? `≈ ${dollars(amount)}` : '— $ US';
+  }
+  const precisionLimit = chain === 'bitcoin' ? 8 : 12;
+  if (nativeAmount > 0 && nativeAmount < 10 ** -precisionLimit) {
+    return `≈ < ${number(10 ** -precisionLimit, precisionLimit)} ${coin}`;
+  }
+  const digits =
+    nativeAmount === 0
+      ? 0
+      : Math.min(precisionLimit, Math.max(0, 2 - Math.floor(Math.log10(nativeAmount))));
+  return `≈ ${number(nativeAmount, digits)} ${coin}`;
+}
+
+export function medianTransactionFeeNote(chain: ChainId, sampleSize: number, demo = false): string {
+  if (sampleSize === 0) return 'Aucune transaction en attente exploitable dans l’échantillon reçu.';
+  if (demo) return `Médiane simulée sur ${sampleSize} transactions en attente fictives.`;
+  return `Médiane des coûts estimés de ${sampleSize} transactions en attente de l’échantillon reçu. L’échantillon privilégie les frais élevés et ne représente pas la médiane du réseau. ${
+    chain === 'bitcoin'
+      ? 'Calcul du taux observé multiplié par la taille virtuelle de chaque transaction.'
+      : 'Calcul du prix du gas observé, pourboire compris, multiplié par la limite de gas déclarée de chaque transaction ; ce ne sont pas les frais réellement payés.'
+  }`;
 }
 
 export function formatFeeRate(

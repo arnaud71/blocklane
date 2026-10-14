@@ -6,7 +6,9 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
-- Commande commune frais natifs / USD : taux USD/vB pour Bitcoin et USD/gas pour Ethereum ; montants estimés `≈` dans les détails et infobulles des voyageurs, avec taille virtuelle Bitcoin ou limite de gas Ethereum. Les taux natifs, le tri et les couleurs sont conservés.
+- Frais médians par transaction dans les en-têtes et la page Réseau : médiane des coûts estimés des seules transactions en attente du nouvel instantané, avec effectif, exclusion des confirmations et archives, identifiants dédupliqués et moyenne des deux valeurs centrales pour un effectif pair. Affichage `≈` en BTC/ETH par transaction ou USD par transaction selon le switch ; `—` si l'échantillon est absent. Cette sélection top frais ne constitue pas une médiane mondiale ; Ethereum utilise la limite de gas déclarée, jamais le gas consommé ni les frais payés.
+- Taux conseillé Bitcoin et base fee Ethereum conservés en détails secondaires de la page Réseau ; aucun champ d'API, classement, couleur ou animation modifié par le calcul de médiane.
+- Commande commune frais natifs / USD : médiane exprimée en BTC/ETH ou dollars par transaction ; montants estimés `≈` dans les détails et infobulles des voyageurs en USD, avec taille virtuelle Bitcoin ou limite de gas Ethereum. Les taux natifs restent consultables ; le tri et les couleurs sont conservés.
 - Source et heure du cours visibles ; conversion au cours reçu, sans prétendre fournir le cours historique du bloc ou les frais Ethereum réellement payés. Cours absent ou trop ancien : conversion indisponible, sans prix fictif en démonstration ni faux zéro pour les petits montants.
 - File du quai conservant les places déjà attribuées selon l'arrivée observée ; nouveaux identifiants d'une même collecte classés par frais décroissants pour occuper les places restantes, avec départage stable par identifiant et retours animés.
 - Petites flèches alignées sur la direction réelle de chaque segment de déplacement, horizontal ou vertical.
@@ -51,7 +53,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Validation
 
-- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. La conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Lecture statique, formatage et aperçu normal de remise uniquement.
+- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. La médiane des coûts par transaction, la conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Lecture statique, formatage et aperçu normal de remise uniquement.
 
 ## 0.2.0 — 2026-10-14
 

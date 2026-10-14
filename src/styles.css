@@ -699,7 +699,7 @@ main.immersion-main {
   transform: translateX(10px);
   background: #9ad6a0;
 }
-.chain-metrics dd.fee-metric-usd {
+.chain-metrics dd.fee-metric-total {
   font-size: clamp(10px, 1.2vw, 14px);
   overflow-wrap: anywhere;
 }

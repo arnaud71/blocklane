@@ -67,12 +67,27 @@ Les sources de lecture sont documentées par [Esplora](https://github.com/Blocks
 
 Le serveur utilise les routes publiques fixes Coinbase BTC/USD et ETH/USD, avec cache partagé de 60 secondes après chaque tentative, une requête simultanée au plus par chaîne, délai de huit secondes et réponse limitée à 16 Kio. Il valide la devise USD, la base attendue et un montant décimal borné avant conversion. La collecte s'effectue en arrière-plan : la réponse utilise immédiatement un cours valide déjà disponible ou `null`, sans attendre le renouvellement. Une lecture suivante peut fournir le nouveau cours. Un cours ancien ne reste utilisable que cinq minutes depuis sa réception, puis `usdQuote` devient `null`. Une erreur de cours ne modifie pas `Snapshot.status`, qui concerne la blockchain ; même une chaîne indisponible peut porter un cours valide. La démonstration ne collecte aucun cours et le contrat rejette un cours non nul en mode `demo`.
 
-`feeRate` et `feeUnit` restent natifs : le switch de l'interface n'altère pas le contrat ou le classement des transactions. La conversion d'un taux donne des USD/vB pour Bitcoin et des USD/gas pour Ethereum. Les détails et infobulles de transaction donnent un total estimé marqué `≈` :
+`feeRate` et `feeUnit` restent natifs : le switch de l'interface n'altère pas le contrat ou le classement des transactions. Ce champ d'instantané conserve son sens de taux conseillé Bitcoin ou de base fee du dernier bloc Ethereum ; il ne devient pas une médiane. La conversion d'un taux donne des USD/vB pour Bitcoin et des USD/gas pour Ethereum. En USD, les détails et infobulles de transaction donnent un total estimé marqué `≈` :
 
 - Bitcoin : `feeRate * size * usdPerCoin / 100_000_000`, avec `size` en vB.
 - Ethereum : `feeRate * size * usdPerCoin / 1_000_000_000`, avec `size` comme limite de gas déclarée.
 
 La formule Ethereum ne fournit pas le gas consommé ni les frais réellement payés ; aucun reçu d'exécution n'est ajouté. La conversion utilise le cours relevé, jamais un cours supposé à la date du bloc. La source, la date et la conservation d'un cours ancien sont signalées ; un cours absent, invalide ou trop ancien rend la conversion indisponible, sans zéro inventé. Le mode démonstration n'utilise aucun prix fictif. Sources : [cours spot Coinbase](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices), [gas et Gwei Ethereum](https://ethereum.org/developers/docs/gas/).
+
+## Frais médians par transaction dans l'interface
+
+La métrique des en-têtes et de la page Réseau est calculée côté interface sur les seules transactions `pending` du tableau `transactions` reçu, appartenant à la chaîne affichée. Les identifiants sont dédupliqués et les valeurs non finies, négatives ou de taille nulle sont exclues. Les transactions `confirmed`, le journal d'inclusions et les observations historiques conservées dans la scène ne participent pas au calcul. Aucun champ d'API ni appel fournisseur supplémentaire n'est nécessaire.
+
+Le calcul porte sur le **coût estimé de chaque transaction**, puis sur la médiane des coûts triés :
+
+- Bitcoin : `feeRate * size / 100_000_000` BTC, avec `size` en vB.
+- Ethereum : `feeRate * size / 1_000_000_000` ETH, avec `size` comme limite de gas déclarée.
+- Effectif impair : valeur centrale ; effectif pair : moyenne des deux valeurs centrales.
+- Conversion USD : médiane en BTC ou ETH multipliée par le cours `usdPerCoin` valide de cette chaîne.
+
+Ce calcul n'est pas le produit de la médiane des taux et de la médiane des tailles. Le prix Ethereum propre à chaque transaction inclut le pourboire lorsqu'il fait partie du prix observé ; la mention « sans pourboire » ne s'applique qu'à la base fee du bloc, conservée comme détail secondaire. L'utilisation de la limite de gas et des taux arrondis interdit de présenter cette métrique comme des frais réellement payés.
+
+L'effectif retenu accompagne la métrique. L'échantillon priorise jusqu'à 96 transactions aux frais élevés dans la projection du fournisseur, ou les seules transactions récentes dans le repli Bitcoin. Cette sélection est biaisée : sa médiane n'est ni celle du mempool entier ni celle de tous les blocs du réseau. L'interface affiche `≈` avec BTC/ETH par transaction ou USD par transaction selon le switch. Un échantillon vide ou absent donne `—` ; un cours absent ou expiré ne produit pas une médiane USD fictive à zéro. Les états ancien, indisponible et démonstration restent distincts.
 
 ## Évolution du contrat
 
