@@ -6,6 +6,7 @@ import {
   type Tx,
 } from '../../shared/model';
 import {
+  arrivalStart,
   boardingApproach,
   entryDoorPoint,
   exitDoorPoint,
@@ -36,7 +37,7 @@ export const PREPARATION_DURATION_MS = 1_000;
 const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'right-platform-arrival-queue-v10';
+const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v11';
 
 export type PassengerPhase =
   | 'arriving'
@@ -689,7 +690,7 @@ function admitPassengers(
     residentIds.add(admission.tx.id);
     const queue = queuePosition(queueIndex);
     const archived = archive.waitingArchiveTransactions.get(admission.tx.id);
-    const path = archived ? [WAITING_ARCHIVE_POSITION] : [{ x: queue.x, y: -44 }, queue];
+    const path = archived ? [WAITING_ARCHIVE_POSITION] : [arrivalStart(queueIndex), queue];
     passengers.push({
       ...admission,
       queueIndex,

@@ -6,6 +6,9 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
+- Ville utilisant toute la largeur du desktop, avec une seule colonne centrale de maisons et bâtiments HEG, Bitcoin à gauche et Ethereum à droite. Colonnes extérieures symétriques : wagons, passage, file d'attente et arrivées depuis chaque bord ; portes Bitcoin à gauche et Ethereum à droite, sans chemin piéton sur la chaussée.
+- Arrivées horizontales à hauteur des places réservées depuis le bord gauche Bitcoin et le bord droit Ethereum, remplaçant l'arrivée par le haut. Une géométrie canonique commune et sa projection en miroir conservent la lisibilité des textes et glyphes, les angles des flèches et les chemins des observations anciennes.
+- Largeur logique SVG adaptée au rapport du viewport, avec élargissement des colonnes du quai sans étirement global des wagons ou personnages. Grille à trois colonnes avec campus commun compactable ; lignes en-tête, scène et couverture partagées par `subgrid`, avec grille interne de repli. États des données, préparation d'une seconde, panneaux à quatre secondes, feux et places de file existantes conservés.
 - Phares avant blanc chaud sur les wagons dès la préparation au départ et pendant les mouvements ; feux de freinage rouges pendant les derniers 30 % de promotion et d'arrivée. Extinction à l'arrêt, phases conservées pendant pause, halos SVG sans clignotement ni filtre.
 - Grand panneau d'informations toujours visible en haut de chaque blockchain, dans l'en-tête à la place des métriques statiques, avec valeur principale plus grande et cinq rubriques Mempool, Frais médians, Bloc, Valeur et Voyageurs, alternées toutes les quatre secondes. Le même panneau se compacte selon l'écran et conserve le décor SVG, la route et le quai disponibles ; choix manuel des pages et pause du défilement. Rotation suspendue pendant pause générale, mouvements réduits, sélection, onglet masqué ou données non valides.
 - Panneau de détails conservé, avec chiffres plus lisibles et rotation Réseau / Bloc / Voyageurs à quatre secondes. Le rythme des pages reste indépendant des collectes API et de l'horloge des wagons ; le polling et le cache blockchain restent à trois secondes.
@@ -30,11 +33,11 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Hash d'inclusion fourni par les adaptateurs Bitcoin et Ethereum, distinct du simple déplacement animé.
 - Échantillonnage des frais élevés dès la collecte : premier bloc projeté mempool.space pour Bitcoin, bloc `pending` du fournisseur classé avant troncature pour Ethereum ; replis annoncés.
 - Transfert du candidat accéléré et arrivée de son remplaçant depuis le bas de l'écran, avec la même horloge que les voyageurs.
-- Nouvelles transactions arrivant depuis le haut du quai ; première projection descendue pour dégager leur arrivée.
+- Première projection placée plus bas pour dégager l'espace supérieur de la scène ; les nouvelles transactions arrivent désormais par les bords extérieurs.
 - Portes sans marches, avec personnages dessinés au-dessus pendant leur passage.
 - Préparation d'au moins une seconde d'animation avant le départ du bloc, avec échéance commune aux sorties et embarquements. Sorties rapides plafonnées à 500 ms ; voyageurs du second wagon utilisant le temps restant pour embarquer après leur sortie. Sortie déjà engagée accélérée uniquement sur son chemin restant, sans retour vers la porte. Passages tardifs conservant 50 ms au minimum ; tous les inclus à bord et les autres hors du premier wagon avant son départ, quitte à prolonger l'arrêt.
 - Voyageurs hors échantillon maintenus en attente sur le quai avec leur dernière observation ; regroupement visible des plus anciennes observations pour borner la mémoire.
-- Première projection encore descendue pour dégager l'arrivée des nouvelles transactions.
+- Première projection encore descendue pour libérer l'espace supérieur de la scène.
 - Explication « Pourquoi deux wagons ? » dans la rubrique Comprendre et rappel dans le panneau du dernier bloc.
 - Disposition adaptée aux grands écrans, aux ordinateurs portables et aux petits écrans, avec barres plus compactes pour libérer la scène.
 - Bitcoin et Ethereum visibles simultanément, avec des sources et des états de connexion indépendants.
@@ -43,7 +46,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Navigation pédagogique et provenance des données accessibles sans menu latéral permanent.
 - Départ du premier wagon lors d'un nouveau bloc reçu, promotion du second à sa place et arrivée de son remplaçant depuis le bas.
 - Couleur de carrosserie commune et wagons centrés sur la chaussée verticale pendant leurs déplacements.
-- Quai exclusivement à droite, embarquement par la porte haute à droite et sortie par une porte basse à droite, avec ouverture des portes correspondantes.
+- Quais extérieurs symétriques, embarquement par la porte haute et sortie par la porte basse du côté du quai, avec ouverture des portes correspondantes.
 - Voyageurs maintenus à bord pendant le déplacement ; les sorties nécessaires commencent après l'arrivée, avec un retour en file sans traversée de la chaussée.
 - Géométrie commune entre les wagons dessinés, leurs portes et le moteur des trajets.
 - Suivi Bitcoin et Ethereum borné à 2 048 identifiants par chaîne pendant 30 minutes, avec au plus 2 144 identifiants transitoires le temps de vérifier avant éviction ; une disparition de l'échantillon ne confirme rien.
@@ -62,7 +65,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Validation
 
-- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. Le grand panneau, le défilement à quatre secondes, le total du dernier bloc, la préparation d'une seconde, le compte du pool Ethereum, le compteur depuis le dernier départ animé, la médiane des coûts par transaction, la conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Aucun appel API réel de validation ajouté. Lecture statique, formatage et aperçu normal de remise uniquement.
+- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. La ville centrale pleine largeur, les quais symétriques, le miroir Bitcoin, les arrivées latérales, le grand panneau, le défilement à quatre secondes, le total du dernier bloc, la préparation d'une seconde, le compte du pool Ethereum, le compteur depuis le dernier départ animé, la médiane des coûts par transaction, la conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Aucun appel API réel de validation ajouté. Lecture statique, formatage et aperçu normal de remise uniquement.
 
 ## 0.2.0 — 2026-10-14
 

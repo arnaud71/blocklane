@@ -4,6 +4,10 @@ Une ville animée pour comprendre Bitcoin et Ethereum : les transactions devienn
 
 L'application démarre en mode **direct**. Bitcoin et Ethereum sont visibles ensemble dans une ville qui occupe la fenêtre. La démonstration pédagogique est un mode séparé, annoncé à l'écran. Une source indisponible ne déclenche jamais une simulation présentée comme réelle.
 
+La composition utilise toute la largeur du desktop : une seule rangée de maisons et de bâtiments HEG au centre, Bitcoin à gauche et Ethereum à droite. De chaque bord vers le centre, les colonnes sont **arrivées, file d'attente, couloir de déplacement, wagons, puis maisons communes**. Les nouveaux voyageurs entrent horizontalement par le bord gauche pour Bitcoin et le bord droit pour Ethereum. Les portes sont du côté des quais extérieurs, à gauche des wagons Bitcoin et à droite des wagons Ethereum ; les trajets ne traversent jamais la chaussée.
+
+L'espace supplémentaire élargit les quais et leurs colonnes, avec des wagons et des personnages gardant leurs proportions. Les grands panneaux restent au-dessus des scènes et la hauteur de leurs lignes est partagée entre les deux réseaux. Le campus se compacte sur les petits écrans. Cette disposition reste non validée pendant la suspension des contrôles décrite dans [docs/validation.md](docs/validation.md).
+
 ## Démarrer
 
 Prérequis : Node.js **24 LTS** et npm. La branche 24 est une version maintenue de Node ; consulter le [calendrier officiel](https://nodejs.org/en/about/previous-releases) avant une migration.

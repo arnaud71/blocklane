@@ -1,4 +1,13 @@
-import { memo, useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
+import {
+  memo,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type SVGProps,
+} from 'react';
 import type { ChainId, Snapshot, Tx } from '../../shared/model';
 import { usePassengerMotion } from '../hooks/usePassengerMotion';
 import type { PassengerPose } from '../lib/passengerMotion';
@@ -13,6 +22,7 @@ import {
   LATER_WAGON_Y,
   ENTRY_DOOR_Y,
   EXIT_DOOR_Y,
+  ARRIVAL_LANE_X,
   type WagonKind,
 } from '../lib/streetGeometry';
 import { number } from '../lib/format';
@@ -25,6 +35,19 @@ import './StreetScene.css';
 const DynamicInfoPanel = memo(InfoPanel);
 const WAGON_COLOR = '#79b8a0';
 const CLOSED_DOORS = { entry: false, exit: false };
+const VIEW_START_X = 172;
+const CORRIDOR_X = 298;
+const MIN_VIEW_WIDTH = 236;
+
+function ReadableText({
+  mirrored,
+  x,
+  ...props
+}: SVGProps<SVGTextElement> & { mirrored: boolean; x: number }) {
+  return (
+    <text {...props} x={x} transform={mirrored ? `translate(${2 * x} 0) scale(-1 1)` : undefined} />
+  );
+}
 
 export interface StreetSceneProps {
   snapshot: Snapshot;
@@ -40,14 +63,25 @@ export interface StreetSceneProps {
   feeDisplayUnit?: FeeDisplayUnit;
   onDeparture?: (chain: ChainId, departedAt: number) => void;
   onActivity?: (chain: ChainId, activity: SceneActivity) => void;
+  mirrored?: boolean;
 }
 
-function SideDoor({ y, open, purpose }: { y: number; open: boolean; purpose: 'entry' | 'exit' }) {
+function SideDoor({
+  y,
+  open,
+  purpose,
+  mirrored,
+}: {
+  y: number;
+  open: boolean;
+  purpose: 'entry' | 'exit';
+  mirrored: boolean;
+}) {
   return (
     <g
       className={`street-side-door${open ? ' street-side-door--open' : ''}`}
       data-door={purpose}
-      data-side="right"
+      data-side={mirrored ? 'left' : 'right'}
       data-open={open}
       transform={`translate(${WAGON_WIDTH - 7} ${y - 16})`}
       aria-hidden="true"
@@ -93,6 +127,8 @@ function Wagon({
   onSelect,
   feeColor,
   feeLabel,
+  mirrored,
+  projectPose,
 }: {
   kind: WagonKind | 'handoff';
   y: number;
@@ -111,6 +147,8 @@ function Wagon({
   onSelect: (tx: Tx) => void;
   feeColor: (pose: PassengerPose) => string;
   feeLabel?: (tx: Tx) => string;
+  mirrored: boolean;
+  projectPose: (pose: PassengerPose) => PassengerPose;
 }) {
   const clipId = useId().replace(/:/g, '') + '-wagon-interior';
   const headlightGradientId = `${clipId}-headlight-beam`;
@@ -123,6 +161,7 @@ function Wagon({
     kind !== 'next' &&
     ((handoffProgress !== undefined && handoffProgress >= 0.7) ||
       (arrivalProgress !== undefined && arrivalProgress >= 0.7));
+  const [captionMain, ...captionDetails] = caption.split(' · ');
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
@@ -136,9 +175,20 @@ function Wagon({
       transform={`translate(0 ${offsetY})`}
       opacity={opacity}
     >
-      <text x="230" y={y - 18} fill="#c3d8bd" fontSize="10" textAnchor="middle" aria-hidden="true">
-        {caption}
-      </text>
+      <ReadableText
+        mirrored={mirrored}
+        x={230}
+        y={y - 27}
+        fill="#c3d8bd"
+        fontSize="9"
+        textAnchor="middle"
+        aria-hidden="true"
+      >
+        <tspan x={230}>{captionMain}</tspan>
+        <tspan x={230} dy="11" fontSize="8" fill="#9fbba2">
+          {captionDetails.join(' · ')}
+        </tspan>
+      </ReadableText>
       <defs>
         <linearGradient id={headlightGradientId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#fff4bb" stopOpacity="0" />
@@ -205,9 +255,16 @@ function Wagon({
           strokeWidth="1"
         />
         <rect x="8" y="14" width="69" height="24" rx="7" fill="#203d35" />
-        <text x="42.5" y="30" fill="#d5e3c7" fontSize="8" textAnchor="middle">
+        <ReadableText
+          mirrored={mirrored}
+          x={42.5}
+          y="30"
+          fill="#d5e3c7"
+          fontSize="8"
+          textAnchor="middle"
+        >
           {label}
-        </text>
+        </ReadableText>
         <rect x="13" y="46" width="58" height="140" rx="7" fill="#203d35" />
         <path d="M17 91h50M17 121h50M17 151h50" stroke="#567d6c" strokeWidth="2" />
         <rect x="9" y="195" width="67" height="9" rx="4" fill="#d1dfc0" />
@@ -235,19 +292,20 @@ function Wagon({
         />
       </g>
       <g transform={`translate(${WAGON_X} ${y})`}>
-        <SideDoor y={ENTRY_DOOR_Y} open={entryOpen} purpose="entry" />
-        <SideDoor y={EXIT_DOOR_Y} open={exitOpen} purpose="exit" />
+        <SideDoor y={ENTRY_DOOR_Y} open={entryOpen} purpose="entry" mirrored={mirrored} />
+        <SideDoor y={EXIT_DOOR_Y} open={exitOpen} purpose="exit" mirrored={mirrored} />
       </g>
       <g clipPath={`url(#${clipId})`}>
         {passengers.map((pose) => (
           <Passenger
             key={pose.tx.id}
-            pose={pose}
+            pose={projectPose(pose)}
             selected={!historical && selectedId === pose.tx.id}
             feeColor={feeColor(pose)}
             feeLabel={feeLabel?.(pose.tx)}
             onSelect={onSelect}
             interactive={!historical}
+            mirrored={mirrored}
           />
         ))}
       </g>
@@ -259,13 +317,18 @@ function WaitingArchive({
   count,
   tracked,
   unknown,
+  projectX,
+  mirrored,
 }: {
   count: number;
   tracked: number;
   unknown: number;
+  projectX: (x: number) => number;
+  mirrored: boolean;
 }) {
   if (count === 0) return null;
   const label = (count >= MAX_WAITING_ARCHIVE_COUNT ? '≥ ' : '') + number(count);
+  const center = projectX(WAITING_ARCHIVE_POSITION.x);
   return (
     <g
       role="img"
@@ -277,12 +340,20 @@ function WaitingArchive({
         {number(unknown)} sans suivi. Le suivi est borné à 512 identifiants et 30 minutes ; une
         confirmation vérifiée peut retrouver son voyageur.
       </title>
-      <rect x="318" y="655" width="130" height="49" rx="6" fill="#153d2e" stroke="#789884" />
+      <rect
+        x={center - 65}
+        y="655"
+        width="130"
+        height="49"
+        rx="6"
+        fill="#153d2e"
+        stroke="#789884"
+      />
       <g aria-hidden="true">
         {[-12, -6, 0].map((offset) => (
           <g
             key={offset}
-            transform={`translate(${WAITING_ARCHIVE_POSITION.x + offset} ${WAITING_ARCHIVE_POSITION.y})`}
+            transform={`translate(${center - 35 + offset} ${WAITING_ARCHIVE_POSITION.y})`}
           >
             <ellipse cy="1" rx="7" ry="3" fill="#0b2925" opacity=".55" />
             <path d="M-3-7-4 0M3-7 4 0" stroke="#183d36" strokeWidth="3" />
@@ -292,63 +363,116 @@ function WaitingArchive({
             <path d="M-4-24q4-6 8 0Z" fill="#344d39" />
           </g>
         ))}
-        <text x="405" y="668" textAnchor="middle" fill="#d3dec0" fontSize="9">
+        <ReadableText
+          mirrored={mirrored}
+          x={center + 24}
+          y="668"
+          textAnchor="middle"
+          fill="#d3dec0"
+          fontSize="9"
+        >
           Observations
-        </text>
-        <text x="405" y="680" textAnchor="middle" fill="#d3dec0" fontSize="9">
+        </ReadableText>
+        <ReadableText
+          mirrored={mirrored}
+          x={center + 24}
+          y="680"
+          textAnchor="middle"
+          fill="#d3dec0"
+          fontSize="9"
+        >
           Suivies : {number(tracked)}
-        </text>
-        <text x="405" y="696" textAnchor="middle" fill="#d3dec0" fontSize="9">
+        </ReadableText>
+        <ReadableText
+          mirrored={mirrored}
+          x={center + 24}
+          y="696"
+          textAnchor="middle"
+          fill="#d3dec0"
+          fontSize="8"
+        >
           Sans suivi : {number(unknown)}
-        </text>
+        </ReadableText>
       </g>
     </g>
   );
 }
 
-const PlatformBackdrop = memo(function PlatformBackdrop({ theme }: { theme: 'heg' | 'neutral' }) {
+const PlatformBackdrop = memo(function PlatformBackdrop({
+  viewWidth,
+  projectX,
+  mirrored,
+}: {
+  viewWidth: number;
+  projectX: (x: number) => number;
+  mirrored: boolean;
+}) {
+  const viewEnd = VIEW_START_X + viewWidth;
+  const arrivalStart = projectX(426);
+  const fileStart = projectX(310);
+  const fileEnd = projectX(420);
+  const narrow = viewWidth < 360;
   return (
     <g aria-hidden="true">
-      <rect width={SCENE_WIDTH} height={SCENE_HEIGHT} fill="#234a3b" />
-      <rect width="175" height={SCENE_HEIGHT} fill="#1b4034" />
+      <rect x={VIEW_START_X} width={viewWidth} height={SCENE_HEIGHT} fill="#234a3b" />
       <rect x="185" width="90" height={SCENE_HEIGHT} fill="#15352f" />
       <path d="M181 0v740M279 0v740" stroke="#83987b" strokeWidth="5" />
       <path d="M230 0v740" stroke="#adc4a3" strokeWidth="2" strokeDasharray="22 23" opacity=".32" />
-      <rect x="282" width="178" height={SCENE_HEIGHT} fill="#385a43" />
+      <rect x="282" width={viewEnd - 282} height={SCENE_HEIGHT} fill="#385a43" />
+      <rect x={fileStart} width={fileEnd - fileStart} height={SCENE_HEIGHT} fill="#45644a" />
+      <rect x={arrivalStart} width={viewEnd - arrivalStart} height={SCENE_HEIGHT} fill="#294d3d" />
       <path d="M298 77v634" stroke="#c7cba0" strokeWidth="2" strokeDasharray="4 8" opacity=".3" />
-      <text x="318" y="37" fill="#d3dec0" fontSize="11" letterSpacing="1">
-        QUAI · CÔTÉ DROIT
-      </text>
-      <rect x="305" y="60" width="140" height="28" rx="5" fill="#153d2e" />
-      <text x="313" y="78" fill="#d3dec0" fontSize="9.3">
-        FILE · ORDRE D’ARRIVÉE
-      </text>
-      <g transform="translate(28 188)">
-        <rect width="123" height="98" rx="6" fill="#829e84" stroke="#183c30" strokeWidth="3" />
-        <path d="m-5 0 65-39 67 39Z" fill="#b8c6a1" stroke="#183c30" strokeWidth="3" />
-        <rect x="15" y="17" width="25" height="25" fill="#294f40" />
-        <rect x="85" y="17" width="25" height="25" fill="#294f40" />
-        <text x="62" y="63" fill="#183f32" textAnchor="middle" fontSize="16" fontWeight="700">
-          {theme === 'heg' ? 'HEG' : 'CAMPUS'}
-        </text>
-        <rect x="46" y="69" width="32" height="29" fill="#294f40" />
-      </g>
-      <g transform="translate(38 483)">
-        <rect width="110" height="105" rx="5" fill="#497767" stroke="#183c30" strokeWidth="3" />
-        <rect x="13" y="15" width="83" height="34" fill="#1c4436" />
-        <path d="M47 16v32M73 16v32" stroke="#87ad8a" strokeWidth="2" />
-        <text x="55" y="73" textAnchor="middle" fill="#d8dfbc" fontSize="11">
-          LAB · DONNÉES
-        </text>
-      </g>
-      {[112, 412, 697].map((y) => (
-        <g key={y} transform={`translate(86 ${y})`}>
-          <ellipse cy="2" rx="29" ry="9" fill="#102e24" />
-          <path d="M-3 0v-43h6V0" fill="#a89770" />
-          <ellipse cy="-48" rx="27" ry="25" fill="#3d7353" />
-          <ellipse cy="-57" rx="20" ry="13" fill="#618b62" />
-        </g>
-      ))}
+      <path
+        d={`M${projectX(ARRIVAL_LANE_X)} 120v512`}
+        stroke="#90ad8e"
+        strokeWidth="2"
+        strokeDasharray="4 11"
+        opacity=".35"
+      />
+      <ReadableText
+        mirrored={mirrored}
+        x={CORRIDOR_X}
+        y="92"
+        textAnchor="middle"
+        fill="#c8d8b5"
+        fontSize={narrow ? 8 : 10}
+        letterSpacing=".6"
+      >
+        PASSAGE
+      </ReadableText>
+      <ReadableText
+        mirrored={mirrored}
+        x={(fileStart + fileEnd) / 2}
+        y="92"
+        textAnchor="middle"
+        fill="#e0e6c7"
+        fontSize={narrow ? 11 : 13}
+        letterSpacing="1"
+      >
+        FILE
+      </ReadableText>
+      {!narrow && (
+        <ReadableText
+          mirrored={mirrored}
+          x={(fileStart + fileEnd) / 2}
+          y="110"
+          textAnchor="middle"
+          fill="#a6bea0"
+          fontSize="9"
+        >
+          ORDRE D’ARRIVÉE
+        </ReadableText>
+      )}
+      <ReadableText
+        mirrored={mirrored}
+        x={(arrivalStart + viewEnd) / 2}
+        y="92"
+        textAnchor="middle"
+        fill="#d3dec0"
+        fontSize={narrow ? 7.5 : 11}
+      >
+        {narrow ? 'ENTRÉE' : 'ARRIVÉES'}
+      </ReadableText>
     </g>
   );
 });
@@ -360,23 +484,58 @@ export function StreetScene({
   reducedMotion,
   onSelect,
   selectedId,
-  theme = 'heg',
   onClearSelection,
   showInfo = true,
   feeDisplayUnit = 'native',
   onDeparture,
   onActivity,
+  mirrored = false,
 }: StreetSceneProps) {
   const id = useId().replace(/:/g, '');
-  const [compactScene, setCompactScene] = useState(
-    () => window.matchMedia('(max-width: 700px)').matches,
-  );
+  const viewport = useRef<HTMLDivElement>(null);
+  const [viewWidth, setViewWidth] = useState(SCENE_WIDTH - VIEW_START_X);
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 700px)');
-    const resize = () => setCompactScene(media.matches);
-    media.addEventListener('change', resize);
-    return () => media.removeEventListener('change', resize);
+    const element = viewport.current;
+    if (!element) return;
+    const update = (width: number, height: number) => {
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+      const nextWidth = Math.max(MIN_VIEW_WIDTH, (SCENE_HEIGHT * width) / height);
+      if (!Number.isFinite(nextWidth)) return;
+      setViewWidth((current) => (Math.abs(current - nextWidth) < 0.5 ? current : nextWidth));
+    };
+    const initial = element.getBoundingClientRect();
+    update(initial.width, initial.height);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries.find((candidate) => candidate.target === element);
+      if (entry) update(entry.contentRect.width, entry.contentRect.height);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
+  const viewEnd = VIEW_START_X + viewWidth;
+  const projectionScale = (viewEnd - CORRIDOR_X) / (SCENE_WIDTH - CORRIDOR_X);
+  const projectX = useMemo(
+    () => (x: number) => (x <= CORRIDOR_X ? x : CORRIDOR_X + (x - CORRIDOR_X) * projectionScale),
+    [projectionScale],
+  );
+  const projectPose = (pose: PassengerPose): PassengerPose => {
+    const radians =
+      pose.movementAngle === undefined ? undefined : (pose.movementAngle * Math.PI) / 180;
+    return {
+      ...pose,
+      x: projectX(pose.x),
+      queueX: projectX(pose.queueX),
+      movementAngle:
+        radians === undefined
+          ? undefined
+          : (Math.atan2(
+              Math.sin(radians),
+              Math.cos(radians) * (pose.x > CORRIDOR_X ? projectionScale : 1),
+            ) *
+              180) /
+            Math.PI,
+    };
+  };
   const motion = usePassengerMotion({
     snapshot,
     paused: paused || snapshot.status !== 'ok',
@@ -455,7 +614,7 @@ export function StreetScene({
   }, [onActivity, snapshot.chain, activity]);
   return (
     <div className="scene-workspace scene-workspace--immersive">
-      <div className="street-scene-viewport">
+      <div ref={viewport} className="street-scene-viewport">
         <div
           className={`street-scene street-platform-scene${paused ? ' street-scene--paused' : ''}${reducedMotion ? ' street-scene--reduced-motion' : ''}${demo ? ' street-scene--demo' : ''}`}
           style={styles}
@@ -463,11 +622,9 @@ export function StreetScene({
           <svg
             className="street-scene-svg street-scene-svg--vertical"
             data-average-fee-rate={averageFeeRate ?? undefined}
-            viewBox={
-              compactScene
-                ? `172 0 ${SCENE_WIDTH - 172} ${SCENE_HEIGHT}`
-                : `0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`
-            }
+            viewBox={`${VIEW_START_X} 0 ${viewWidth} ${SCENE_HEIGHT}`}
+            preserveAspectRatio="xMidYMid meet"
+            data-mirrored={mirrored}
             role="group"
             aria-labelledby={`${id}-title ${id}-desc`}
           >
@@ -477,82 +634,118 @@ export function StreetScene({
             <desc id={`${id}-desc`}>
               Les deux wagons à l’arrêt projettent les prochains blocs. À réception d’un bloc réel,
               le premier est ajusté aux inclusions connues avant son départ, le second prend sa
-              place. Les voyageurs circulent sur le quai droit et les portes restent fermées pendant
-              les déplacements. Le déplacement ne confirme aucune transaction.{' '}
+              place. Les voyageurs arrivent depuis le bord {mirrored ? 'gauche' : 'droit'} et
+              circulent sur le quai extérieur. Les portes restent fermées pendant les déplacements.
+              Le déplacement ne confirme aucune transaction.{' '}
               {demo ? 'Données simulées.' : 'Les inclusions sont fournies par la source.'}{' '}
               Sélectionnez un voyageur au clavier ou à la souris.
             </desc>
-            <PlatformBackdrop theme={theme} />
-            <g aria-hidden="true">
-              <text x="13" y="35" fill="#c3d8bd" fontSize="11">
-                {demo ? 'SIMULATION' : 'ÉCHANTILLON OBSERVÉ'}
-              </text>
-              <rect x="304" y="710" width="144" height="22" rx="5" fill="#12382c" />
-              <text x="314" y="725" fill="#d3dec0" fontSize="9.5">
-                {preparing
-                  ? `Embarquement · ${motion.preparationPassengerCount}`
-                  : `Proch. ${projectionUsed.next}/12 · Suiv. ${projectionUsed.later}/12`}
-              </text>
-            </g>
-            <Wagon
-              kind="next"
-              y={NEXT_WAGON_Y}
-              label={moving || preparing ? blockLabel : 'PROCHAIN'}
-              caption={
-                moving
-                  ? `${demo ? 'BLOC SIMULÉ' : motion.departureRecovered ? 'INCLUSIONS RETROUVÉES' : 'BLOC CONFIRMÉ'} · DÉPART`
-                  : preparing
-                    ? motion.departureRecovered
-                      ? 'INCLUSIONS RETROUVÉES · RATTRAPAGE'
-                      : 'BLOC REÇU · AJUSTEMENT'
-                    : 'PROCHAIN BLOC · ESTIMATION'
+            <g
+              transform={
+                mirrored ? `translate(${2 * VIEW_START_X + viewWidth} 0) scale(-1 1)` : undefined
               }
-              passengers={moving ? (motion.departingPassengers ?? []) : next}
-              doors={moving ? CLOSED_DOORS : (motion.doors?.next ?? CLOSED_DOORS)}
-              moving={moving}
-              preparationProgress={
-                preparing ? (motion.preparationProgress ?? undefined) : undefined
-              }
-              offsetY={moving ? -progress * (SCENE_HEIGHT + WAGON_HEIGHT) : 0}
-              historical={moving}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              feeColor={feeColor}
-              feeLabel={feeLabel}
-            />
-            <Wagon
-              kind={moving ? 'handoff' : 'later'}
-              y={wagonY}
-              label={moving ? 'PROCHAIN' : arriving ? 'ARRIVÉE' : 'SUIVANT'}
-              caption={moving ? 'PROCHAIN BLOC · ESTIMATION' : 'BLOC SUIVANT · ESTIMATION'}
-              passengers={moving ? carried : later}
-              doors={moving || arriving ? CLOSED_DOORS : (motion.doors?.later ?? CLOSED_DOORS)}
-              moving={moving || arriving}
-              handoffProgress={moving ? progress : undefined}
-              preparationProgress={
-                preparing ? (motion.preparationProgress ?? undefined) : undefined
-              }
-              arrivalProgress={arriving ? arrivalProgress : undefined}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              feeColor={feeColor}
-              feeLabel={feeLabel}
-            />
-            <WaitingArchive
-              count={motion.waitingArchiveCount ?? 0}
-              tracked={motion.waitingArchiveTrackedCount ?? 0}
-              unknown={motion.waitingArchiveUnknownCount ?? 0}
-            />
-            {pedestrians.map((pose) => (
-              <Passenger
-                key={pose.tx.id}
-                pose={pose}
-                selected={selectedId === pose.tx.id}
-                feeColor={feeColor(pose)}
-                feeLabel={feeLabel(pose.tx)}
+            >
+              <PlatformBackdrop viewWidth={viewWidth} projectX={projectX} mirrored={mirrored} />
+              <g aria-hidden="true">
+                <ReadableText
+                  mirrored={mirrored}
+                  x={(282 + viewEnd) / 2}
+                  y="35"
+                  textAnchor="middle"
+                  fill="#c3d8bd"
+                  fontSize={viewWidth < 360 ? 9 : 11}
+                  letterSpacing=".5"
+                >
+                  {demo ? 'SIMULATION' : 'ÉCHANTILLON OBSERVÉ'}
+                </ReadableText>
+                <rect
+                  x={(282 + viewEnd) / 2 - Math.min(172, viewEnd - 298) / 2}
+                  y="710"
+                  width={Math.min(172, viewEnd - 298)}
+                  height="22"
+                  rx="5"
+                  fill="#12382c"
+                />
+                <ReadableText
+                  mirrored={mirrored}
+                  x={(282 + viewEnd) / 2}
+                  y="725"
+                  textAnchor="middle"
+                  fill="#d3dec0"
+                  fontSize={viewWidth < 360 ? 8 : 9.5}
+                >
+                  {preparing
+                    ? `Embarquement · ${motion.preparationPassengerCount}`
+                    : `Proch. ${projectionUsed.next}/12 · Suiv. ${projectionUsed.later}/12`}
+                </ReadableText>
+              </g>
+              <Wagon
+                kind="next"
+                y={NEXT_WAGON_Y}
+                label={moving || preparing ? blockLabel : 'PROCHAIN'}
+                caption={
+                  moving
+                    ? `${demo ? 'BLOC SIMULÉ' : motion.departureRecovered ? 'INCLUSIONS RETROUVÉES' : 'BLOC CONFIRMÉ'} · DÉPART`
+                    : preparing
+                      ? motion.departureRecovered
+                        ? 'INCLUSIONS RETROUVÉES · RATTRAPAGE'
+                        : 'BLOC REÇU · AJUSTEMENT'
+                      : 'PROCHAIN BLOC · ESTIMATION'
+                }
+                passengers={moving ? (motion.departingPassengers ?? []) : next}
+                doors={moving ? CLOSED_DOORS : (motion.doors?.next ?? CLOSED_DOORS)}
+                moving={moving}
+                preparationProgress={
+                  preparing ? (motion.preparationProgress ?? undefined) : undefined
+                }
+                offsetY={moving ? -progress * (SCENE_HEIGHT + WAGON_HEIGHT) : 0}
+                historical={moving}
+                selectedId={selectedId}
                 onSelect={onSelect}
+                feeColor={feeColor}
+                feeLabel={feeLabel}
+                mirrored={mirrored}
+                projectPose={projectPose}
               />
-            ))}
+              <Wagon
+                kind={moving ? 'handoff' : 'later'}
+                y={wagonY}
+                label={moving ? 'PROCHAIN' : arriving ? 'ARRIVÉE' : 'SUIVANT'}
+                caption={moving ? 'PROCHAIN BLOC · ESTIMATION' : 'BLOC SUIVANT · ESTIMATION'}
+                passengers={moving ? carried : later}
+                doors={moving || arriving ? CLOSED_DOORS : (motion.doors?.later ?? CLOSED_DOORS)}
+                moving={moving || arriving}
+                handoffProgress={moving ? progress : undefined}
+                preparationProgress={
+                  preparing ? (motion.preparationProgress ?? undefined) : undefined
+                }
+                arrivalProgress={arriving ? arrivalProgress : undefined}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                feeColor={feeColor}
+                feeLabel={feeLabel}
+                mirrored={mirrored}
+                projectPose={projectPose}
+              />
+              <WaitingArchive
+                count={motion.waitingArchiveCount ?? 0}
+                tracked={motion.waitingArchiveTrackedCount ?? 0}
+                unknown={motion.waitingArchiveUnknownCount ?? 0}
+                projectX={projectX}
+                mirrored={mirrored}
+              />
+              {pedestrians.map((pose) => (
+                <Passenger
+                  key={pose.tx.id}
+                  pose={projectPose(pose)}
+                  selected={selectedId === pose.tx.id}
+                  feeColor={feeColor(pose)}
+                  feeLabel={feeLabel(pose.tx)}
+                  onSelect={onSelect}
+                  mirrored={mirrored}
+                />
+              ))}
+            </g>
           </svg>
         </div>
       </div>

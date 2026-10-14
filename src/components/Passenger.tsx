@@ -11,7 +11,7 @@ function stableHash(value: string): number {
 }
 
 const phaseLabels = {
-  arriving: 'arrivée depuis le haut du quai',
+  arriving: 'arrivée depuis le bord extérieur du quai',
   queue: 'sur le quai',
   reordering: 'rejoint sa place réservée dans la file',
   parked: 'en attente visuelle sur le quai, statut actuel non suivi',
@@ -34,6 +34,7 @@ export function Passenger({
   originX = 0,
   originY = 0,
   interactive = true,
+  mirrored = false,
 }: {
   pose: PassengerPose;
   selected: boolean;
@@ -43,6 +44,7 @@ export function Passenger({
   originX?: number;
   originY?: number;
   interactive?: boolean;
+  mirrored?: boolean;
 }) {
   const tx = pose.tx;
   const selectable = interactive && pose.sourceObserved;
@@ -62,6 +64,9 @@ export function Passenger({
       'retiring',
     ].includes(pose.phase);
   const step = moving ? Math.sin(pose.walkPhase) * 3.5 : 0;
+  const facing = mirrored ? -pose.facing : pose.facing;
+  const canonicalAngle = pose.movementAngle ?? (pose.facing === -1 ? 180 : 0);
+  const movementAngle = mirrored ? 180 - canonicalAngle : canonicalAngle;
   const label =
     'Transaction ' +
     tx.id.slice(0, 12) +
@@ -128,53 +133,55 @@ export function Passenger({
         stroke="#f5d589"
         strokeWidth="2"
       />
-      <g className="street-person-body" aria-hidden="true">
-        <ellipse cy="1" rx="7" ry="3" fill="#0b2925" opacity=".55" />
-        <path
-          d={'M-3-7L' + (-4 + step).toFixed(2) + ' 0M3-7L' + (4 - step).toFixed(2) + ' 0'}
-          stroke="#183d36"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-        <path className="street-person-shirt" d="M-4-17Q0-19 4-17L6-7H-6Z" fill={feeColor} />
-        <path
-          d={'M-5-15L-7 ' + (-8 - step).toFixed(2) + 'M5-15L7 ' + (-9 + step).toFixed(2)}
-          stroke={skin}
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-        <g
-          className="street-person-head"
-          transform={'translate(0 -22) scale(' + pose.headScale.toFixed(3) + ')'}
-        >
-          <circle r="4.6" fill={skin} />
+      <g transform={mirrored ? 'scale(-1 1)' : undefined}>
+        <g className="street-person-body" aria-hidden="true">
+          <ellipse cy="1" rx="7" ry="3" fill="#0b2925" opacity=".55" />
           <path
-            d={hash % 3 === 0 ? 'M-5 0q0-7 6-6 6 1 4 7l-4-3Z' : 'M-4-2q4-6 8 0Z'}
-            fill={hash % 2 === 0 ? '#344d39' : '#634d38'}
+            d={'M-3-7L' + (-4 + step).toFixed(2) + ' 0M3-7L' + (4 - step).toFixed(2) + ' 0'}
+            stroke="#183d36"
+            strokeWidth="3"
+            strokeLinecap="round"
           />
-          <circle cx={pose.facing * 2.1} cy=".1" r=".65" fill="#34504a" />
-        </g>
-        {tx.kind === 'contract' && (
-          <rect x="5" y="-12" width="5" height="7" rx="1" fill="#e4c780" />
-        )}
-        {(pose.sourceObserved || !interactive) && tx.status === 'confirmed' && (
-          <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />
-        )}
-        {interactive && !pose.sourceObserved && (
-          <g>
-            <circle cx="10" cy="-27" r="3.2" fill="#365048" stroke="#c7d3c5" />
-            <path d="M10-29v2l1.5 1" fill="none" stroke="#c7d3c5" strokeWidth=".8" />
+          <path className="street-person-shirt" d="M-4-17Q0-19 4-17L6-7H-6Z" fill={feeColor} />
+          <path
+            d={'M-5-15L-7 ' + (-8 - step).toFixed(2) + 'M5-15L7 ' + (-9 + step).toFixed(2)}
+            stroke={skin}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <g
+            className="street-person-head"
+            transform={'translate(0 -22) scale(' + pose.headScale.toFixed(3) + ')'}
+          >
+            <circle r="4.6" fill={skin} />
+            <path
+              d={hash % 3 === 0 ? 'M-5 0q0-7 6-6 6 1 4 7l-4-3Z' : 'M-4-2q4-6 8 0Z'}
+              fill={hash % 2 === 0 ? '#344d39' : '#634d38'}
+            />
+            <circle cx={facing * 2.1} cy=".1" r=".65" fill="#34504a" />
           </g>
-        )}
-        {(pose.phase === 'exiting' || pose.phase === 'returning') && (
-          <path
-            d="M-6-36H6M2-40L6-36 2-32"
-            transform={`rotate(${pose.movementAngle ?? (pose.facing === -1 ? 180 : 0)} 0 -36)`}
-            fill="none"
-            stroke="#f0bd7b"
-            strokeWidth="1.5"
-          />
-        )}
+          {tx.kind === 'contract' && (
+            <rect x="5" y="-12" width="5" height="7" rx="1" fill="#e4c780" />
+          )}
+          {(pose.sourceObserved || !interactive) && tx.status === 'confirmed' && (
+            <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />
+          )}
+          {interactive && !pose.sourceObserved && (
+            <g>
+              <circle cx="10" cy="-27" r="3.2" fill="#365048" stroke="#c7d3c5" />
+              <path d="M10-29v2l1.5 1" fill="none" stroke="#c7d3c5" strokeWidth=".8" />
+            </g>
+          )}
+          {(pose.phase === 'exiting' || pose.phase === 'returning') && (
+            <path
+              d="M-6-36H6M2-40L6-36 2-32"
+              transform={`rotate(${movementAngle} 0 -36)`}
+              fill="none"
+              stroke="#f0bd7b"
+              strokeWidth="1.5"
+            />
+          )}
+        </g>
       </g>
     </g>
   );

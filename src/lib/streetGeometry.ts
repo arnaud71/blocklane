@@ -1,4 +1,4 @@
-/** Shared scene geometry keeps pedestrians on the right platform at every viewport size. */
+/** Canonical right-platform geometry; the Bitcoin scene mirrors these coordinates at display. */
 export interface StreetPoint {
   x: number;
   y: number;
@@ -17,6 +17,8 @@ export const LATER_WAGON_Y = 460;
 export const OBSERVED_WAGON_Y = NEXT_WAGON_Y;
 export const CANDIDATE_WAGON_Y = LATER_WAGON_Y;
 export const PLATFORM_CORRIDOR_X = 298;
+/** Incoming pedestrians cross this outer column before reaching their assigned queue places. */
+export const ARRIVAL_LANE_X = 438;
 export const ENTRY_DOOR_Y = 64;
 export const EXIT_DOOR_Y = 176;
 export const HISTORY_QUEUE_START = 160;
@@ -63,6 +65,11 @@ export function queuePosition(index: number): StreetPoint {
     x: 318 + (currentSlot % 4) * 30,
     y: NEXT_WAGON_Y + ENTRY_DOOR_Y + Math.floor(currentSlot / 4) * 20,
   };
+}
+
+/** Enter sideways from beyond the outer edge, never through the road or the top of the scene. */
+export function arrivalStart(queueIndex: number): StreetPoint {
+  return { x: SCENE_WIDTH + 28, y: queuePosition(queueIndex).y };
 }
 
 /** Door passengers stay clipped inside until they have completely reached the platform. */

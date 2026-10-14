@@ -158,6 +158,11 @@
   font-family: inherit;
 }
 
+.street-scene-svg--vertical {
+  height: 100%;
+  overflow: hidden;
+}
+
 .street-scene-caption {
   position: absolute;
   width: 1px;

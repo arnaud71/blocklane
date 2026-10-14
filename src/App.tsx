@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChainId, Tx } from '../shared/model';
 import { StreetScene } from './components/StreetScene';
+import { SharedCampus } from './components/SharedCampus';
 import { InfoPanel, type SceneActivity } from './components/InfoPanel';
 import { InfoBillboard } from './components/InfoBillboard';
 import { DepartureTimer } from './components/DepartureTimer';
@@ -293,6 +294,7 @@ export function App() {
                       onSelect={selectTransaction}
                       selectedId={selected?.chain === id ? selected.id : undefined}
                       theme={theme}
+                      mirrored={id === 'bitcoin'}
                       onClearSelection={() => setSelection(null)}
                       immersive
                       showInfo={infoOpen && chain === id}
@@ -354,6 +356,7 @@ export function App() {
               </section>
             );
           })}
+          <SharedCampus theme={theme} />
         </div>
         {view !== 'visual' && (
           <div className="content-overlay">
