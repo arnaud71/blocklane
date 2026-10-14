@@ -1,8 +1,8 @@
 # État des vérifications — 14 octobre 2026
 
-## File du quai par frais — non validé
+## File par arrivée et flèches directionnelles — non validé
 
-Le classement visuel des voyageurs en attente observés suit désormais les frais décroissants. Les changements de place utilisent une phase sur le corridor droit ; les arrivées et les retours terminent leur trajet capturé avant le réordonnancement. Les sièges occupés sont préservés et les mouvements réduits actualisent la file statiquement. Les nouveaux emplacements, les égalités de frais, les changements pendant un trajet, les passages de portes et les compteurs restent à valider lors de la reprise. Aucun test, lint, contrôle de compilation ni validation automatique n'a été lancé ; lecture statique, formatage et aperçu de remise uniquement.
+À la demande du propriétaire, les places des voyageurs déjà présents sont conservées selon l'arrivée observée dans l'application. Les nouveaux identifiants d'une même collecte sont classés par frais pour occuper les seules places restantes ; un identifiant historique retrouvé reçoit une place courante. Les arrivées et retours gardent leur trajet capturé. Les petites flèches suivent le segment réellement parcouru, avec segments nuls ignorés. La stabilité sur rafraîchissement, les nouvelles admissions, les retours, les angles de flèche et les compteurs restent à valider lors de la reprise. Aucun test, lint, contrôle de compilation ni validation automatique n'a été lancé ; lecture statique, formatage et aperçu de remise uniquement.
 
 ## Suivi des inclusions, archive et couleurs — non validé
 

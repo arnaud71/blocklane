@@ -34,7 +34,7 @@ const QUEUE_RETRY_MS = 8_000;
 export const HANDOFF_DURATION_MS = 1_200;
 export const PREPARATION_DURATION_MS = 500;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'right-platform-fee-queue-v9';
+const GEOMETRY_VERSION = 'right-platform-arrival-queue-v10';
 
 export type PassengerPhase =
   | 'arriving'
@@ -156,6 +156,7 @@ export interface PassengerPose {
   opacity: number;
   progress: number;
   facing: 1 | -1;
+  movementAngle?: number;
   walkPhase: number;
 }
 
@@ -313,6 +314,25 @@ function passengerPosition(passenger: Passenger, elapsedMs: number): StreetPoint
   );
 }
 
+function pathHeadingDegrees(path: StreetPoint[], progress: number): number {
+  const segments = path.slice(1).flatMap((to, index) => {
+    const from = path[index]!;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    return length > 0 ? [{ dx, dy, length }] : [];
+  });
+  let remaining =
+    segments.reduce((total, segment) => total + segment.length, 0) *
+    Math.max(0, Math.min(1, progress));
+  for (const [index, segment] of segments.entries()) {
+    if (remaining <= segment.length || index === segments.length - 1)
+      return (Math.atan2(segment.dy, segment.dx) * 180) / Math.PI;
+    remaining -= segment.length;
+  }
+  return 0;
+}
+
 function pathDuration(path: StreetPoint[]): number {
   const distance = path.slice(1).reduce((total, point, index) => {
     const previous = path[index] ?? point;
@@ -361,12 +381,21 @@ function parkAtQueue(passenger: Passenger, now: number): Passenger {
   };
 }
 
-function rankWaitingQueue(passengers: Passenger[], now: number, instant = false): Passenger[] {
-  const pending = passengers
+function alignWaitingQueue(passengers: Passenger[], now: number, instant = false): Passenger[] {
+  const occupied = new Set(
+    passengers
+      .filter(
+        (passenger) => passenger.presentInSample && passenger.queueIndex < HISTORY_QUEUE_START,
+      )
+      .map((passenger) => passenger.queueIndex),
+  );
+  // Only reappearing historical IDs need a new current queue slot. Existing arrivals keep theirs.
+  const returningToSample = passengers
     .filter(
       (passenger) =>
         passenger.presentInSample &&
         passenger.tx.status === 'pending' &&
+        passenger.queueIndex >= HISTORY_QUEUE_START &&
         !passenger.wagon &&
         !passenger.inHandoff &&
         !passenger.departureIncluded &&
@@ -375,7 +404,14 @@ function rankWaitingQueue(passengers: Passenger[], now: number, instant = false)
     .sort(
       (left, right) => right.tx.feeRate - left.tx.feeRate || left.tx.id.localeCompare(right.tx.id),
     );
-  const ranks = new Map(pending.map((passenger, index) => [passenger.tx.id, index]));
+  const restoredSlots = new Map<string, number>();
+  for (const passenger of returningToSample) {
+    let slot = 0;
+    while (occupied.has(slot) && slot < HISTORY_QUEUE_START) slot += 1;
+    if (slot === HISTORY_QUEUE_START) break;
+    occupied.add(slot);
+    restoredSlots.set(passenger.tx.id, slot);
+  }
   return passengers.map((passenger) => {
     if (
       passenger.wagon ||
@@ -385,9 +421,8 @@ function rankWaitingQueue(passengers: Passenger[], now: number, instant = false)
       passenger.joiningArchive
     )
       return passenger;
-    const rank = ranks.get(passenger.tx.id);
     const queueIndex =
-      rank ??
+      restoredSlots.get(passenger.tx.id) ??
       (!passenger.presentInSample
         ? passenger.queueIndex >= HISTORY_QUEUE_START
           ? passenger.queueIndex
@@ -573,11 +608,33 @@ function admitPassengers(
   residentLimit = MAX_RESIDENT_PASSENGERS,
 ): { passengers: Passenger[]; pendingAdmissions: PassengerAdmission[] } {
   const passengers = [...residents];
-  const occupied = new Set(residents.map((passenger) => passenger.queueIndex));
+  const occupied = new Set(
+    residents
+      .filter(
+        (passenger) =>
+          passenger.presentInSample ||
+          passenger.wagon !== null ||
+          passenger.inHandoff ||
+          passenger.departureIncluded ||
+          passenger.awaitingVerifiedDeparture,
+      )
+      .map((passenger) => passenger.queueIndex),
+  );
   const residentIds = new Set(residents.map((passenger) => passenger.tx.id));
   const pendingAdmissions: PassengerAdmission[] = [];
   let arrivalIndex = 0;
-  for (const admission of admissions.slice(0, MAX_PASSENGERS)) {
+  const unseen = admissions.filter((admission) => !residentIds.has(admission.tx.id));
+  // Verified block boarding stays first; newly observed pending IDs fill free queue slots by fees.
+  const incoming = [
+    ...unseen.filter((admission) => admission.tx.status === 'confirmed'),
+    ...unseen
+      .filter((admission) => admission.tx.status === 'pending')
+      .sort(
+        (left, right) =>
+          right.tx.feeRate - left.tx.feeRate || left.tx.id.localeCompare(right.tx.id),
+      ),
+  ];
+  for (const admission of incoming.slice(0, MAX_PASSENGERS)) {
     if (residentIds.has(admission.tx.id)) continue;
     if (passengers.length >= residentLimit || blockedIds.has(admission.tx.id)) {
       pendingAdmissions.push(admission);
@@ -1089,7 +1146,7 @@ export function reconcilePassengerMotion(
       : passenger,
   );
   next.queuedDeparture = next.queuedDepartures[0] ?? null;
-  next.passengers = rankWaitingQueue(next.passengers, state.elapsedMs);
+  next.passengers = alignWaitingQueue(next.passengers, state.elapsedMs);
   if (next.preparationStartedAt !== null) return prepareForDeparture(next, state.elapsedMs);
   if (
     next.handoffStartedAt === null &&
@@ -1302,7 +1359,7 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
     Math.min(MAX_INDIVIDUAL_HISTORY, MAX_RESIDENT_PASSENGERS - current.length),
   );
   const groupedCount = Math.max(0, history.length - historyCapacity);
-  const passengers = rankWaitingQueue([...current, ...history.slice(groupedCount)], now, true);
+  const passengers = alignWaitingQueue([...current, ...history.slice(groupedCount)], now, true);
   return {
     ...state,
     ...projectionOccupancy(passengers),
@@ -1567,7 +1624,7 @@ export function advancePassengerMotion(
   };
   if (next.preparationStartedAt !== null) next = prepareForDeparture(next, elapsedMs);
   else if (!handoffMoving) {
-    next.passengers = rankWaitingQueue(next.passengers, elapsedMs);
+    next.passengers = alignWaitingQueue(next.passengers, elapsedMs);
     next.passengers = next.passengers.map((passenger) =>
       reconcileDesiredPassenger(
         passenger,
@@ -1651,6 +1708,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
       opacity: 1,
       progress,
       facing: to.x < from.x ? -1 : 1,
+      movementAngle: pathHeadingDegrees(passenger.path, progress),
       walkPhase: (state.elapsedMs / 160 + (stableHash(passenger.tx.id) % 7)) % (Math.PI * 2),
     };
   });

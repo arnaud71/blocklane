@@ -6,7 +6,8 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
-- File du quai triée par frais décroissants, avec tête près de la porte haute, changements de place animés et départage stable par identifiant ; anciens observateurs hors classement courant et sièges déjà occupés préservés.
+- File du quai conservant les places déjà attribuées selon l'arrivée observée ; nouveaux identifiants d'une même collecte classés par frais décroissants pour occuper les places restantes, avec départage stable par identifiant et retours animés.
+- Petites flèches alignées sur la direction réelle de chaque segment de déplacement, horizontal ou vertical.
 - Lecture de l'API locale toutes les 3 secondes après réponse en direct et cache serveur partagé de 3 secondes après collecte ; une seule collecte en cours par chaîne, requêtes clientes séquentielles et suspension dans les onglets masqués conservées.
 - Archive de présentation suivie : jusqu'à 512 identifiants conservés pendant 30 minutes sans preuve, puis observations sans suivi au statut actuel inconnu. Une inclusion vérifiée réserve l'identifiant jusqu'à la préparation du bon bloc, protégée de l'expiration et de l'éviction pendant l'attente ; à cette préparation, le groupe diminue et le voyageur est réadmis depuis sa position.
 - File de 16 départs pour les blocs intermédiaires ; l'ancien journal n'est pas animé au premier chargement. Une preuve reçue après le départ de son bloc est illustrée comme RATTRAPAGE, avec le même hash.

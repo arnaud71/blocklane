@@ -359,9 +359,10 @@ export function App() {
                     passe du jaune pour des frais faibles à l'orange à la moyenne, puis au rouge
                     pour des frais élevés. La référence est la moyenne des voyageurs en attente
                     actuellement affichés sur cette blockchain, pas une moyenne mondiale. Sur le
-                    quai, la file se réorganise par frais décroissants, les plus élevés près de
-                    l'entrée du wagon. Sa tête illustre ses besoins en espace ou en gas. La ville ne
-                    montre pas toutes les transactions.
+                    quai, les places déjà attribuées restent dans l'ordre d'arrivée observé. Les
+                    nouveaux voyageurs occupent les places libres par frais décroissants. Sa tête
+                    illustre ses besoins en espace ou en gas. La ville ne montre pas toutes les
+                    transactions.
                   </Lesson>
                   <Lesson
                     n="02"

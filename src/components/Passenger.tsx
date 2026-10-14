@@ -13,7 +13,7 @@ function stableHash(value: string): number {
 const phaseLabels = {
   arriving: 'arrivée depuis le haut du quai',
   queue: 'sur le quai',
-  reordering: 'changement de place dans la file selon les frais',
+  reordering: 'rejoint sa place réservée dans la file',
   parked: 'en attente visuelle sur le quai, statut actuel non suivi',
   walking: 'en marche',
   boarding: 'embarquement illustré',
@@ -167,7 +167,13 @@ export function Passenger({
           </g>
         )}
         {(pose.phase === 'exiting' || pose.phase === 'returning') && (
-          <path d="m-4-38-4 3 4 3m-4-3h10" fill="none" stroke="#f0bd7b" strokeWidth="1.5" />
+          <path
+            d="M-6-36H6M2-40L6-36 2-32"
+            transform={`rotate(${pose.movementAngle ?? (pose.facing === -1 ? 180 : 0)} 0 -36)`}
+            fill="none"
+            stroke="#f0bd7b"
+            strokeWidth="1.5"
+          />
         )}
       </g>
     </g>

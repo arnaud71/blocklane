@@ -251,7 +251,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({ theme }: { theme: 'heg
       </text>
       <rect x="305" y="60" width="140" height="28" rx="5" fill="#153d2e" />
       <text x="313" y="78" fill="#d3dec0" fontSize="9.3">
-        FILE · FRAIS DÉCROISSANTS
+        FILE · ORDRE D’ARRIVÉE
       </text>
       <g transform="translate(28 188)">
         <rect width="123" height="98" rx="6" fill="#829e84" stroke="#183c30" strokeWidth="3" />

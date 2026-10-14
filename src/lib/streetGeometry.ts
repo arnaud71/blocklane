@@ -57,8 +57,8 @@ export function queuePosition(index: number): StreetPoint {
     const historySlot = (safeIndex - HISTORY_QUEUE_START) % 16;
     return { x: 318 + (historySlot % 4) * 30, y: 568 + Math.floor(historySlot / 4) * 22 };
   }
-  const currentSlot = Math.min(79, safeIndex);
-  // The head of the current fee queue is beside the upper entrance, then extends down the quay.
+  const currentSlot = safeIndex % 80;
+  // Assigned queue places start beside the upper entrance, then extend down the quay.
   return {
     x: 318 + (currentSlot % 4) * 30,
     y: NEXT_WAGON_Y + ENTRY_DOOR_Y + Math.floor(currentSlot / 4) * 20,
