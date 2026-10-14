@@ -3,6 +3,10 @@ import { z } from 'zod';
 export const chainIdSchema = z.enum(['bitcoin', 'ethereum']);
 export type ChainId = z.infer<typeof chainIdSchema>;
 
+export const PENDING_SAMPLE_LIMIT = 240;
+export const CONFIRMED_SAMPLE_LIMIT = 24;
+export const MAX_TRANSACTIONS = PENDING_SAMPLE_LIMIT + CONFIRMED_SAMPLE_LIMIT;
+export const MAX_BLOCKS = 3;
 export const MAX_TRACKED_TRANSACTIONS = 2_048;
 export const TRACKED_TRANSACTION_TTL_MS = 30 * 60 * 1_000;
 export const MAX_INCLUSION_BLOCKS = 16;
@@ -139,8 +143,8 @@ export const snapshotSchema = z
     usdQuote: usdQuoteSchema.nullable().optional(),
     /** Native values from the exact latest block; null if its aggregate is unavailable. */
     latestBlockValue: latestBlockValueSchema.nullable().optional(),
-    transactions: z.array(transactionSchema).max(120),
-    blocks: z.array(blockSchema).max(3),
+    transactions: z.array(transactionSchema).max(MAX_TRANSACTIONS),
+    blocks: z.array(blockSchema).max(MAX_BLOCKS),
     /** Bounded replay journal; its historical blocks need not appear in blocks. */
     inclusions: z.array(blockInclusionsSchema).max(MAX_INCLUSION_BLOCKS).optional(),
     message: z.string().max(700).optional(),
@@ -298,6 +302,3 @@ export const snapshotSchema = z
     }
   });
 export type Snapshot = z.infer<typeof snapshotSchema>;
-
-export const MAX_TRANSACTIONS = 120;
-export const MAX_BLOCKS = 3;

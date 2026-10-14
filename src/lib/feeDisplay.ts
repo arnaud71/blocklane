@@ -1,4 +1,10 @@
-import type { ChainId, Snapshot, Tx, UsdQuote } from '../../shared/model';
+import {
+  MAX_TRANSACTIONS,
+  type ChainId,
+  type Snapshot,
+  type Tx,
+  type UsdQuote,
+} from '../../shared/model';
 import { number } from './format';
 
 export type FeeDisplayUnit = 'native' | 'usd';
@@ -61,7 +67,7 @@ export function medianTransactionFee(snapshot: Snapshot | null): MedianTransacti
   if (!snapshot || snapshot.status === 'unavailable') return { nativeAmount: null, sampleSize: 0 };
   const seen = new Set<string>();
   const amounts: number[] = [];
-  for (const transaction of snapshot.transactions.slice(0, 120)) {
+  for (const transaction of snapshot.transactions.slice(0, MAX_TRANSACTIONS)) {
     if (transaction.chain !== snapshot.chain || transaction.status !== 'pending') continue;
     const id = transaction.id.toLowerCase();
     if (seen.has(id)) continue;

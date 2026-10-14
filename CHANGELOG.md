@@ -6,6 +6,8 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
+- Échantillon courant porté de 80 à 240 voyageurs en attente par chaîne. File élargie à huit colonnes et 30 rangées, avec conservation des places et superposition des observations ; disposition desktop et miroir Bitcoin conservés. Démonstration étendue à 240 transactions en attente et 12 confirmations fictives par chaîne.
+
 - Ville utilisant toute la largeur du desktop, avec une seule colonne centrale de maisons et bâtiments HEG, Bitcoin à gauche et Ethereum à droite. Colonnes extérieures symétriques : wagons, passage, file d'attente et arrivées depuis chaque bord ; portes Bitcoin à gauche et Ethereum à droite, sans chemin piéton sur la chaussée.
 - Arrivées horizontales à hauteur des places réservées depuis le bord gauche Bitcoin et le bord droit Ethereum, remplaçant l'arrivée par le haut. Une géométrie canonique commune et sa projection en miroir conservent la lisibilité des textes et glyphes, les angles des flèches et les chemins des observations anciennes.
 - Largeur logique SVG adaptée au rapport du viewport, avec élargissement des colonnes du quai sans étirement global des wagons ou personnages. Grille à trois colonnes avec campus commun compactable ; lignes en-tête, scène et couverture partagées par `subgrid`, avec grille interne de repli. États des données, préparation d'une seconde, panneaux à quatre secondes, feux et places de file existantes conservés.
@@ -49,23 +51,25 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Quais extérieurs symétriques, embarquement par la porte haute et sortie par la porte basse du côté du quai, avec ouverture des portes correspondantes.
 - Voyageurs maintenus à bord pendant le déplacement ; les sorties nécessaires commencent après l'arrivée, avec un retour en file sans traversée de la chaussée.
 - Géométrie commune entre les wagons dessinés, leurs portes et le moteur des trajets.
-- Suivi Bitcoin et Ethereum borné à 2 048 identifiants par chaîne pendant 30 minutes, avec au plus 2 144 identifiants transitoires le temps de vérifier avant éviction ; une disparition de l'échantillon ne confirme rien.
+- Suivi Bitcoin et Ethereum borné à 2 048 identifiants par chaîne pendant 30 minutes, avec au plus 2 288 identifiants transitoires le temps de vérifier avant éviction ; une disparition de l'échantillon ne confirme rien.
 
 ### Contrat et suivi
+
+- Sélection des frais élevés portée de 96 à 240 candidates par chaîne et réponse maximale de 120 à 264 transactions, avec 24 confirmations réservées. Effectif réel inférieur conservé si le fournisseur expose moins de candidates ; aucun appel fournisseur supplémentaire et cache partagé de trois secondes inchangé. Médiane calculée sur toutes les transactions en attente valides reçues.
 
 - Champ facultatif nullable `Snapshot.latestBlockValue` : total exact en chaîne décimale de satoshis ou wei, lié au hash, à la hauteur et au nombre de transactions du dernier bloc, avec provenance et méthode explicites. Bitcoin reprend `totalOutputAmt` des statistiques mempool.space ; Ethereum additionne avec `BigInt` toutes les valeurs déclarées du bloc avant troncature de l'échantillon. Incohérence ou indisponibilité : `null`, sans faux zéro ni total fictif en démonstration. Aucun nouveau fournisseur, secret ou dépendance.
 - Champ facultatif nullable `Snapshot.mempool` pour le pool local Ethereum : `pending`, `queued`, `observedAt` en millisecondes, état `ok` / `stale` et méthode `txpool_status`. Les comptes sont des entiers sûrs non négatifs ; leur somme doit être sûre et correspondre à `pendingCount`. Une observation de ce type ne peut appartenir qu'à Ethereum en direct.
 - Collecte facultative `txpool_status` en arrière-plan, partagée par l'adaptateur Ethereum : une requête simultanée, délai de 30 secondes après chaque tentative, réponse bornée à 64 Kio et compte conservé au plus 120 secondes. La panne ou l'absence de cette méthode ne bloque ni n'invalide les données blockchain ; l'interface vérifie séparément l'âge du comptage. Aucun fournisseur, clé, variable d'environnement ou dépendance supplémentaire.
 - Champ facultatif nullable `Snapshot.usdQuote` : prix USD positif fini borné, heure de réception en millisecondes, source Coinbase et état `ok` / `stale`, indépendant du statut blockchain.
 - Cours spot Coinbase BTC/USD et ETH/USD via deux URL serveur fixes, sans nouvelle dépendance, clé ou variable d'environnement : cache partagé de 60 secondes après tentative, une requête simultanée par chaîne, délai de huit secondes, réponse limitée à 16 Kio et cours ancien conservé au plus cinq minutes avant `null`. Collecte en arrière-plan sans attente ajoutée à la réponse blockchain.
-- Journal facultatif `Snapshot.inclusions` : blocs vérifiés et identifiants suivis réellement inclus, maximum 16 blocs et 2 048 identifiants au total, en complément des 120 transactions et trois blocs courants.
+- Journal facultatif `Snapshot.inclusions` : blocs vérifiés et identifiants suivis réellement inclus, maximum 16 blocs et 2 048 identifiants au total, en complément des 264 transactions et trois blocs courants.
 - Rattrapage de huit blocs au maximum par collecte, réessai des lacunes et journal rejoué sans consommation par le premier visiteur. Hashes, hauteurs et identifiants validés ; cohérence avec les blocs affichés à hauteur commune.
 - Suivi et journal volatiles, sensibles aux redémarrages, expirations, évictions et réorganisations ; aucune promesse d'historique exhaustif ou de finalité.
-- Limites de représentation : 80 voyageurs en attente, normalement 160 résidents et 80 admissions différées ; une préparation peut conserver temporairement 912 résidents et jusqu'à 752 inclusions superposables.
+- Limites de représentation : 240 voyageurs en attente, normalement 480 résidents et 240 admissions différées ; une préparation peut conserver temporairement 1 712 résidents et jusqu'à 1 232 inclusions superposables.
 
 ### Validation
 
-- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. La ville centrale pleine largeur, les quais symétriques, le miroir Bitcoin, les arrivées latérales, le grand panneau, le défilement à quatre secondes, le total du dernier bloc, la préparation d'une seconde, le compte du pool Ethereum, le compteur depuis le dernier départ animé, la médiane des coûts par transaction, la conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Aucun appel API réel de validation ajouté. Lecture statique, formatage et aperçu normal de remise uniquement.
+- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. L'échantillon étendu à 240 voyageurs par chaîne, la réponse maximale de 264 transactions, les nouvelles grilles et bornes de représentation, la ville centrale pleine largeur, les quais symétriques, le miroir Bitcoin, les arrivées latérales, le grand panneau, le défilement à quatre secondes, le total du dernier bloc, la préparation d'une seconde, le compte du pool Ethereum, le compteur depuis le dernier départ animé, la médiane des coûts par transaction, la conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Aucun appel API réel de validation ajouté. Lecture statique, formatage et aperçu normal de remise uniquement.
 
 ## 0.2.0 — 2026-10-14
 

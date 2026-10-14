@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import {
+  CONFIRMED_SAMPLE_LIMIT,
   MAX_BLOCKS,
   MAX_CATCHUP_BLOCKS,
   MAX_INCLUSION_BLOCKS,
   MAX_TRACKED_TRANSACTIONS,
-  MAX_TRANSACTIONS,
+  PENDING_SAMPLE_LIMIT,
   TRACKED_TRANSACTION_TTL_MS,
   latestBlockValueSchema,
   snapshotSchema,
@@ -15,7 +16,7 @@ import {
   type Tx,
 } from '../../shared/model.js';
 import type { ServerConfig } from '../config.js';
-import { fetchBitcoinTopFeeSample, TOP_FEE_SAMPLE_LIMIT } from './bitcoinTopFees.js';
+import { fetchBitcoinTopFeeSample } from './bitcoinTopFees.js';
 import {
   parsePayload,
   ratioToNumber,
@@ -400,7 +401,7 @@ async function collectBitcoinSnapshot(
   const hasTopFeeSample = !projectionResult.failed && projectionResult.value !== null;
   const hasRecentSample = !recentResult.failed && recentParsed.success;
   const transactions: Tx[] = hasTopFeeSample
-    ? projectionResult.value!.slice(0, TOP_FEE_SAMPLE_LIMIT)
+    ? projectionResult.value!.slice(0, PENDING_SAMPLE_LIMIT)
     : hasRecentSample
       ? recentParsed
           .data!.sort((left, right) => {
@@ -411,7 +412,7 @@ async function collectBitcoinSnapshot(
               left.txid.localeCompare(right.txid)
             );
           })
-          .slice(0, TOP_FEE_SAMPLE_LIMIT)
+          .slice(0, PENDING_SAMPLE_LIMIT)
           .map((tx) => ({
             id: tx.txid.toLowerCase(),
             chain: 'bitcoin' as const,
@@ -458,7 +459,7 @@ async function collectBitcoinSnapshot(
   const inclusionResult = await collectBitcoinInclusions(config, fetcher, observations, blocks);
   const confirmationUnavailable = inclusionResult.unavailable;
   // Verify retained IDs before the new fee sample can evict them. This temporary
-  // map is bounded by 2,048 retained observations plus at most 96 current arrivals.
+  // map is bounded by 2,048 retained observations plus at most 240 current arrivals (2,288).
   if (confirmationUnavailable) {
     // A failed optional inclusion check must not evict the IDs needed for its retry.
     // Keep their refreshed metadata when they are still sampled; fill remaining
@@ -488,18 +489,18 @@ async function collectBitcoinSnapshot(
       status: 'confirmed' as const,
       blockHash: latestHash,
     }));
-  // Reserve room for proven inclusions even when an upstream recent sample is large.
+  // Keep the full pending sample and a separate bounded set of proven inclusions.
   const confirmedSample = [...confirmed]
     .sort((left, right) => right.feeRate - left.feeRate || left.id.localeCompare(right.id))
-    .slice(0, MAX_TRANSACTIONS - Math.min(pending.length, 100));
-  const pendingSample = pending.slice(0, MAX_TRANSACTIONS - confirmedSample.length);
+    .slice(0, CONFIRMED_SAMPLE_LIMIT);
+  const pendingSample = pending.slice(0, PENDING_SAMPLE_LIMIT);
   return parsePayload(snapshotSchema, {
     chain: 'bitcoin',
     mode: 'live',
     status: 'ok',
     source: config.bitcoinSource,
     observedAt,
-    coverage: `${hasTopFeeSample ? 'Échantillon regroupant jusqu’à 96 transactions aux meilleurs frais propres (fee/vsize) parmi le premier bloc projeté du fournisseur Bitcoin, sans inventaire exhaustif ni garantie de sélection par un mineur.' : hasRecentSample ? 'Sélection des meilleurs frais parmi les seules transactions récentes du fournisseur Bitcoin : le classement du premier bloc projeté est indisponible, ce repli ne représente pas un top global.' : 'L’échantillon de transactions en attente est temporairement indisponible ; les blocs et indicateurs du fournisseur restent disponibles.'} Suivi borné à 2 048 identifiants et 30 minutes ; inclusions vérifiées auprès du fournisseur, sans garantie de finalité. Chaque nœud peut observer un mempool différent. Tailles en octets virtuels.`,
+    coverage: `${hasTopFeeSample ? `Échantillon regroupant jusqu’à ${PENDING_SAMPLE_LIMIT} transactions aux meilleurs frais propres (fee/vsize) parmi le premier bloc projeté du fournisseur Bitcoin, sans inventaire exhaustif ni garantie de sélection par un mineur.` : hasRecentSample ? 'Sélection des meilleurs frais parmi les seules transactions récentes du fournisseur Bitcoin : le classement du premier bloc projeté est indisponible, ce repli ne représente pas un top global.' : 'L’échantillon de transactions en attente est temporairement indisponible ; les blocs et indicateurs du fournisseur restent disponibles.'} Suivi borné à 2 048 identifiants et 30 minutes ; inclusions vérifiées auprès du fournisseur, sans garantie de finalité. Chaque nœud peut observer un mempool différent. Tailles en octets virtuels.`,
     pendingCount: mempool.count,
     latestBlockValue,
     feeRate: fees.halfHourFee,

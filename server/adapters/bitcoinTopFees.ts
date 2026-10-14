@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type Tx } from '../../shared/model.js';
+import { PENDING_SAMPLE_LIMIT, type Tx } from '../../shared/model.js';
 import {
   MAX_RESPONSE_BYTES,
   UPSTREAM_TIMEOUT_MS,
@@ -8,7 +8,7 @@ import {
 } from '../config.js';
 import { parsePayload, UpstreamError } from '../network.js';
 
-export const TOP_FEE_SAMPLE_LIMIT = 96;
+export const TOP_FEE_SAMPLE_LIMIT = PENDING_SAMPLE_LIMIT;
 const safeInteger = z.number().int().nonnegative().safe();
 const hashSchema = z.string().regex(/^[a-fA-F0-9]{64}$/);
 

@@ -1,3 +1,5 @@
+import { PENDING_SAMPLE_LIMIT } from '../../shared/model';
+
 /** Canonical right-platform geometry; the Bitcoin scene mirrors these coordinates at display. */
 export interface StreetPoint {
   x: number;
@@ -21,9 +23,12 @@ export const PLATFORM_CORRIDOR_X = 298;
 export const ARRIVAL_LANE_X = 438;
 export const ENTRY_DOOR_Y = 64;
 export const EXIT_DOOR_Y = 176;
-export const HISTORY_QUEUE_START = 160;
+export const HISTORY_QUEUE_START = PENDING_SAMPLE_LIMIT * 2;
 const DOOR_INSIDE_X = 270;
 const DOOR_PLATFORM_X = 294;
+const QUEUE_COLUMNS = 8;
+const QUEUE_COLUMN_SPACING = 90 / (QUEUE_COLUMNS - 1);
+const QUEUE_ROW_SPACING = 14;
 
 export function wagonOrigin(kind: WagonKind): StreetPoint {
   return { x: WAGON_X, y: kind === 'next' ? NEXT_WAGON_Y : LATER_WAGON_Y };
@@ -59,11 +64,12 @@ export function queuePosition(index: number): StreetPoint {
     const historySlot = (safeIndex - HISTORY_QUEUE_START) % 16;
     return { x: 318 + (historySlot % 4) * 30, y: 568 + Math.floor(historySlot / 4) * 22 };
   }
-  const currentSlot = safeIndex % 80;
+  const currentSlot = safeIndex % PENDING_SAMPLE_LIMIT;
   // Assigned queue places start beside the upper entrance, then extend down the quay.
+  // Surplus retained observations may overlap these places without changing queue order.
   return {
-    x: 318 + (currentSlot % 4) * 30,
-    y: NEXT_WAGON_Y + ENTRY_DOOR_Y + Math.floor(currentSlot / 4) * 20,
+    x: 318 + (currentSlot % QUEUE_COLUMNS) * QUEUE_COLUMN_SPACING,
+    y: NEXT_WAGON_Y + ENTRY_DOOR_Y + Math.floor(currentSlot / QUEUE_COLUMNS) * QUEUE_ROW_SPACING,
   };
 }
 

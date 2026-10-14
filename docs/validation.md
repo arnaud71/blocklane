@@ -1,5 +1,15 @@
 # État des vérifications — 14 octobre 2026
 
+## Échantillon étendu à 240 voyageurs par chaîne — non validé
+
+**Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour ce changement ; aucun contrôle ni appel API réel de validation n'est ajouté. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas l'augmentation des bornes.
+
+Les adaptateurs sélectionnent jusqu'à 240 transactions en attente par chaîne, contre 96 auparavant. La scène accepte 240 voyageurs courants, contre 80 auparavant. Le contrat relève sa réponse maximale de 120 à 264 transactions, avec 24 confirmations réservées ; la médiane utilise toutes les transactions en attente valides reçues. Un fournisseur qui expose moins de candidates reste affiché avec cet effectif réel, sans complément fictif. La démonstration comporte 240 transactions en attente et 12 confirmations simulées par chaîne. Aucun appel fournisseur n'est ajouté et le cache partagé reste à trois secondes.
+
+La file s'étend sur huit colonnes et 30 rangées, de `y=239` à `y=645`, avec indices historiques à partir de 480, places conservées et superposition permise. Les bornes deviennent 480 résidents ordinaires, 240 admissions différées, 240 anciennes observations individualisées, 1 232 inclusions dans un départ et 1 712 résidents pendant sa préparation. L'archive conserve 512 identifiants. Le suivi serveur garde 2 048 identifiants sur 30 minutes, avec un maximum transitoire de 2 288 avant vérification et éviction ; le journal de 16 blocs et 2 048 preuves ainsi que les huit blocs de rattrapage sont inchangés.
+
+À la reprise autorisée, adapter les fixtures et suites qui supposent les anciens plafonds. Couvrir les limites exactes et les dépassements du contrat, le top frais et ses replis, un fournisseur offrant moins de candidates, la médiane sur l'échantillon complet, les admissions différées et résidents en préparation, la rétention et l'éviction avant/après vérification. Examiner le coût de rendu et les grilles élargies sur desktop, portable et petits écrans, les passages et miroirs, les places conservées, la sélection au clavier, la pause et les mouvements réduits. Conserver les tests des confirmations et de la provenance sans dépendre d'API publiques. Aucun de ces contrôles n'est lancé pendant la suspension.
+
 ## Ville commune, quais symétriques et arrivées latérales — non validé
 
 **Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour ce changement ; aucun contrôle ni appel API réel de validation n'est ajouté. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas cette nouvelle disposition.

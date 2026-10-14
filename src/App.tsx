@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChainId, Tx } from '../shared/model';
+import { PENDING_SAMPLE_LIMIT, type ChainId, type Tx } from '../shared/model';
 import { StreetScene } from './components/StreetScene';
 import { SharedCampus } from './components/SharedCampus';
 import { InfoPanel, type SceneActivity } from './components/InfoPanel';
@@ -344,7 +344,7 @@ export function App() {
                   {mode === 'demo' ? 'Données fictives' : 'Échantillon limité'} ·{' '}
                   {current
                     ? Math.min(
-                        80,
+                        PENDING_SAMPLE_LIMIT,
                         current.transactions.filter((tx) => tx.status === 'pending').length,
                       )
                     : 0}{' '}

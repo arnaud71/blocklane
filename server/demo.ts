@@ -1,5 +1,6 @@
 import {
   MAX_TRANSACTIONS,
+  PENDING_SAMPLE_LIMIT,
   snapshotSchema,
   type ChainId,
   type Snapshot,
@@ -21,7 +22,7 @@ export function generateDemoSnapshot(chain: ChainId, now = Date.now(), seed = 20
   const hex = () =>
     Array.from({ length: 64 }, () => Math.floor(random() * 16).toString(16)).join('');
   const capacity = bitcoin ? 1_000_000 : 60_000_000;
-  const txCount = bitcoin ? 86 : 94;
+  const txCount = PENDING_SAMPLE_LIMIT + 12;
   const transactions: Tx[] = Array.from(
     { length: Math.min(txCount, MAX_TRANSACTIONS) },
     (_, index) => ({

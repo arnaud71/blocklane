@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import {
+  CONFIRMED_SAMPLE_LIMIT,
   MAX_BLOCKS,
   MAX_CATCHUP_BLOCKS,
   MAX_INCLUSION_BLOCKS,
   MAX_TRACKED_TRANSACTIONS,
   MAX_TRANSACTIONS,
+  PENDING_SAMPLE_LIMIT,
   TRACKED_TRANSACTION_TTL_MS,
   blockSchema,
   ethereumMempoolSchema,
@@ -108,7 +110,6 @@ export const ethereumBlockHeaderSchema = z
   );
 type EthereumBlock = z.infer<typeof ethereumFullBlockSchema>;
 type EthereumBlockHeader = z.infer<typeof ethereumBlockHeaderSchema>;
-const PENDING_FEE_SAMPLE_LIMIT = 96;
 const MEMPOOL_REFRESH_MS = 30_000;
 const MEMPOOL_MAX_AGE_MS = 120_000;
 const ethereumTxpoolStatusSchema = z.object({
@@ -372,7 +373,7 @@ export function createEthereumProvider(
       throw new UpstreamError('invalid');
     }
     // Validate the complete required latest observation before mutating tracker state.
-    const confirmedTransactions = toTransactions(latest, 'confirmed', MAX_TRANSACTIONS);
+    const confirmedTransactions = toTransactions(latest, 'confirmed', CONFIRMED_SAMPLE_LIMIT);
     // Background refresh on the same fixed, chain-verified RPC; never await this optional call.
     scheduleMempoolRefresh();
     const collectedAt = now();
@@ -413,7 +414,7 @@ export function createEthereumProvider(
             ),
           },
           'pending',
-          PENDING_FEE_SAMPLE_LIMIT,
+          PENDING_SAMPLE_LIMIT,
         );
       } catch {
         // An unusable candidate block cannot invalidate a valid confirmed observation.
@@ -515,7 +516,7 @@ export function createEthereumProvider(
       if (observed !== undefined) retainProof(observed);
     }
     // Verify retained IDs before current arrivals can evict them. This transient map
-    // holds at most 2,048 retained IDs plus 96 sampled arrivals, then returns to its cap.
+    // holds at most 2,048 retained IDs plus 240 sampled arrivals (2,288), then returns to its cap.
     while (tracked.size > MAX_TRACKED_TRANSACTIONS) {
       const oldest = tracked.keys().next().value as string | undefined;
       if (oldest === undefined) break;
@@ -548,7 +549,7 @@ export function createEthereumProvider(
       }),
     ];
     const candidateCoverage = hasCandidates
-      ? 'Jusqu’à 96 transactions candidates aux meilleurs prix de gas effectifs du bloc pending du fournisseur, classées avant limitation, et confirmations du dernier bloc. Ce classement ne représente pas un top du mempool global.'
+      ? `Jusqu’à ${PENDING_SAMPLE_LIMIT} transactions candidates aux meilleurs prix de gas effectifs du bloc pending du fournisseur, classées avant limitation, et confirmations du dernier bloc. Ce classement ne représente pas un top du mempool global.`
       : 'Transactions confirmées du dernier bloc. Aucun candidat distinct exploitable fourni.';
     const mempool = currentMempool();
     const mempoolCoverage =

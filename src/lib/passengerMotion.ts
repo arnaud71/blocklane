@@ -1,5 +1,6 @@
 import {
   MAX_INCLUSION_BLOCKS,
+  PENDING_SAMPLE_LIMIT,
   TRACKED_TRANSACTION_TTL_MS,
   type Block,
   type Snapshot,
@@ -20,7 +21,7 @@ import {
   type WagonKind,
 } from './streetGeometry';
 
-export const MAX_PASSENGERS = 80;
+export const MAX_PASSENGERS = PENDING_SAMPLE_LIMIT;
 export const MAX_RESIDENT_PASSENGERS = MAX_PASSENGERS * 2;
 const MAX_INDIVIDUAL_HISTORY = MAX_PASSENGERS;
 export const MAX_ARCHIVED_OBSERVATIONS = 512;
@@ -37,7 +38,7 @@ export const PREPARATION_DURATION_MS = 1_000;
 const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v11';
+const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v12';
 
 export type PassengerPhase =
   | 'arriving'
