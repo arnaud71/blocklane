@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PENDING_SAMPLE_LIMIT, type ChainId, type Tx } from '../shared/model';
 import { StreetScene } from './components/StreetScene';
 import { SharedCampus } from './components/SharedCampus';
+import { GlobalQueue } from './components/GlobalQueue';
 import { InfoPanel, type SceneActivity } from './components/InfoPanel';
 import { InfoBillboard } from './components/InfoBillboard';
 import { DepartureTimer } from './components/DepartureTimer';
@@ -9,6 +10,8 @@ import { Icon } from './components/Icon';
 import { brand, safeExternalUrl } from './config/brand';
 import { useSnapshot } from './hooks/useSnapshot';
 import type { FeeDisplayUnit } from './lib/feeDisplay';
+import { providerMempool } from './lib/mempoolDisplay';
+import { globalQueueGroupSize } from './lib/globalQueue';
 
 const chains = {
   bitcoin: { name: 'Bitcoin', symbol: '₿', ticker: 'BTC' },
@@ -63,6 +66,10 @@ export function App() {
   );
   const bitcoin = useSnapshot('bitcoin', mode);
   const ethereum = useSnapshot('ethereum', mode);
+  const queueGroupSize = globalQueueGroupSize([
+    providerMempool(bitcoin.snapshot).total,
+    providerMempool(ethereum.snapshot).total,
+  ]);
   const feeds = { bitcoin, ethereum };
   const snapshot = feeds[chain].snapshot;
   const selected = selection
@@ -340,6 +347,12 @@ export function App() {
                     jour.
                   </p>
                 )}
+                <GlobalQueue
+                  snapshot={current}
+                  chain={id}
+                  mode={mode}
+                  transactionsPerGroup={queueGroupSize}
+                />
                 <p className="chain-coverage">
                   {mode === 'demo' ? 'Données fictives' : 'Échantillon limité'} ·{' '}
                   {current

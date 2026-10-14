@@ -84,6 +84,7 @@ export function SharedCampus({ theme }: { theme: 'heg' | 'neutral' }) {
           <Tree x={136} y={583} />
         </svg>
       </div>
+      <div className="shared-campus-foundations" aria-hidden="true" />
       <p className="shared-campus-footer">SCÈNE COMMUNE</p>
     </aside>
   );

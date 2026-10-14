@@ -1,5 +1,15 @@
 # État des vérifications — 14 octobre 2026
 
+## File collective du fournisseur en bas des rues — non validé
+
+**Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour ce changement ; aucun contrôle ni appel API réel de validation n'est ajouté. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas ce nouveau bandeau.
+
+Un bandeau **File globale · fournisseur** occupe 92 pixels sous chaque scène, avant sa couverture, avec une bande verte commune au campus central. Il représente le compte exact de la mempool locale observée, jamais un total mondial, avec provenance locale indiquée et détail `pending + queued` Ethereum. Le nom de la source figure dans l'infobulle et le résumé accessible. Le lecteur partagé `providerMempool(snapshot)` conserve la date et l'état propres au compte Ethereum : ancien après 30 secondes, indisponible après 120 secondes. Un vrai zéro produit une file vide ; un compte absent ou expiré reste indisponible, sans repli sur la taille de l'échantillon. Les chiffres simulés et anciens restent explicitement signalés.
+
+La représentation utilise au plus 48 silhouettes décoratives et statiques par chaîne. Une échelle commune, choisie parmi `1, 2, 5 × 10ⁿ` sur le maximum des comptes utilisables affichés, borne ce nombre ; le dernier groupe représente le reste éventuel. Total, échelle et provenance sont donnés par la légende, l'infobulle et le résumé accessible. Les silhouettes ne sont pas des transactions individuelles sélectionnables et n'alimentent ni moteur, archives, frais ni confirmations. Les 240 voyageurs de l'échantillon, les anciennes observations et les règles de pause ou mouvements réduits restent séparés. Aucun contrat, adaptateur, appel, timer ou dépendance n'est ajouté.
+
+À la reprise autorisée, couvrir avec des données contrôlées les deux comptes, l'échelle commune à chaque changement de seuil, les groupes partiels, les comptes très grands et les limites de 48 silhouettes. Couvrir zéro réel, compte inconnu, démonstration, panne, ancienneté et expiration indépendante du pool Ethereum, sans substituer le candidat ou l'échantillon. Examiner la distinction visible et accessible des groupes collectifs et individus, l'absence d'annonces répétées, l'alignement des quatre lignes, le repli sans `subgrid`, l'espace desktop/portable/petits écrans et la conservation des proportions, portes, pause et mouvements réduits. Aucun de ces contrôles n'est exécuté pendant la suspension.
+
 ## Échantillon étendu à 240 voyageurs par chaîne — non validé
 
 **Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour ce changement ; aucun contrôle ni appel API réel de validation n'est ajouté. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas l'augmentation des bornes.
