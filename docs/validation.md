@@ -2,6 +2,8 @@
 
 ## Quai à droite et portes séparées — non validé
 
+Le maintien des voyageurs pendant le dernier départ, l'accélération du transfert, l'entrée du nouveau candidat depuis le bas et l'arrivée des transactions par le haut ont ensuite été ajoutés. Le wagon du haut est descendu, les observations précédentes restent visibles jusqu'à leur sortie de la scène, et la disposition se compacte selon la taille de l'écran. Les portes n'ont plus de marches et les voyageurs passent au-dessus de leur dessin. Une préparation d'une demi-seconde rassemble les voyageurs concernés avant le départ. Les tests restent suspendus à la demande du propriétaire ; ces changements ne sont pas déclarés validés.
+
 La dernière modification unifie la couleur des wagons, les maintient centrés sur la chaussée et déplace les trajets des voyageurs sur le quai à droite. L'embarquement utilise la porte haute à droite ; la sortie utilise la porte basse à droite et attend l'arrivée du wagon. La géométrie du moteur et du dessin est partagée.
 
 La demande du propriétaire de suspendre les tests reste applicable. Aucun test automatique ni contrôle de compilation n'a été lancé pour cette modification. Le formatage du code et un aperçu de remise ne constituent pas une validation du comportement. Les résultats historiques ci-dessous ne valident donc pas cette nouvelle disposition ni ses trajets. Le réembarquement après transfert et les contraintes de portes, de quai et de mouvement restent à vérifier lors de la reprise des validations.

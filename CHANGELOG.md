@@ -6,6 +6,13 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
+- Occupants du wagon précédent conservés pendant son départ jusqu'à sa sortie de l'écran.
+- Transfert du candidat accéléré et arrivée de son remplaçant depuis le bas de l'écran, avec la même horloge que les voyageurs.
+- Nouvelles transactions arrivant depuis le haut du quai ; wagon observé descendu pour dégager leur arrivée.
+- Portes sans marches, avec personnages dessinés au-dessus pendant leur passage.
+- Préparation rapide des voyageurs concernés pendant une demi-seconde avant le départ du bloc.
+- Voyageurs conservés lors des changements d'échantillon, avec superposition des occupants du wagon observé et sortie visible avant recyclage hors écran.
+- Disposition adaptée aux grands écrans, aux ordinateurs portables et aux petits écrans, avec barres plus compactes pour libérer la scène.
 - Bitcoin et Ethereum visibles simultanément, avec des sources et des états de connexion indépendants.
 - Vue immersive qui occupe la fenêtre, deux rues verticales sur ordinateur et deux scènes compactes sur mobile.
 - Commandes communes pour les animations et les modes de données, panneau de détails repliable et sélection rattachée au réseau.

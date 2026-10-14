@@ -190,7 +190,7 @@ a:hover {
   gap: 6px;
   white-space: nowrap;
 }
-.data-status > span {
+.data-status > .data-status-dot {
   background: currentColor;
   width: 5px;
   height: 5px;
@@ -198,6 +198,10 @@ a:hover {
 }
 .data-status.healthy {
   color: #9dddaf;
+}
+.control-label-compact,
+.data-status-compact {
+  display: none;
 }
 .button-primary,
 .button-secondary {
@@ -509,7 +513,7 @@ main.immersion-main {
   color: #d6e6d5;
   font-variant-numeric: tabular-nums;
 }
-.chain-metrics dd span {
+.chain-metrics dd .metric-note {
   display: block;
   color: #819e8a;
   font-size: 9px;
@@ -639,13 +643,28 @@ main.immersion-main {
   border-top: 1px solid var(--border);
 }
 .immersion-controls .animation-controls {
+  display: flex;
+  align-items: center;
   font-size: 11px;
   gap: 14px;
   flex-wrap: wrap;
 }
 .immersion-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   min-height: 32px;
   padding: 5px 7px;
+}
+.immersion-controls .animation-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.immersion-controls .animation-controls button[aria-pressed='true'] {
+  color: var(--green);
+  background: #8bbda618;
+  border-radius: 6px;
 }
 .immersion-controls select {
   font-size: 11px;
@@ -696,6 +715,74 @@ main.immersion-main {
   background: #1b4136;
   font-size: 12px;
 }
+/* Keep the road and the right platform visible; use the left margin for details. */
+@media (min-width: 1240px) {
+  .scene-workspace--immersive > .info-panel,
+  .chain-pane .scene-stage > .info-panel {
+    left: 12px;
+    right: auto;
+    width: min(300px, 38%);
+    padding: 16px;
+  }
+  .scene-workspace--immersive .info-details {
+    grid-template-columns: 1fr;
+  }
+  .scene-workspace--immersive .info-panel h3 {
+    font-size: 19px;
+  }
+  .scene-workspace--immersive .info-hero {
+    font-size: 31px;
+  }
+}
+/* Laptop windows favour the city over repeated explanatory text. */
+@media (max-height: 800px) and (min-width: 701px) {
+  .immersion-topbar {
+    min-height: 44px;
+    padding-block: 4px;
+    gap: 14px;
+  }
+  .immersion-topbar .wordmark {
+    font-size: 21px;
+  }
+  .chain-heading {
+    padding: 6px 13px;
+  }
+  .chain-title h2 {
+    font-size: 15px;
+  }
+  .chain-title .coin {
+    width: 23px;
+    height: 23px;
+    font-size: 18px;
+  }
+  .chain-metrics {
+    margin-top: 5px;
+  }
+  .chain-metrics dd {
+    font-size: 13px;
+  }
+  .chain-metrics dd .metric-note {
+    display: none;
+  }
+  .chain-coverage {
+    padding-block: 3px;
+  }
+  .immersion-controls {
+    min-height: 41px;
+    padding-block: 4px;
+  }
+  .immersion-hint {
+    display: none;
+  }
+}
+@media (max-width: 1200px) {
+  .chain-title .data-status-label {
+    display: none;
+  }
+  .chain-title .data-status-compact {
+    display: inline;
+  }
+}
 @media (max-width: 1020px) {
   .immersion-topbar {
     gap: 12px;
@@ -710,12 +797,22 @@ main.immersion-main {
     display: none;
   }
   .chain-title {
-    flex-wrap: wrap;
     gap: 6px 9px;
   }
-  .chain-title .data-status {
-    width: 100%;
-    margin: 0;
+  .chain-avenue {
+    display: none;
+  }
+  .chain-title h2 {
+    font-size: 15px;
+  }
+  .immersion-topbar .chain-tab .control-label-full {
+    display: none;
+  }
+  .immersion-topbar .chain-tab .control-label-compact {
+    display: inline;
+  }
+  .chain-heading {
+    padding-inline: 12px;
   }
 }
 @media (max-width: 700px) {
@@ -747,19 +844,15 @@ main.immersion-main {
     min-height: 36px;
   }
   .twin-streets {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-  }
-  .chain-pane--bitcoin {
-    border-right: 0;
-    border-bottom: 1px solid #91b49b40;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
   }
   .chain-heading {
-    padding: 6px 10px;
+    padding: 7px;
   }
   .chain-title {
-    flex-wrap: nowrap;
-    gap: 7px;
+    flex-wrap: wrap;
+    gap: 5px 6px;
   }
   .chain-title h2 {
     font-size: 14px;
@@ -770,37 +863,51 @@ main.immersion-main {
     font-size: 17px;
   }
   .chain-title .data-status {
-    width: auto;
-    margin-left: auto;
-    font-size: 11px;
+    width: 100%;
+    margin: 0;
+    font-size: 10px;
     white-space: normal;
-    max-width: 45%;
+    min-height: 14px;
   }
   .chain-metrics {
-    gap: 8px;
-    margin-top: 5px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 7px;
+    margin-top: 7px;
+  }
+  .chain-metrics > div:first-child {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .chain-metrics > div:first-child dd {
+    margin: 0;
   }
   .chain-metrics dd {
     font-size: 12px;
+    overflow-wrap: anywhere;
   }
   .chain-metrics dt {
-    font-size: 11px;
+    font-size: 10px;
   }
-  .chain-metrics dd span {
+  .chain-metrics dd .metric-note {
     display: none;
   }
   .chain-coverage {
-    font-size: 8px;
-    padding: 3px 10px;
+    font-size: 9px;
+    padding: 3px 7px;
   }
   .immersion-controls {
-    padding: 5px 7px;
+    padding: 4px 7px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
     flex-wrap: wrap;
     gap: 2px 9px;
   }
   .immersion-controls .animation-controls {
     font-size: 10px;
-    gap: 5px;
+    gap: 3px;
+    flex-wrap: nowrap;
   }
   .immersion-controls select {
     font-size: 10px;
@@ -812,12 +919,18 @@ main.immersion-main {
   .scene-workspace--immersive > .info-panel,
   .chain-pane .scene-stage > .info-panel {
     position: fixed;
-    top: 113px;
-    bottom: 90px;
+    top: max(12px, 12dvh);
+    bottom: max(60px, 8dvh);
     left: 12px;
     right: 12px;
     width: auto;
     max-height: none;
+  }
+  .immersion-controls .control-label-full {
+    display: none;
+  }
+  .immersion-controls .control-label-compact {
+    display: inline;
   }
   .content-overlay {
     padding: 12px;
@@ -840,6 +953,22 @@ main.immersion-main {
     padding: 7px 10px;
   }
 }
+@media (max-width: 500px) {
+  .immersion-controls .pause-label,
+  .immersion-controls .speed-label {
+    display: none;
+  }
+  .immersion-controls .animation-controls > button:first-child {
+    min-width: 36px;
+    justify-content: center;
+  }
+  .immersion-controls label {
+    display: flex;
+  }
+  .chain-metrics > div:first-child dd {
+    font-size: 11px;
+  }
+}
 @media (max-width: 370px) {
   .immersion-topbar {
     column-gap: 6px;
@@ -856,11 +985,83 @@ main.immersion-main {
     font-size: 12px;
   }
   .chain-title .data-status {
-    font-size: 11px;
+    font-size: 10px;
     gap: 3px;
   }
   .immersion-navigation button {
     padding: 3px;
+  }
+}
+/* Short landscape windows keep both networks and all controls available. */
+@media (max-height: 540px) {
+  .immersion-topbar {
+    min-height: 40px;
+    padding-block: 2px;
+    gap: 3px 8px;
+  }
+  .immersion-topbar .chain-tabs,
+  .immersion-topbar .mode-switch {
+    order: initial;
+  }
+  .immersion-topbar .wordmark {
+    font-size: 18px;
+  }
+  .immersion-topbar .brand-mark {
+    display: none;
+  }
+  .immersion-topbar .chain-tab {
+    min-height: 30px;
+    font-size: 10px;
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .immersion-navigation {
+    gap: 1px;
+  }
+  .chain-heading {
+    padding: 4px 8px;
+  }
+  .chain-title h2 {
+    font-size: 12px;
+  }
+  .chain-title .coin {
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
+  }
+  .chain-title .data-status {
+    font-size: 9px;
+  }
+  .chain-title .data-status-label {
+    display: none;
+  }
+  .chain-title .data-status-compact {
+    display: inline;
+  }
+  .chain-metrics {
+    margin-top: 3px;
+    gap: 5px;
+  }
+  .chain-metrics dt {
+    font-size: 9px;
+  }
+  .chain-metrics dd {
+    font-size: 11px;
+    margin-top: 1px;
+  }
+  .chain-metrics dd .metric-note,
+  .immersion-hint {
+    display: none;
+  }
+  .immersion-controls {
+    min-height: 38px;
+    padding-block: 2px;
+  }
+  .scene-workspace--immersive > .info-panel,
+  .chain-pane .scene-stage > .info-panel {
+    top: 6px;
+    max-height: calc(100% - 12px);
+    padding: 12px;
   }
 }
 @media (pointer: coarse) {

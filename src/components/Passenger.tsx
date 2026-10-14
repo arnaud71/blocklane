@@ -11,12 +11,15 @@ function stableHash(value: string): number {
 }
 
 const phaseLabels = {
+  arriving: 'arrivée depuis le haut du quai',
   queue: 'sur le quai',
   walking: 'en marche',
   boarding: 'embarquement illustré',
+  preparing: 'embarquement rapide avant le départ',
   boarded: 'à bord du wagon illustratif',
   exiting: 'sortie illustrée',
   returning: 'retour en file illustré',
+  retiring: 'dernière observation quittant le quai',
   confirmed: 'inclusion observée',
 };
 
@@ -27,6 +30,7 @@ export function Passenger({
   onSelect,
   originX = 0,
   originY = 0,
+  interactive = true,
 }: {
   pose: PassengerPose;
   selected: boolean;
@@ -34,14 +38,18 @@ export function Passenger({
   onSelect: (tx: Tx) => void;
   originX?: number;
   originY?: number;
+  interactive?: boolean;
 }) {
   const tx = pose.tx;
+  const selectable = interactive && pose.sourceObserved;
   const hash = stableHash(tx.id);
   const skin = ['#ebcba6', '#bf8f65', '#966746', '#d2ad84'][hash % 4];
   const moving =
     !pose.inWagon &&
     !pose.inHandoff &&
-    ['walking', 'boarding', 'exiting', 'returning'].includes(pose.phase);
+    ['arriving', 'walking', 'boarding', 'preparing', 'exiting', 'returning', 'retiring'].includes(
+      pose.phase,
+    );
   const step = moving ? Math.sin(pose.walkPhase) * 3.5 : 0;
   const label =
     'Transaction ' +
@@ -51,10 +59,14 @@ export function Passenger({
     ' ' +
     (tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei') +
     ', ' +
-    (tx.status === 'confirmed' ? 'incluse dans un bloc observé' : 'en attente dans la source') +
+    (pose.sourceObserved
+      ? tx.status === 'confirmed'
+        ? 'incluse dans un bloc observé'
+        : 'en attente dans la source'
+      : 'dernière observation conservée, absente de l’échantillon actuel') +
     '. ' +
     (pose.inHandoff ? 'à bord pendant le transfert' : phaseLabels[pose.phase]) +
-    '. Afficher les détails.';
+    (selectable ? '. Afficher les détails.' : '.');
   const handleKeyDown = (event: KeyboardEvent<SVGGElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -74,15 +86,18 @@ export function Passenger({
       data-resource-size={tx.size}
       data-head-scale={pose.headScale.toFixed(3)}
       data-source-status={tx.status}
+      data-source-observed={pose.sourceObserved}
       data-fee-rate={tx.feeRate}
       data-wagon={pose.wagon ?? undefined}
       data-in-handoff={pose.inHandoff}
-      role="button"
-      tabIndex={0}
+      role={selectable ? 'button' : interactive ? 'img' : undefined}
+      tabIndex={selectable ? 0 : undefined}
+      aria-hidden={interactive ? undefined : true}
       aria-label={label}
-      aria-pressed={selected}
-      onClick={() => onSelect(tx)}
-      onKeyDown={handleKeyDown}
+      aria-pressed={selectable ? selected : undefined}
+      onClick={selectable ? () => onSelect(tx) : undefined}
+      onKeyDown={selectable ? handleKeyDown : undefined}
+      style={interactive ? undefined : { pointerEvents: 'none' }}
       opacity={pose.opacity}
     >
       <title>{label}</title>

@@ -11,7 +11,7 @@ export const SCENE_HEIGHT = 740;
 export const WAGON_WIDTH = 85;
 export const WAGON_HEIGHT = 217;
 export const WAGON_X = (SCENE_WIDTH - WAGON_WIDTH) / 2;
-export const OBSERVED_WAGON_Y = 72;
+export const OBSERVED_WAGON_Y = 130;
 export const CANDIDATE_WAGON_Y = 460;
 export const PLATFORM_CORRIDOR_X = 298;
 export const ENTRY_DOOR_Y = 64;
@@ -40,14 +40,15 @@ export function exitPlatformPoint(kind: WagonKind): StreetPoint {
 }
 
 export function wagonSeat(kind: WagonKind, index: number): StreetPoint {
+  const slot = Math.max(0, index) % 12;
   return {
-    x: 205 + (index % 3) * 24.5,
-    y: wagonOrigin(kind).y + 80 + Math.floor(index / 3) * 30,
+    x: 205 + (slot % 3) * 24.5,
+    y: wagonOrigin(kind).y + 80 + Math.floor(slot / 3) * 30,
   };
 }
 
 export function queuePosition(index: number): StreetPoint {
-  const boundedIndex = Math.max(0, Math.min(79, index));
+  const boundedIndex = Math.max(0, index) % 80;
   return { x: 318 + (boundedIndex % 4) * 30, y: 118 + Math.floor(boundedIndex / 4) * 28 };
 }
 

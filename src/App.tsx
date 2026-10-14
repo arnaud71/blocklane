@@ -100,11 +100,15 @@ export function App() {
             <button
               key={id}
               className={`chain-tab ${chain === id ? 'selected' : ''}`}
+              aria-label={chains[id].name}
               aria-pressed={chain === id}
               onClick={() => changeChain(id)}
             >
               <span className={`coin tiny ${id}`}>{chains[id].symbol}</span>
-              {chains[id].name}
+              <span className="control-label-full">{chains[id].name}</span>
+              <span className="control-label-compact" aria-hidden="true">
+                {chains[id].ticker}
+              </span>
             </button>
           ))}
         </div>
@@ -146,8 +150,11 @@ export function App() {
             <Icon name="signal" size={17} />
             <span>Les données</span>
           </button>
-          <button onClick={() => setTheme(theme === 'heg' ? 'neutral' : 'heg')}>
-            Identité : {theme === 'heg' ? 'HEG' : 'neutre'}
+          <button
+            onClick={() => setTheme(theme === 'heg' ? 'neutral' : 'heg')}
+            aria-label={`Changer l’identité visuelle, actuellement ${theme === 'heg' ? 'HEG' : 'neutre'}`}
+          >
+            <span>Identité :</span> {theme === 'heg' ? 'HEG' : 'neutre'}
           </button>
         </nav>
       </header>
@@ -172,6 +179,16 @@ export function App() {
                     : current?.status === 'unavailable' || feed.connectionError
                       ? 'Source indisponible'
                       : 'Connexion à la source…';
+            const compactLabel =
+              mode === 'demo'
+                ? 'Simulation'
+                : current?.status === 'ok'
+                  ? 'Direct'
+                  : current?.status === 'stale'
+                    ? 'Données anciennes'
+                    : current?.status === 'unavailable' || feed.connectionError
+                      ? 'Indisponible'
+                      : 'Connexion…';
             return (
               <section
                 key={id}
@@ -182,13 +199,21 @@ export function App() {
                 <header className="chain-heading">
                   <div className="chain-title">
                     <span className={`coin ${id}`}>{network.symbol}</span>
-                    <h2>{network.name} Avenue</h2>
+                    <h2>
+                      {network.name}
+                      <span className="chain-avenue"> Avenue</span>
+                    </h2>
                     <span
                       className={`data-status ${current?.status === 'ok' && mode === 'live' ? 'healthy' : ''}`}
                       role="status"
+                      aria-label={label}
+                      title={label}
                     >
-                      <span />
-                      {label}
+                      <span className="data-status-dot" />
+                      <span className="data-status-label">{label}</span>
+                      <span className="data-status-compact" aria-hidden="true">
+                        {compactLabel}
+                      </span>
                     </span>
                   </div>
                   <dl className="chain-metrics">
@@ -200,7 +225,7 @@ export function App() {
                         {id === 'ethereum' && mode === 'live'
                           ? 'Non mesuré'
                           : number(current?.pendingCount ?? null)}
-                        <span>
+                        <span className="metric-note">
                           {id === 'ethereum' && mode === 'live'
                             ? 'Non mesuré par cette source'
                             : 'transactions dans la source'}
@@ -211,14 +236,18 @@ export function App() {
                       <dt>{id === 'bitcoin' ? 'Frais conseillés' : 'Frais de base'}</dt>
                       <dd>
                         {number(current?.feeRate ?? null, 2)} {id === 'bitcoin' ? 'sat/vB' : 'Gwei'}
-                        <span>{id === 'bitcoin' ? 'Délai non garanti' : 'Pourboire exclu'}</span>
+                        <span className="metric-note">
+                          {id === 'bitcoin' ? 'Délai non garanti' : 'Pourboire exclu'}
+                        </span>
                       </dd>
                     </div>
                     <div>
                       <dt>Dernier bloc</dt>
                       <dd>
                         {current?.blocks[0] ? `#${number(current.blocks[0].height)}` : '—'}
-                        <span>{mode === 'demo' ? 'Bloc synthétique' : 'Inclusion observée'}</span>
+                        <span className="metric-note">
+                          {mode === 'demo' ? 'Bloc synthétique' : 'Inclusion observée'}
+                        </span>
                       </dd>
                     </div>
                   </dl>
@@ -280,7 +309,7 @@ export function App() {
                 )}
                 <p className="chain-coverage">
                   {mode === 'demo' ? 'Données fictives' : 'Échantillon limité'} ·{' '}
-                  {current ? Math.min(80, current.transactions.length) : 0} voyageurs
+                  {current ? Math.min(80, current.transactions.length) : 0} observations
                   {current?.observedAt
                     ? ` · relevé ${new Date(current.observedAt).toLocaleTimeString('fr-CH')}`
                     : ''}
@@ -430,10 +459,10 @@ export function App() {
             onClick={() => setPaused(!paused)}
           >
             <Icon name={paused ? 'play' : 'pause'} size={16} />
-            {paused ? 'Reprendre' : 'Pause'}
+            <span className="pause-label">{paused ? 'Reprendre' : 'Pause'}</span>
           </button>
           <label>
-            Vitesse{' '}
+            <span className="speed-label">Vitesse</span>{' '}
             <select
               value={speed}
               onChange={(event) => setSpeed(Number(event.target.value))}
@@ -444,8 +473,17 @@ export function App() {
               <option value={2}>2×</option>
             </select>
           </label>
-          <button aria-pressed={reducedMotion} onClick={() => setReducedMotion(!reducedMotion)}>
-            Mouvements {reducedMotion ? 'réduits' : 'actifs'}
+          <button
+            aria-pressed={reducedMotion}
+            aria-label={reducedMotion ? 'Activer les mouvements' : 'Réduire les mouvements'}
+            onClick={() => setReducedMotion(!reducedMotion)}
+          >
+            <span className="control-label-full">
+              Mouvements {reducedMotion ? 'réduits' : 'actifs'}
+            </span>
+            <span className="control-label-compact" aria-hidden="true">
+              Mouv. {reducedMotion ? 'réduits' : 'actifs'}
+            </span>
           </button>
         </div>
         <p className="immersion-hint">
@@ -461,11 +499,22 @@ export function App() {
             onClick={() => setInfoOpen(!infoOpen)}
           >
             <Icon name="signal" size={16} />
-            Informations
+            <span className="control-label-full">Informations</span>
+            <span className="control-label-compact" aria-hidden="true">
+              Infos
+            </span>
           </button>
           {document.fullscreenEnabled && (
-            <button onClick={() => void toggleFullScreen()}>
-              {fullScreen ? 'Quitter le plein écran' : 'Plein écran'}
+            <button
+              onClick={() => void toggleFullScreen()}
+              aria-label={fullScreen ? 'Quitter le plein écran' : 'Plein écran'}
+            >
+              <span className="control-label-full">
+                {fullScreen ? 'Quitter le plein écran' : 'Plein écran'}
+              </span>
+              <span className="control-label-compact" aria-hidden="true">
+                {fullScreen ? 'Réduire' : 'Écran'}
+              </span>
             </button>
           )}
           {fairUrl && (

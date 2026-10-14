@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, type CSSProperties } from 'react';
+import { memo, useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
 import type { Snapshot, Tx } from '../../shared/model';
 import { usePassengerMotion } from '../hooks/usePassengerMotion';
 import type { PassengerPose } from '../lib/passengerMotion';
@@ -46,8 +46,6 @@ function SideDoor({ y, open, purpose }: { y: number; open: boolean; purpose: 'en
       transform={`translate(${WAGON_WIDTH - 7} ${y - 16})`}
       aria-hidden="true"
     >
-      <rect x="5" y="8" width="22" height="20" rx="2" fill="#b9c5a3" />
-      <path d="M11 12h14M11 18h14M11 24h14" stroke="#637866" strokeWidth="1.5" />
       <rect x="0" y="0" width="13" height="32" rx="2" fill="#102d27" stroke="#193c31" />
       <rect
         className="street-side-door-top"
@@ -79,8 +77,11 @@ function Wagon({
   doors,
   moving = false,
   handoffProgress,
+  preparationProgress,
+  arrivalProgress,
   offsetY = 0,
   opacity = 1,
+  historical = false,
   selectedId,
   onSelect,
   feeColor,
@@ -92,8 +93,11 @@ function Wagon({
   doors: { entry: boolean; exit: boolean };
   moving?: boolean;
   handoffProgress?: number;
+  preparationProgress?: number;
+  arrivalProgress?: number;
   offsetY?: number;
   opacity?: number;
+  historical?: boolean;
   selectedId?: string;
   onSelect: (tx: Tx) => void;
   feeColor: (pose: PassengerPose) => string;
@@ -101,11 +105,14 @@ function Wagon({
   const clipId = useId().replace(/:/g, '') + '-wagon-interior';
   const entryOpen = !moving && doors.entry;
   const exitOpen = !moving && doors.exit;
+  const preservePassages = moving || preparationProgress !== undefined;
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'observed' ? 'street-observed-wagon' : 'street-candidate-wagon'}${kind === 'handoff' ? ' street-candidate--handoff' : ''}`}
       data-moving={moving}
       data-handoff-progress={handoffProgress}
+      data-preparation-progress={preparationProgress}
+      data-arrival-progress={arrivalProgress}
       transform={`translate(0 ${offsetY})`}
       opacity={opacity}
     >
@@ -118,8 +125,12 @@ function Wagon({
             height={WAGON_HEIGHT - 51}
             rx="6"
           />
-          {entryOpen && <rect x={WAGON_X + 72} y={y + ENTRY_DOOR_Y - 34} width="36" height="56" />}
-          {exitOpen && <rect x={WAGON_X + 72} y={y + EXIT_DOOR_Y - 34} width="36" height="56" />}
+          {(entryOpen || preservePassages) && (
+            <rect x={WAGON_X + 72} y={y + ENTRY_DOOR_Y - 34} width="54" height="56" />
+          )}
+          {(exitOpen || preservePassages) && (
+            <rect x={WAGON_X + 72} y={y + EXIT_DOOR_Y - 34} width="54" height="56" />
+          )}
         </clipPath>
       </defs>
       <g transform={`translate(${WAGON_X} ${y})`} aria-hidden="true">
@@ -146,20 +157,21 @@ function Wagon({
         <circle cx="14" cy="207" r="3" fill="#e89c73" />
         <circle cx="71" cy="207" r="3" fill="#e89c73" />
       </g>
+      <g transform={`translate(${WAGON_X} ${y})`}>
+        <SideDoor y={ENTRY_DOOR_Y} open={entryOpen} purpose="entry" />
+        <SideDoor y={EXIT_DOOR_Y} open={exitOpen} purpose="exit" />
+      </g>
       <g clipPath={`url(#${clipId})`}>
         {passengers.map((pose) => (
           <Passenger
             key={pose.tx.id}
             pose={pose}
-            selected={selectedId === pose.tx.id}
+            selected={!historical && selectedId === pose.tx.id}
             feeColor={feeColor(pose)}
             onSelect={onSelect}
+            interactive={!historical}
           />
         ))}
-      </g>
-      <g transform={`translate(${WAGON_X} ${y})`}>
-        <SideDoor y={ENTRY_DOOR_Y} open={entryOpen} purpose="entry" />
-        <SideDoor y={EXIT_DOOR_Y} open={exitOpen} purpose="exit" />
       </g>
     </g>
   );
@@ -224,6 +236,15 @@ export function StreetScene({
   showInfo = true,
 }: StreetSceneProps) {
   const id = useId().replace(/:/g, '');
+  const [compactScene, setCompactScene] = useState(
+    () => window.matchMedia('(max-width: 700px)').matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 700px)');
+    const resize = () => setCompactScene(media.matches);
+    media.addEventListener('change', resize);
+    return () => media.removeEventListener('change', resize);
+  }, []);
   const motion = usePassengerMotion({
     snapshot,
     paused: paused || snapshot.status !== 'ok',
@@ -232,8 +253,14 @@ export function StreetScene({
   });
   const demo = snapshot.mode === 'demo';
   const moving = motion.handoffProgress !== null;
+  const preparing = motion.preparationProgress != null;
   const progress = motion.handoffProgress ?? 0;
-  const wagonY = CANDIDATE_WAGON_Y + (OBSERVED_WAGON_Y - CANDIDATE_WAGON_Y) * progress;
+  const arriving = motion.candidateArrivalProgress != null;
+  const arrivalProgress = motion.candidateArrivalProgress ?? 1;
+  const candidateY = SCENE_HEIGHT + 12 + (CANDIDATE_WAGON_Y - SCENE_HEIGHT - 12) * arrivalProgress;
+  const wagonY = moving
+    ? CANDIDATE_WAGON_Y + (OBSERVED_WAGON_Y - CANDIDATE_WAGON_Y) * progress
+    : candidateY;
   const observed = motion.passengers.filter(
     (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'observed',
   );
@@ -261,8 +288,12 @@ export function StreetScene({
   };
   const activity = useMemo(
     () => ({
-      walking: motion.counts.walking + motion.counts.boarding,
-      boarded: motion.passengers.filter((pose) => pose.inWagon).length,
+      walking:
+        motion.counts.arriving +
+        motion.counts.walking +
+        motion.counts.boarding +
+        motion.counts.preparing,
+      boarded: motion.passengers.filter((pose) => pose.inWagon && pose.sourceObserved).length,
       returning: motion.counts.exiting + motion.counts.returning,
       waiting: motion.counts.queue,
     }),
@@ -278,7 +309,11 @@ export function StreetScene({
         >
           <svg
             className="street-scene-svg street-scene-svg--vertical"
-            viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`}
+            viewBox={
+              compactScene
+                ? `172 0 ${SCENE_WIDTH - 172} ${SCENE_HEIGHT}`
+                : `0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`
+            }
             role="group"
             aria-labelledby={`${id}-title ${id}-desc`}
           >
@@ -297,23 +332,34 @@ export function StreetScene({
               <text x="13" y="35" fill="#c3d8bd" fontSize="11">
                 {demo ? 'SIMULATION' : 'ÉCHANTILLON OBSERVÉ'}
               </text>
-              <text x="230" y="54" fill="#c3d8bd" fontSize="11" textAnchor="middle">
-                {moving ? 'BLOC PRÉCÉDENT' : `BLOC ${demo ? 'SIMULÉ' : 'OBSERVÉ'}`}
+              <text
+                x="230"
+                y={OBSERVED_WAGON_Y - 18}
+                fill="#c3d8bd"
+                fontSize="11"
+                textAnchor="middle"
+              >
+                {moving || preparing ? 'BLOC PRÉCÉDENT' : `BLOC ${demo ? 'SIMULÉ' : 'OBSERVÉ'}`}
               </text>
               <rect x="304" y="710" width="144" height="22" rx="5" fill="#12382c" />
               <text x="314" y="725" fill="#d3dec0" fontSize="10">
-                Candidat · {motion.candidateUsed} / {motion.candidateCapacity}
+                {preparing
+                  ? `Embarquement · ${motion.preparationPassengerCount}`
+                  : `Candidat · ${motion.candidateUsed} / ${motion.candidateCapacity}`}
               </text>
             </g>
             <Wagon
               kind="observed"
               y={OBSERVED_WAGON_Y}
-              label={moving ? 'PRÉCÉDENT' : observedLabel}
-              passengers={observed}
+              label={moving || preparing ? 'PRÉCÉDENT' : observedLabel}
+              passengers={moving ? (motion.departingPassengers ?? []) : observed}
               doors={moving ? CLOSED_DOORS : (motion.doors?.observed ?? CLOSED_DOORS)}
               moving={moving}
+              preparationProgress={
+                preparing ? (motion.preparationProgress ?? undefined) : undefined
+              }
               offsetY={moving ? -progress * (SCENE_HEIGHT + WAGON_HEIGHT) : 0}
-              opacity={moving ? 1 - progress : 1}
+              historical={moving}
               selectedId={selectedId}
               onSelect={onSelect}
               feeColor={feeColor}
@@ -321,11 +367,17 @@ export function StreetScene({
             <Wagon
               kind={moving ? 'handoff' : 'candidate'}
               y={wagonY}
-              label={moving ? 'TRANSFERT' : 'CANDIDAT'}
+              label={
+                moving ? 'TRANSFERT' : preparing ? 'PRÉPARATION' : arriving ? 'ARRIVÉE' : 'CANDIDAT'
+              }
               passengers={moving ? carried : candidate}
-              doors={moving ? CLOSED_DOORS : (motion.doors?.candidate ?? CLOSED_DOORS)}
-              moving={moving}
+              doors={moving || arriving ? CLOSED_DOORS : (motion.doors?.candidate ?? CLOSED_DOORS)}
+              moving={moving || arriving}
               handoffProgress={moving ? progress : undefined}
+              preparationProgress={
+                preparing ? (motion.preparationProgress ?? undefined) : undefined
+              }
+              arrivalProgress={arriving ? arrivalProgress : undefined}
               selectedId={selectedId}
               onSelect={onSelect}
               feeColor={feeColor}
