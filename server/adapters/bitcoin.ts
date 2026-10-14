@@ -6,9 +6,11 @@ import {
   MAX_TRACKED_TRANSACTIONS,
   MAX_TRANSACTIONS,
   TRACKED_TRANSACTION_TTL_MS,
+  latestBlockValueSchema,
   snapshotSchema,
   type Block,
   type BlockInclusions,
+  type LatestBlockValue,
   type Snapshot,
   type Tx,
 } from '../../shared/model.js';
@@ -73,6 +75,12 @@ export const bitcoinFeesSchema = z.object({
 });
 
 const bitcoinBlockTxidsSchema = z.array(hashSchema).max(30_000);
+const bitcoinBlockValueStatsSchema = z.object({
+  id: hashSchema,
+  height: safeInteger,
+  tx_count: safeInteger.max(5_000_000),
+  extras: z.object({ totalOutputAmt: safeInteger }),
+});
 export const BITCOIN_TRACKED_SAMPLE_LIMIT = MAX_TRACKED_TRANSACTIONS;
 export const BITCOIN_TRACKED_SAMPLE_TTL_MS = TRACKED_TRANSACTION_TTL_MS;
 
@@ -103,6 +111,34 @@ function publicBlock(block: BitcoinBlock): Block {
     used: block.weight / 4,
     capacity: 1_000_000,
   };
+}
+
+function latestBitcoinBlockValue(
+  rawBlock: unknown,
+  latest: BitcoinBlock,
+  observedAt: number,
+): LatestBlockValue | null {
+  // Mempool's enriched block already carries Core getblockstats.total_out.
+  // It excludes coinbase, includes change, and is not net economic volume.
+  const parsed = bitcoinBlockValueStatsSchema.safeParse(rawBlock);
+  if (
+    !parsed.success ||
+    latest.tx_count < 1 ||
+    parsed.data.id.toLowerCase() !== latest.id.toLowerCase() ||
+    parsed.data.height !== latest.height ||
+    parsed.data.tx_count !== latest.tx_count
+  ) {
+    return null;
+  }
+  return parsePayload(latestBlockValueSchema, {
+    blockHash: latest.id.toLowerCase(),
+    blockHeight: latest.height,
+    amount: BigInt(parsed.data.extras.totalOutputAmt).toString(),
+    unit: 'sat',
+    method: 'bitcoin-output-sum',
+    transactionCount: latest.tx_count,
+    observedAt,
+  });
 }
 
 function invalidateBitcoinBranch(observations: BitcoinObservations, height: number): void {
@@ -413,6 +449,12 @@ async function collectBitcoinSnapshot(
   }
   const latest = blocks[0]!;
   const latestHash = latest.id.toLowerCase();
+  // An absent or invalid optional aggregate cannot invalidate the live chain snapshot.
+  const latestBlockValue = latestBitcoinBlockValue(
+    Array.isArray(blocksRaw) ? blocksRaw[0] : undefined,
+    latest,
+    observedAt,
+  );
   const inclusionResult = await collectBitcoinInclusions(config, fetcher, observations, blocks);
   const confirmationUnavailable = inclusionResult.unavailable;
   // Verify retained IDs before the new fee sample can evict them. This temporary
@@ -459,6 +501,7 @@ async function collectBitcoinSnapshot(
     observedAt,
     coverage: `${hasTopFeeSample ? 'Échantillon regroupant jusqu’à 96 transactions aux meilleurs frais propres (fee/vsize) parmi le premier bloc projeté du fournisseur Bitcoin, sans inventaire exhaustif ni garantie de sélection par un mineur.' : hasRecentSample ? 'Sélection des meilleurs frais parmi les seules transactions récentes du fournisseur Bitcoin : le classement du premier bloc projeté est indisponible, ce repli ne représente pas un top global.' : 'L’échantillon de transactions en attente est temporairement indisponible ; les blocs et indicateurs du fournisseur restent disponibles.'} Suivi borné à 2 048 identifiants et 30 minutes ; inclusions vérifiées auprès du fournisseur, sans garantie de finalité. Chaque nœud peut observer un mempool différent. Tailles en octets virtuels.`,
     pendingCount: mempool.count,
+    latestBlockValue,
     feeRate: fees.halfHourFee,
     feeUnit: 'sat/vB',
     transactions: [...pendingSample, ...confirmedSample],

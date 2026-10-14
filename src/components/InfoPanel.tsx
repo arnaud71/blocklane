@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Snapshot, Tx } from '../../shared/model';
 import { explorerUrl, number, shortHash } from '../lib/format';
 import { providerMempool } from '../lib/mempoolDisplay';
+import { latestBlockValueDisplay } from '../lib/blockValueDisplay';
 import {
   formatFeeRate,
   formatEstimatedFeeAmount,
@@ -73,7 +74,7 @@ export function InfoPanel({
       if (timer !== undefined) window.clearInterval(timer);
       timer = undefined;
       if (!document.hidden) {
-        timer = window.setInterval(() => setPage((current) => (current + 1) % pages.length), 3_000);
+        timer = window.setInterval(() => setPage((current) => (current + 1) % pages.length), 4_000);
       }
     };
     syncVisibility();
@@ -99,6 +100,7 @@ export function InfoPanel({
   );
   const medianAmountParts = medianAmount.match(/^(.+) (BTC|ETH|\$ US)$/);
   const latest = snapshot?.blocks[0];
+  const blockValue = latestBlockValueDisplay(snapshot);
   const blockLink = latest && !demo ? explorerUrl(chain, latest.hash, 'block') : null;
   const txLink = selectedTx && !demo ? explorerUrl(chain, selectedTx.id, 'tx') : null;
   const sourceState = !snapshot
@@ -285,6 +287,13 @@ export function InfoPanel({
                 </div>
                 <dl className="info-details">
                   <Detail label="Transactions">{latest ? number(latest.txCount) : '—'}</Detail>
+                  <Detail label={blockValue.label}>
+                    {blockValue.approximate ? '≈ ' : ''}
+                    {blockValue.value} {blockValue.unit}
+                  </Detail>
+                  {blockValue.usd && (
+                    <Detail label="Équivalent au cours reçu">{blockValue.usd}</Detail>
+                  )}
                   <Detail label={bitcoin ? 'Espace virtuel utilisé' : 'Gas consommé'}>
                     {latest ? `${number(latest.used)} ${bitcoin ? 'vB' : 'gas'}` : '—'}
                   </Detail>
@@ -295,6 +304,7 @@ export function InfoPanel({
                     {latest ? new Date(latest.timestamp * 1_000).toLocaleTimeString('fr-CH') : '—'}
                   </Detail>
                 </dl>
+                <p className="info-explanation">{blockValue.note}</p>
                 {blockLink && (
                   <a
                     className="info-explorer"
@@ -390,7 +400,7 @@ export function InfoPanel({
             aria-pressed={rotationEnabled}
           >
             <Icon name={rotationEnabled ? 'pause' : 'play'} size={11} />
-            {rotationEnabled ? 'Défilement · 3 s' : 'Activer le défilement · 3 s'}
+            {rotationEnabled ? 'Défilement · 4 s' : 'Activer le défilement · 4 s'}
             {(paused || reducedMotion || interacting || snapshot?.status !== 'ok') &&
             rotationEnabled
               ? ' · en pause'

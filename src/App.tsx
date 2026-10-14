@@ -387,7 +387,7 @@ export function App() {
                   <Lesson
                     n="02"
                     title="Pourquoi deux wagons ?"
-                    detail="À l’arrivée d’un nouveau bloc, le premier wagon se prépare pendant au moins une demi-seconde : les transactions dont l’inclusion est vérifiée embarquent rapidement, tandis que les autres retournent sur le quai. Il part ensuite avec les inclusions connues. Le second wagon monte à sa place, puis un nouveau second arrive du bas. Les anciennes observations regroupées gardent jusqu’à 512 identifiants pendant 30 minutes : si une inclusion est retrouvée, leur voyageur revient du groupe et rejoint le départ du bloc concerné. Les observations au-delà de ces limites restent représentées sans suivi individuel. Seule la source confirme une inclusion : l’animation ne change pas le statut."
+                    detail="À l’arrivée d’un nouveau bloc, le premier wagon se prépare pendant au moins une seconde : les transactions dont l’inclusion est vérifiée embarquent rapidement, tandis que les autres retournent sur le quai. Il part ensuite avec les inclusions connues. Le second wagon monte à sa place, puis un nouveau second arrive du bas. Les anciennes observations regroupées gardent jusqu’à 512 identifiants pendant 30 minutes : si une inclusion est retrouvée, leur voyageur revient du groupe et rejoint le départ du bloc concerné. Les observations au-delà de ces limites restent représentées sans suivi individuel. Seule la source confirme une inclusion : l’animation ne change pas le statut."
                   >
                     Le wagon du haut projette le prochain bloc ; celui du bas projette le bloc qui
                     pourrait suivre. Leurs voyageurs viennent de notre échantillon de transactions

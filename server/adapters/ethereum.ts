@@ -8,10 +8,12 @@ import {
   TRACKED_TRANSACTION_TTL_MS,
   blockSchema,
   ethereumMempoolSchema,
+  latestBlockValueSchema,
   snapshotSchema,
   type Block,
   type BlockInclusions,
   type EthereumMempool,
+  type LatestBlockValue,
   type Snapshot,
   type Tx,
 } from '../../shared/model.js';
@@ -173,6 +175,28 @@ function toBlock(block: EthereumBlock | EthereumBlockHeader): Block {
     txCount: block.transactions.length,
     used: bigintToSafeNumber(BigInt(block.gasUsed)),
     capacity: bigintToSafeNumber(BigInt(block.gasLimit)),
+  });
+}
+
+function latestEthereumBlockValue(
+  block: EthereumBlock,
+  latest: Block,
+  observedAt: number,
+): LatestBlockValue {
+  // Sum the complete validated block before the displayed sample is truncated.
+  // Declared top-level native values include failed calls; receipts/traces are not fetched.
+  const amount = block.transactions.reduce(
+    (total, transaction) => total + BigInt(transaction.value),
+    0n,
+  );
+  return parsePayload(latestBlockValueSchema, {
+    blockHash: latest.hash,
+    blockHeight: latest.height,
+    amount: amount.toString(),
+    unit: 'wei',
+    method: 'ethereum-transaction-value-sum',
+    transactionCount: block.transactions.length,
+    observedAt,
   });
 }
 
@@ -352,6 +376,7 @@ export function createEthereumProvider(
     // Background refresh on the same fixed, chain-verified RPC; never await this optional call.
     scheduleMempoolRefresh();
     const collectedAt = now();
+    const latestBlockValue = latestEthereumBlockValue(latest, latestBlock, collectedAt);
     for (const [id, lastObservedAt] of tracked) {
       if (collectedAt - lastObservedAt >= TRACKED_TRANSACTION_TTL_MS) tracked.delete(id);
     }
@@ -541,6 +566,7 @@ export function createEthereumProvider(
       coverage: `${candidateCoverage} ${mempoolCoverage} Taille des blocs en gas ; passagers = limite de gas déclarée. Suivi borné à 2 048 IDs observés pendant 30 min, journal de 16 blocs ; rattrapage de 8 blocs au maximum.`,
       pendingCount: mempool === null ? null : mempool.pending + mempool.queued,
       mempool,
+      latestBlockValue,
       feeRate:
         latest.baseFeePerGas === undefined
           ? null

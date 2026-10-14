@@ -35,6 +35,34 @@ export const ethereumMempoolSchema = z
   });
 export type EthereumMempool = z.infer<typeof ethereumMempoolSchema>;
 
+const blockValueFields = {
+  blockHeight: safeNonnegativeInteger,
+  /** Exact nonnegative integer amount in the chain's smallest unit. */
+  amount: z
+    .string()
+    .max(83)
+    .regex(/^(?:0|[1-9][0-9]*)$/),
+  /** Complete block transaction count, including Bitcoin's excluded coinbase. */
+  transactionCount: safeNonnegativeInteger,
+  observedAt: safeNonnegativeInteger,
+};
+/** Full-block native amount; never a sum of the limited passenger sample. */
+export const latestBlockValueSchema = z.discriminatedUnion('unit', [
+  z.object({
+    ...blockValueFields,
+    blockHash: z.string().regex(/^[a-fA-F0-9]{64}$/),
+    unit: z.literal('sat'),
+    method: z.literal('bitcoin-output-sum'),
+  }),
+  z.object({
+    ...blockValueFields,
+    blockHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+    unit: z.literal('wei'),
+    method: z.literal('ethereum-transaction-value-sum'),
+  }),
+]);
+export type LatestBlockValue = z.infer<typeof latestBlockValueSchema>;
+
 export const transactionSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -109,6 +137,8 @@ export const snapshotSchema = z
     feeUnit: z.enum(['sat/vB', 'Gwei']),
     /** Optional market conversion; its availability is independent of chain data. */
     usdQuote: usdQuoteSchema.nullable().optional(),
+    /** Native values from the exact latest block; null if its aggregate is unavailable. */
+    latestBlockValue: latestBlockValueSchema.nullable().optional(),
     transactions: z.array(transactionSchema).max(120),
     blocks: z.array(blockSchema).max(3),
     /** Bounded replay journal; its historical blocks need not appear in blocks. */
@@ -137,6 +167,24 @@ export const snapshotSchema = z
         path: ['usdQuote'],
         message: 'Demonstration snapshots cannot carry a live market quote',
       });
+    }
+    if (snapshot.latestBlockValue != null) {
+      const value = snapshot.latestBlockValue;
+      const latest = snapshot.blocks[0];
+      if (
+        snapshot.mode !== 'live' ||
+        (snapshot.chain === 'bitcoin') !== (value.unit === 'sat') ||
+        latest === undefined ||
+        value.blockHash.toLowerCase() !== latest.hash.toLowerCase() ||
+        value.blockHeight !== latest.height ||
+        value.transactionCount !== latest.txCount
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['latestBlockValue'],
+          message: 'A full-block value must match the latest live block and its chain',
+        });
+      }
     }
     if (snapshot.mempool != null) {
       if (snapshot.chain !== 'ethereum' || snapshot.mode !== 'live') {
@@ -240,7 +288,8 @@ export const snapshotSchema = z
       (snapshot.transactions.length ||
         snapshot.blocks.length ||
         inclusions.length ||
-        snapshot.mempool != null)
+        snapshot.mempool != null ||
+        snapshot.latestBlockValue != null)
     ) {
       context.addIssue({
         code: 'custom',

@@ -10,6 +10,7 @@ import {
 } from '../lib/feeDisplay';
 import { number } from '../lib/format';
 import { providerMempool } from '../lib/mempoolDisplay';
+import { latestBlockValueDisplay } from '../lib/blockValueDisplay';
 import type { SceneActivity } from './InfoPanel';
 import { Icon } from './Icon';
 import './InfoBillboard.css';
@@ -25,7 +26,7 @@ type InfoBillboardProps = {
   top?: boolean;
 };
 
-const pages = ['Mempool', 'Frais', 'Bloc', 'Voyageurs'] as const;
+const pages = ['Mempool', 'Frais', 'Bloc', 'Valeur', 'Voyageurs'] as const;
 
 type BillboardPage = {
   value: string;
@@ -70,7 +71,7 @@ export function InfoBillboard({
     if (!rotating) return;
     const timer = window.setInterval(
       () => setPage((current) => (current + 1) % pages.length),
-      3_000,
+      4_000,
     );
     return () => window.clearInterval(timer);
   }, [rotating]);
@@ -91,6 +92,7 @@ export function InfoBillboard({
   );
   const feeParts = feeAmount.match(/^(≈\s*)?(.+?)\s(BTC|ETH|\$ US)$/);
   const latest = snapshot.status === 'unavailable' ? undefined : snapshot.blocks[0];
+  const blockValue = latestBlockValueDisplay(snapshot);
   const sourceLabel = demo
     ? 'Simulation'
     : snapshot.status === 'ok'
@@ -99,7 +101,7 @@ export function InfoBillboard({
         ? 'Ancien relevé'
         : 'Indisponible';
 
-  const information: [BillboardPage, BillboardPage, BillboardPage, BillboardPage] = [
+  const information: BillboardPage[] = [
     {
       value: number(mempool.total),
       unit: mempool.total === null ? '' : 'transactions',
@@ -141,6 +143,19 @@ export function InfoBillboard({
       note: demo
         ? 'Bloc synthétique de démonstration.'
         : 'Dernier bloc reçu de la source. Observé ne signifie pas finalisé ; le prochain départ n’a pas d’échéance garantie.',
+    },
+    {
+      value: blockValue.value,
+      unit: blockValue.unit,
+      label: blockValue.label,
+      lines: blockValue.available
+        ? [
+            blockValue.usd ?? 'Conversion $ indisponible',
+            bitcoin ? 'Hors coinbase · rendu inclus' : 'Hors tokens · hors internes',
+          ]
+        : [demo ? 'Total réel non simulé' : 'Total non fourni'],
+      note: blockValue.note,
+      estimated: blockValue.approximate,
     },
     {
       value: number(activity.boarded),
@@ -211,11 +226,11 @@ export function InfoBillboard({
           type="button"
           aria-label={`${rotationEnabled ? 'Arrêter' : 'Activer'} le défilement du panneau ${chainName}`}
           aria-pressed={rotationEnabled}
-          title={rotationEnabled ? 'Arrêter le défilement' : 'Défiler toutes les 3 secondes'}
+          title={rotationEnabled ? 'Arrêter le défilement' : 'Défiler toutes les 4 secondes'}
           onClick={() => setRotationEnabled((enabled) => !enabled)}
         >
           <Icon name={rotationEnabled ? 'pause' : 'play'} size={12} />
-          <span>{rotating ? '3 s' : rotationEnabled ? 'Pause' : 'Fixe'}</span>
+          <span>{rotating ? '4 s' : rotationEnabled ? 'Pause' : 'Fixe'}</span>
         </button>
       </div>
       <p className="info-billboard-source">

@@ -19,29 +19,54 @@ La limite API est de 120 requêtes par minute par client par défaut, configurab
 
 ## Instantané
 
-| Champ          | Type / unités                  | Signification                                                                               |
-| -------------- | ------------------------------ | ------------------------------------------------------------------------------------------- |
-| `chain`        | `bitcoin` / `ethereum`         | Réseau représenté                                                                           |
-| `mode`         | `live` / `demo`                | Provenance réelle ou pédagogique                                                            |
-| `status`       | `ok` / `stale` / `unavailable` | Fraîcheur du résultat                                                                       |
-| `source`       | Texte borné                    | Libellé de provenance ; aucune URL privée ni clé                                            |
-| `observedAt`   | Millisecondes Unix             | Date de collecte ; conservée pour un résultat ancien                                        |
-| `coverage`     | Texte borné                    | Limites de la vue fournie                                                                   |
-| `pendingCount` | Entier sûr ou `null`           | Total du mempool local du fournisseur observé, lorsque disponible ; `null` signifie inconnu |
-| `mempool`      | Objet facultatif ou `null`     | Détail du comptage local Ethereum, avec sa propre date et fraîcheur                         |
-| `feeRate`      | Nombre ou `null`               | Mesure ou estimation décrite dans l'interface                                               |
-| `feeUnit`      | `sat/vB` / `Gwei`              | Unité correspondant à la chaîne                                                             |
-| `usdQuote`     | Objet facultatif ou `null`     | Cours de conversion USD indépendant de la source blockchain                                 |
-| `transactions` | Tableau, maximum 120           | Échantillon ; jamais une liste exhaustive promise                                           |
-| `blocks`       | Tableau, maximum 3             | Blocs récents observés                                                                      |
-| `inclusions`   | Tableau facultatif, maximum 16 | Journal roulant des inclusions vérifiées d'identifiants suivis                              |
-| `message`      | Texte facultatif               | Explication d'une limite ou d'un incident                                                   |
+| Champ              | Type / unités                  | Signification                                                                               |
+| ------------------ | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `chain`            | `bitcoin` / `ethereum`         | Réseau représenté                                                                           |
+| `mode`             | `live` / `demo`                | Provenance réelle ou pédagogique                                                            |
+| `status`           | `ok` / `stale` / `unavailable` | Fraîcheur du résultat                                                                       |
+| `source`           | Texte borné                    | Libellé de provenance ; aucune URL privée ni clé                                            |
+| `observedAt`       | Millisecondes Unix             | Date de collecte ; conservée pour un résultat ancien                                        |
+| `coverage`         | Texte borné                    | Limites de la vue fournie                                                                   |
+| `pendingCount`     | Entier sûr ou `null`           | Total du mempool local du fournisseur observé, lorsque disponible ; `null` signifie inconnu |
+| `mempool`          | Objet facultatif ou `null`     | Détail du comptage local Ethereum, avec sa propre date et fraîcheur                         |
+| `feeRate`          | Nombre ou `null`               | Mesure ou estimation décrite dans l'interface                                               |
+| `feeUnit`          | `sat/vB` / `Gwei`              | Unité correspondant à la chaîne                                                             |
+| `usdQuote`         | Objet facultatif ou `null`     | Cours de conversion USD indépendant de la source blockchain                                 |
+| `latestBlockValue` | Objet facultatif ou `null`     | Agrégat natif du dernier bloc complet, lié à son hash et à sa hauteur                       |
+| `transactions`     | Tableau, maximum 120           | Échantillon ; jamais une liste exhaustive promise                                           |
+| `blocks`           | Tableau, maximum 3             | Blocs récents observés                                                                      |
+| `inclusions`       | Tableau facultatif, maximum 16 | Journal roulant des inclusions vérifiées d'identifiants suivis                              |
+| `message`          | Texte facultatif               | Explication d'une limite ou d'un incident                                                   |
 
 Une transaction possède un identifiant, sa chaîne, une taille, un taux de frais, `pending` ou `confirmed`, un type `transfer` ou `contract`, et une valeur textuelle. Les nombres doivent être finis et non négatifs. Les transactions d'un instantané doivent appartenir à sa chaîne. Le champ facultatif `blockHash` porte une preuve d'inclusion dans ce bloc ; une transaction `pending` ne peut pas le porter. Une ancienne confirmation sans hash reste lisible, mais ne prouve pas l'appartenance au départ animé.
 
 Un bloc possède une hauteur, un hash, un `timestamp` en **secondes Unix**, un nombre de transactions, une capacité et une utilisation. La capacité s'exprime en octets virtuels pour Bitcoin et en gas pour Ethereum. L'utilisation ne peut pas dépasser la capacité déclarée. Ne pas confondre `timestamp` et `observedAt` lors d'une conversion de date.
 
-Un instantané `unavailable` n'a ni bloc, ni transaction, ni entrée d'inclusion à animer, ni objet `mempool` non nul. Une démonstration a le statut `ok` et ne représente jamais la disponibilité upstream. L'adaptateur Ethereum distingue les transactions du bloc en attente de celles des blocs confirmés ; le client ne doit pas modifier cette sémantique pour les faire apparaître comme des voyageurs en attente.
+Un instantané `unavailable` n'a ni bloc, ni transaction, ni entrée d'inclusion à animer, ni objet `mempool` ou `latestBlockValue` non nul. Une démonstration a le statut `ok`, ne représente jamais la disponibilité upstream et ne peut porter un agrégat réel `latestBlockValue` non nul. L'adaptateur Ethereum distingue les transactions du bloc en attente de celles des blocs confirmés ; le client ne doit pas modifier cette sémantique pour les faire apparaître comme des voyageurs en attente.
+
+## Valeur native du dernier bloc
+
+`latestBlockValue`, facultatif et nullable, décrit un agrégat du **dernier bloc complet `blocks[0]`**, indépendamment du nombre de passagers affichés :
+
+| Champ              | Type / borne                                            | Signification                                                                                  |
+| ------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `blockHash`        | Hash de chaîne                                          | 64 caractères hexadécimaux Bitcoin, ou `0x` suivi de 64 caractères hexadécimaux Ethereum       |
+| `blockHeight`      | Entier sûr non négatif                                  | Hauteur du bloc agrégé                                                                         |
+| `amount`           | Chaîne décimale entière canonique, 1 à 83 chiffres      | Montant exact non négatif en unités minimales ; aucun nombre flottant dans ce champ            |
+| `unit`             | `sat` / `wei`                                           | Satoshis Bitcoin ou wei Ethereum                                                               |
+| `method`           | `bitcoin-output-sum` / `ethereum-transaction-value-sum` | Définition propre à la chaîne, liée à `unit` par le schéma                                     |
+| `transactionCount` | Entier sûr non négatif                                  | Nombre complet de transactions du bloc, coinbase Bitcoin comprise même si sa valeur est exclue |
+| `observedAt`       | Entier sûr non négatif, millisecondes Unix              | Date de collecte de cet agrégat                                                                |
+
+Le contrat lie strictement unité, méthode et chaîne, puis impose le même hash, la même hauteur et le même compte que `blocks[0]`. Le champ non nul est réservé au mode `live` et ne peut apparaître sur un instantané indisponible. Un instantané `stale` conserve cet agrégat du bloc observé et sa date ; il ne représente pas une collecte nouvelle. La forme facultative reste compatible avec les anciens producteurs et consommateurs.
+
+**Bitcoin.** L'adaptateur reprend `extras.totalOutputAmt` du bloc enrichi déjà renvoyé par `/v1/blocks`. Ce champ vient de `getblockstats.total_out` : somme de toutes les sorties des transactions **hors coinbase**, donc hors récompense de bloc, et incluant la monnaie rendue aux expéditeurs. Ce montant brut n'est pas un volume économique net. Le nombre fourni doit être un entier sûr non négatif avant conversion exacte en chaîne ; absent, invalide ou hors de cette borne, il donne `latestBlockValue: null` sans rendre les autres données blockchain invalides. Aucun total n'est extrapolé depuis l'échantillon visible.
+
+**Ethereum.** L'adaptateur additionne en `BigInt` les champs `value` de toutes les transactions du bloc `latest` complet validé, avant classement et limitation du tableau public. Il s'agit des **valeurs natives déclarées**, pas d'un relevé des transferts effectivement exécutés : sans reçus, la somme peut inclure des appels échoués. Les frais, les tokens ERC20, les transferts internes de contrats et les retraits des validateurs ne participent pas à cette somme. Les quantités d'entrée restent bornées à 256 bits et le bloc à 50 000 transactions, sous la limite HTTP existante de 2 MiB ; l'agrégat sérialisé est borné à 83 chiffres.
+
+Ces calculs utilisent uniquement les réponses déjà collectées : aucun endpoint, reçu, trace, parcours paginé, dépendance ou requête réseau supplémentaire. Les délais, le cache blockchain et le polling direct restent à trois secondes. La page **Valeur** du grand panneau et le détail **Bloc** affichent le total en BTC ou ETH ; leur arrondi de présentation ne modifie pas l'entier exact de l'API. Un équivalent USD secondaire porte `≈` et utilise uniquement un cours actuel encore utilisable, jamais un cours historique du bloc. Une valeur ou un cours manquant reste explicitement indisponible, sans zéro inventé. La rotation des pages du panneau passe à **quatre secondes** et reste indépendante de la collecte des données.
+
+Ce changement de contrat et son affichage restent **non validés** : les tests, TypeScript, la compilation, le lint, l'audit et la validation visuelle sont suspendus à la demande du propriétaire. Sources : [calcul des blocs enrichis Mempool](https://github.com/mempool/mempool/blob/master/backend/src/api/blocks.ts), [définition Bitcoin Core de `total_out`](https://bitcoincore.org/en/doc/30.0.0/rpc/blockchain/getblockstats/), [JSON-RPC Ethereum et valeur en wei](https://ethereum.org/developers/docs/apis/json-rpc/).
 
 ## Comptage du mempool du fournisseur
 

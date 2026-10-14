@@ -9,6 +9,7 @@ export function assessFreshness(snapshot: Snapshot, failed: boolean, now: number
       status: 'unavailable',
       pendingCount: null,
       mempool: null,
+      latestBlockValue: null,
       feeRate: null,
       transactions: [],
       blocks: [],

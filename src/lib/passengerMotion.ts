@@ -32,7 +32,9 @@ export const CANDIDATE_CAPACITY = 12;
 const MAX_STEP_MS = 100;
 const QUEUE_RETRY_MS = 8_000;
 export const HANDOFF_DURATION_MS = 1_200;
-export const PREPARATION_DURATION_MS = 500;
+export const PREPARATION_DURATION_MS = 1_000;
+const FAST_EXIT_DURATION_MS = 500;
+const MIN_PREPARATION_PASSAGE_MS = 50;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
 const GEOMETRY_VERSION = 'right-platform-arrival-queue-v10';
 
@@ -461,7 +463,12 @@ function alignWaitingQueue(passengers: Passenger[], now: number, instant = false
   });
 }
 
-function startExit(passenger: Passenger, now: number, from: StreetPoint, fast = false): Passenger {
+function startExit(
+  passenger: Passenger,
+  now: number,
+  from: StreetPoint,
+  durationMs = 1_300,
+): Passenger {
   if (!passenger.wagon) return startReturning(passenger, now, from);
   const inside = exitDoorPoint(passenger.wagon);
   return {
@@ -470,9 +477,42 @@ function startExit(passenger: Passenger, now: number, from: StreetPoint, fast = 
       'exiting',
       now,
       [from, { x: inside.x, y: from.y }, inside, exitPlatformPoint(passenger.wagon)],
-      fast ? PREPARATION_DURATION_MS : 1_300,
+      durationMs,
     ),
   };
+}
+
+function startPreparationExit(
+  passenger: Passenger,
+  now: number,
+  from: StreetPoint,
+  durationMs: number,
+): Passenger {
+  if (passenger.phase !== 'exiting') return startExit(passenger, now, from, durationMs);
+  const remainingMs = passenger.phaseStartedAt + passenger.durationMs - now;
+  if (remainingMs <= durationMs) return passenger;
+  // Accelerate only the untravelled portion of an existing exit, without going back to the door.
+  const lengths = passenger.path.slice(1).map((to, index) => {
+    const previous = passenger.path[index]!;
+    return Math.hypot(to.x - previous.x, to.y - previous.y);
+  });
+  const progress = Math.max(
+    0,
+    Math.min(1, (now - passenger.phaseStartedAt) / passenger.durationMs),
+  );
+  let travelled = lengths.reduce((sum, length) => sum + length, 0) * progress;
+  for (const [index, length] of lengths.entries()) {
+    if (travelled <= length)
+      return startPhase(
+        passenger,
+        'exiting',
+        now,
+        [from, ...passenger.path.slice(index + 1)],
+        durationMs,
+      );
+    travelled -= length;
+  }
+  return passenger;
 }
 
 function isRider(passenger: Passenger, wagon: WagonKind, now: number): boolean {
@@ -755,6 +795,16 @@ function initialDepartureReceipts(snapshot: Snapshot): DepartureReceipt[] {
 }
 
 function prepareForDeparture(state: PassengerMotionState, now: number): PassengerMotionState {
+  const remainingMs = Math.max(
+    MIN_PREPARATION_PASSAGE_MS,
+    Math.min(
+      PREPARATION_DURATION_MS,
+      (state.preparationStartedAt ?? now) + PREPARATION_DURATION_MS - now,
+    ),
+  );
+  const exitMs = Math.min(FAST_EXIT_DURATION_MS, remainingMs);
+  // Riders of the lower projection share this deadline between their exit and boarding above.
+  const connectingExitMs = Math.max(MIN_PREPARATION_PASSAGE_MS, Math.min(exitMs, remainingMs / 2));
   const included = new Map(
     state.preparationTransactions.map((tx, index) => [tx.id, { tx, index }]),
   );
@@ -800,21 +850,21 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
       // A rider of the second projection must first use that vehicle's lower door.
       // Its membership remains 'later' throughout this exit, so clipping and doors agree.
       if (passenger.wagon === 'later' && isInsideDoorway(point))
-        return passenger.phase === 'exiting' ? updated : startExit(updated, now, point, true);
+        return startPreparationExit(updated, now, point, connectingExitMs);
       const seat = wagonSeat('next', inclusion.index);
       const path =
         passenger.wagon === 'next' && isInsideDoorway(point)
           ? [point, seat]
           : [...platformPath(point, boardingApproach('next')), entryDoorPoint('next'), seat];
       return {
-        ...startPhase(updated, 'preparing', now, path, PREPARATION_DURATION_MS),
+        ...startPhase(updated, 'preparing', now, path, remainingMs),
         wagon: 'next' as const,
         seatIndex: inclusion.index,
         handoffPhase: undefined,
       };
     }
     if (passenger.wagon === 'next' && isInsideDoorway(point))
-      return passenger.phase === 'exiting' ? passenger : startExit(passenger, now, point, true);
+      return startPreparationExit(passenger, now, point, exitMs);
     // Retained riders may free resident places during this stationary stop. Riders
     // still assigned to either projection stay in the lower vehicle for promotion.
     if (
@@ -822,7 +872,7 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
       isInsideDoorway(point) &&
       (!passenger.presentInSample || !passenger.plannedWagon || passenger.tx.status === 'confirmed')
     )
-      return passenger.phase === 'exiting' ? passenger : startExit(passenger, now, point, true);
+      return startPreparationExit(passenger, now, point, exitMs);
     if (passenger.plannedWagon === 'next' && ['boarding', 'walking'].includes(passenger.phase))
       return startReturning(passenger, now, point);
     return passenger;
