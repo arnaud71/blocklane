@@ -10,7 +10,7 @@ import { Icon } from './components/Icon';
 import { brand, safeExternalUrl } from './config/brand';
 import { useSnapshot } from './hooks/useSnapshot';
 import type { FeeDisplayUnit } from './lib/feeDisplay';
-import { providerMempool } from './lib/mempoolDisplay';
+import { useProviderMempool } from './hooks/useSourceFreshness';
 import { globalQueueGroupSize } from './lib/globalQueue';
 
 const chains = {
@@ -66,10 +66,9 @@ export function App() {
   );
   const bitcoin = useSnapshot('bitcoin', mode);
   const ethereum = useSnapshot('ethereum', mode);
-  const queueGroupSize = globalQueueGroupSize([
-    providerMempool(bitcoin.snapshot).total,
-    providerMempool(ethereum.snapshot).total,
-  ]);
+  const bitcoinPool = useProviderMempool(bitcoin.snapshot);
+  const ethereumPool = useProviderMempool(ethereum.snapshot);
+  const queueGroupSize = globalQueueGroupSize([bitcoinPool.total, ethereumPool.total]);
   const feeds = { bitcoin, ethereum };
   const snapshot = feeds[chain].snapshot;
   const selected = selection
@@ -116,11 +115,12 @@ export function App() {
     setMode(value);
     setSelection(null);
   }
-  function selectTransaction(tx: Tx) {
+  const selectTransaction = useCallback((tx: Tx) => {
     setChain(tx.chain);
     setSelection({ chain: tx.chain, id: tx.id, transaction: tx });
     setInfoOpen(true);
-  }
+  }, []);
+  const clearSelection = useCallback(() => setSelection(null), []);
   async function toggleFullScreen() {
     setScreenMessage('');
     try {
@@ -302,7 +302,7 @@ export function App() {
                       selectedId={selected?.chain === id ? selected.id : undefined}
                       theme={theme}
                       mirrored={id === 'bitcoin'}
-                      onClearSelection={() => setSelection(null)}
+                      onClearSelection={clearSelection}
                       immersive
                       showInfo={infoOpen && chain === id}
                     />

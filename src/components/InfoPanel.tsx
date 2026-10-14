@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Snapshot, Tx } from '../../shared/model';
 import { explorerUrl, number, shortHash } from '../lib/format';
-import { providerMempool } from '../lib/mempoolDisplay';
+import { useProviderMempool, useUsableUsdQuote } from '../hooks/useSourceFreshness';
 import { latestBlockValueDisplay } from '../lib/blockValueDisplay';
 import {
   formatFeeRate,
@@ -89,9 +89,10 @@ export function InfoPanel({
   const bitcoin = chain === 'bitcoin';
   const demo = snapshot?.mode === 'demo';
   const quote = demo ? undefined : snapshot?.usdQuote;
+  useUsableUsdQuote(quote);
   const displayUsd = feeDisplayUnit === 'usd';
-  const medianFee = medianTransactionFee(snapshot);
-  const mempool = providerMempool(snapshot);
+  const medianFee = useMemo(() => medianTransactionFee(snapshot), [snapshot]);
+  const mempool = useProviderMempool(snapshot);
   const medianAmount = formatEstimatedFeeAmount(
     chain,
     medianFee.nativeAmount,

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import './SharedCampus.css';
 
 function Tree({ x, y }: { x: number; y: number }) {
@@ -12,7 +13,7 @@ function Tree({ x, y }: { x: number; y: number }) {
 }
 
 /** One shared decorative campus sits between both roads; it carries no chain-specific data. */
-export function SharedCampus({ theme }: { theme: 'heg' | 'neutral' }) {
+export const SharedCampus = memo(function SharedCampus({ theme }: { theme: 'heg' | 'neutral' }) {
   return (
     <aside className="shared-campus" aria-label="Maisons communes aux deux rues">
       <header className="shared-campus-header">
@@ -88,4 +89,4 @@ export function SharedCampus({ theme }: { theme: 'heg' | 'neutral' }) {
       <p className="shared-campus-footer">SCÈNE COMMUNE</p>
     </aside>
   );
-}
+});

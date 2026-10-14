@@ -1,5 +1,19 @@
 # État des vérifications — 14 octobre 2026
 
+## Optimisation des calculs et du rendu — non validé
+
+**Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour cette modification. Aucun profilage, benchmark, appel API de validation ou mesure de fréquence, de mémoire ou de gain n'est réalisé. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas cette optimisation.
+
+Le changement vise les calculs et rendus répétés, sans diminuer les 240 voyageurs courants, les 48 unités illustratives par wagon ou les bornes de conservation des observations. Le dessin et les poses immobiles, les projections, les libellés et couleurs de frais ainsi que les formats numériques sont réutilisés tant que leurs entrées restent identiques. Les médianes natives sont mémorisées par instantané ; les contrôles d'ancienneté du cours et du pool restent indépendants. Les commandes de sélection stables et la mémorisation de la scène et du campus évitent de répercuter chaque changement de compteur dans leurs dessins. La remontée des effectifs vers l'interface est espacée d'au moins 250 ms, sans modifier l'horloge des déplacements à environ 24 images par seconde.
+
+Le moteur conserve les références des personnages et collections inchangés, mémorise les mesures des segments et copie l'archive seulement lors d'un changement. Ses caches à références faibles suivent les objets immuables plutôt que d'allonger la rétention des identifiants. Le hook publie un état React seulement lorsque la scène visible change, même si l'horloge interne avance pour traiter les échéances. Sa boucle est annulée dans un onglet masqué et relancée sans saut de temps au retour.
+
+Le dessin des têtes, cheveux, yeux et accessoires est mémorisé séparément des bras, jambes et flèches qui suivent les gestes. Des délais ponctuels aux échéances de fraîcheur réveillent les affichages mémorisés, même lorsque les personnages restent immobiles ou que l'API attend une réponse : expiration du cours USD après cinq minutes, compteur Ethereum ancien après 30 secondes et absent après 120 secondes. Le retour à un onglet visible recalcule aussi ces états. Ces délais se nettoient au changement de métadonnées ou au démontage, sans intervalle ni collecte supplémentaire ; l'échelle commune de la file et les libellés USD suivent ces changements.
+
+Le compteur arrière, la file collective du fournisseur, les places, portes, superpositions, préparations et preuves d'inclusion conservent leurs règles. Les contrats, fournisseurs, appels, caches réseau, services et dépendances sont inchangés. Aucun résultat de performance ou de fluidité n'est déclaré validé.
+
+À la reprise autorisée, mesurer le travail React, le coût SVG et les allocations sur les scènes de 240 voyageurs et les cohortes de départ maximales, avant/après et avec un instantané contrôlé. Couvrir l'invalidation des valeurs réutilisées après changement de transaction, observation, frais, cours expiré, sélection, miroir et largeur du quai. Examiner la sélection au clavier, la pause, le retour d'un onglet masqué, les mouvements réduits, les portes et compteurs durant préparation, départ, promotion et arrivée. Vérifier les bornes et la provenance avec des fixtures isolées des API publiques. Aucun de ces contrôles n'est exécuté pendant la suspension.
+
 ## Capacité de 48 unités et compteur arrière des wagons — non validé
 
 Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire. Aucun test n'est écrit ni exécuté pour cette modification ; lecture statique, formatage et aperçu normal de remise uniquement, sans validation du comportement.

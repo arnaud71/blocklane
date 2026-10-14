@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import { memo, useMemo, type KeyboardEvent } from 'react';
 import type { Tx } from '../../shared/model';
 import type { PassengerPose } from '../lib/passengerMotion';
 
@@ -24,18 +24,9 @@ const phaseLabels = {
   retiring: 'dernière observation quittant le quai',
   confirmed: 'inclusion observée',
 };
+const skinPalette = ['#ebcba6', '#bf8f65', '#966746', '#d2ad84'];
 
-export function Passenger({
-  pose,
-  selected,
-  feeColor,
-  feeLabel,
-  onSelect,
-  originX = 0,
-  originY = 0,
-  interactive = true,
-  mirrored = false,
-}: {
+interface PassengerProps {
   pose: PassengerPose;
   selected: boolean;
   feeColor: string;
@@ -45,42 +36,147 @@ export function Passenger({
   originY?: number;
   interactive?: boolean;
   mirrored?: boolean;
-}) {
-  const tx = pose.tx;
-  const selectable = interactive && pose.sourceObserved;
-  const hash = stableHash(tx.id);
-  const skin = ['#ebcba6', '#bf8f65', '#966746', '#d2ad84'][hash % 4];
-  const moving =
+}
+
+function isMoving(pose: PassengerPose): boolean {
+  return (
     !pose.inWagon &&
     !pose.inHandoff &&
-    [
-      'arriving',
-      'reordering',
-      'walking',
-      'boarding',
-      'preparing',
-      'exiting',
-      'returning',
-      'retiring',
-    ].includes(pose.phase);
+    (pose.phase === 'arriving' ||
+      pose.phase === 'reordering' ||
+      pose.phase === 'walking' ||
+      pose.phase === 'boarding' ||
+      pose.phase === 'preparing' ||
+      pose.phase === 'exiting' ||
+      pose.phase === 'returning' ||
+      pose.phase === 'retiring')
+  );
+}
+
+function hasDirectionArrow(pose: PassengerPose): boolean {
+  return pose.phase === 'exiting' || pose.phase === 'returning';
+}
+
+function sameTransaction(previous: Tx, next: Tx): boolean {
+  return (
+    previous === next ||
+    (previous.id === next.id &&
+      previous.chain === next.chain &&
+      previous.feeRate === next.feeRate &&
+      previous.size === next.size &&
+      previous.status === next.status &&
+      previous.blockHash === next.blockHash &&
+      previous.kind === next.kind &&
+      previous.value === next.value)
+  );
+}
+
+function samePassenger(previous: PassengerProps, next: PassengerProps): boolean {
+  const before = previous.pose;
+  const after = next.pose;
+  return (
+    previous.selected === next.selected &&
+    previous.feeColor === next.feeColor &&
+    previous.feeLabel === next.feeLabel &&
+    previous.onSelect === next.onSelect &&
+    (previous.originX ?? 0) === (next.originX ?? 0) &&
+    (previous.originY ?? 0) === (next.originY ?? 0) &&
+    (previous.interactive ?? true) === (next.interactive ?? true) &&
+    (previous.mirrored ?? false) === (next.mirrored ?? false) &&
+    sameTransaction(before.tx, after.tx) &&
+    before.x === after.x &&
+    before.y === after.y &&
+    before.phase === after.phase &&
+    before.sourceObserved === after.sourceObserved &&
+    before.headScale === after.headScale &&
+    before.opacity === after.opacity &&
+    before.facing === after.facing &&
+    before.wagon === after.wagon &&
+    before.inHandoff === after.inHandoff &&
+    isMoving(before) === isMoving(after) &&
+    (!isMoving(after) || before.walkPhase === after.walkPhase) &&
+    (!hasDirectionArrow(after) || before.movementAngle === after.movementAngle)
+  );
+}
+
+function PassengerView({
+  pose,
+  selected,
+  feeColor,
+  feeLabel,
+  onSelect,
+  originX = 0,
+  originY = 0,
+  interactive = true,
+  mirrored = false,
+}: PassengerProps) {
+  const tx = pose.tx;
+  const selectable = interactive && pose.sourceObserved;
+  const hash = useMemo(() => stableHash(tx.id), [tx.id]);
+  const skin = skinPalette[hash % skinPalette.length];
+  const moving = isMoving(pose);
   const step = moving ? Math.sin(pose.walkPhase) * 3.5 : 0;
   const facing = mirrored ? -pose.facing : pose.facing;
   const canonicalAngle = pose.movementAngle ?? (pose.facing === -1 ? 180 : 0);
   const movementAngle = mirrored ? 180 - canonicalAngle : canonicalAngle;
-  const label =
-    'Transaction ' +
-    tx.id.slice(0, 12) +
-    ', ' +
-    (feeLabel ?? `${tx.feeRate.toFixed(2)} ${tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei'}`) +
-    ', ' +
-    (pose.sourceObserved
-      ? tx.status === 'confirmed'
-        ? 'incluse dans un bloc observé'
-        : 'en attente dans la source'
-      : 'dernière observation conservée, absente de l’échantillon actuel') +
-    '. ' +
-    (pose.inHandoff ? 'à bord pendant le transfert' : phaseLabels[pose.phase]) +
-    (selectable ? '. Afficher les détails.' : '.');
+  // Keep the static glyphs intact while only the limbs and position animate.
+  const characterDetails = useMemo(
+    () => (
+      <>
+        <g
+          className="street-person-head"
+          transform={'translate(0 -22) scale(' + pose.headScale.toFixed(3) + ')'}
+        >
+          <circle r="4.6" fill={skin} />
+          <path
+            d={hash % 3 === 0 ? 'M-5 0q0-7 6-6 6 1 4 7l-4-3Z' : 'M-4-2q4-6 8 0Z'}
+            fill={hash % 2 === 0 ? '#344d39' : '#634d38'}
+          />
+          <circle cx={facing * 2.1} cy=".1" r=".65" fill="#34504a" />
+        </g>
+        {tx.kind === 'contract' && (
+          <rect x="5" y="-12" width="5" height="7" rx="1" fill="#e4c780" />
+        )}
+        {(pose.sourceObserved || !interactive) && tx.status === 'confirmed' && (
+          <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />
+        )}
+        {interactive && !pose.sourceObserved && (
+          <g>
+            <circle cx="10" cy="-27" r="3.2" fill="#365048" stroke="#c7d3c5" />
+            <path d="M10-29v2l1.5 1" fill="none" stroke="#c7d3c5" strokeWidth=".8" />
+          </g>
+        )}
+      </>
+    ),
+    [hash, skin, pose.headScale, facing, tx.kind, tx.status, pose.sourceObserved, interactive],
+  );
+  const label = useMemo(
+    () =>
+      'Transaction ' +
+      tx.id.slice(0, 12) +
+      ', ' +
+      (feeLabel ?? `${tx.feeRate.toFixed(2)} ${tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei'}`) +
+      ', ' +
+      (pose.sourceObserved
+        ? tx.status === 'confirmed'
+          ? 'incluse dans un bloc observé'
+          : 'en attente dans la source'
+        : 'dernière observation conservée, absente de l’échantillon actuel') +
+      '. ' +
+      (pose.inHandoff ? 'à bord pendant le transfert' : phaseLabels[pose.phase]) +
+      (selectable ? '. Afficher les détails.' : '.'),
+    [
+      tx.id,
+      tx.feeRate,
+      tx.chain,
+      tx.status,
+      feeLabel,
+      pose.sourceObserved,
+      pose.inHandoff,
+      pose.phase,
+      selectable,
+    ],
+  );
   const handleKeyDown = (event: KeyboardEvent<SVGGElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -149,30 +245,8 @@ export function Passenger({
             strokeWidth="2"
             strokeLinecap="round"
           />
-          <g
-            className="street-person-head"
-            transform={'translate(0 -22) scale(' + pose.headScale.toFixed(3) + ')'}
-          >
-            <circle r="4.6" fill={skin} />
-            <path
-              d={hash % 3 === 0 ? 'M-5 0q0-7 6-6 6 1 4 7l-4-3Z' : 'M-4-2q4-6 8 0Z'}
-              fill={hash % 2 === 0 ? '#344d39' : '#634d38'}
-            />
-            <circle cx={facing * 2.1} cy=".1" r=".65" fill="#34504a" />
-          </g>
-          {tx.kind === 'contract' && (
-            <rect x="5" y="-12" width="5" height="7" rx="1" fill="#e4c780" />
-          )}
-          {(pose.sourceObserved || !interactive) && tx.status === 'confirmed' && (
-            <circle cx="10" cy="-27" r="2.5" fill="#9ad6a0" />
-          )}
-          {interactive && !pose.sourceObserved && (
-            <g>
-              <circle cx="10" cy="-27" r="3.2" fill="#365048" stroke="#c7d3c5" />
-              <path d="M10-29v2l1.5 1" fill="none" stroke="#c7d3c5" strokeWidth=".8" />
-            </g>
-          )}
-          {(pose.phase === 'exiting' || pose.phase === 'returning') && (
+          {characterDetails}
+          {hasDirectionArrow(pose) && (
             <path
               d="M-6-36H6M2-40L6-36 2-32"
               transform={`rotate(${movementAngle} 0 -36)`}
@@ -186,3 +260,6 @@ export function Passenger({
     </g>
   );
 }
+
+// Animation frames recreate poses; stationary passengers need no React update.
+export const Passenger = memo(PassengerView, samePassenger);

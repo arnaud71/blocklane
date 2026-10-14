@@ -14,9 +14,10 @@ export type MedianTransactionFee = {
   sampleSize: number;
 };
 
-const QUOTE_MAX_AGE_MS = 5 * 60 * 1_000;
+export const QUOTE_MAX_AGE_MS = 5 * 60 * 1_000;
 const QUOTE_FUTURE_TOLERANCE_MS = 5_000;
 const MIN_DISPLAYABLE_USD = 0.00000001;
+const dollarFormatters = new Map<number, Intl.NumberFormat>();
 
 export function hasUsableUsdQuote(quote: UsdQuote | null | undefined): quote is UsdQuote {
   if (!quote) return false;
@@ -42,10 +43,15 @@ function dollars(amount: number): string {
   if (!validAmount(amount)) return '— $ US';
   if (amount > 0 && amount < MIN_DISPLAYABLE_USD) return '< 0,00000001 $ US';
   const digits = amount === 0 ? 2 : Math.min(8, Math.max(2, 2 - Math.floor(Math.log10(amount))));
-  return `${new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: Math.min(2, digits),
-    maximumFractionDigits: digits,
-  }).format(amount)} $ US`;
+  let formatter = dollarFormatters.get(digits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: Math.min(2, digits),
+      maximumFractionDigits: digits,
+    });
+    dollarFormatters.set(digits, formatter);
+  }
+  return `${formatter.format(amount)} $ US`;
 }
 
 function estimatedNativeFee(transaction: Tx): number | null {

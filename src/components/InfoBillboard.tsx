@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import type { Snapshot } from '../../shared/model';
 import {
   formatEstimatedFeeAmount,
-  hasUsableUsdQuote,
   medianTransactionFee,
   medianTransactionFeeNote,
   usdQuoteNote,
   type FeeDisplayUnit,
 } from '../lib/feeDisplay';
 import { number } from '../lib/format';
-import { providerMempool } from '../lib/mempoolDisplay';
+import { useProviderMempool, useUsableUsdQuote } from '../hooks/useSourceFreshness';
 import { latestBlockValueDisplay } from '../lib/blockValueDisplay';
 import type { SceneActivity } from './InfoPanel';
 import { Icon } from './Icon';
@@ -38,7 +37,7 @@ type BillboardPage = {
   smallValue?: boolean;
 };
 
-export function InfoBillboard({
+export const InfoBillboard = memo(function InfoBillboard({
   snapshot,
   activity,
   paused,
@@ -79,11 +78,11 @@ export function InfoBillboard({
   const bitcoin = snapshot.chain === 'bitcoin';
   const chainName = bitcoin ? 'Bitcoin' : 'Ethereum';
   const demo = snapshot.mode === 'demo';
-  const mempool = providerMempool(snapshot);
+  const mempool = useProviderMempool(snapshot);
   const sampleSize = snapshot.transactions.filter((tx) => tx.status === 'pending').length;
-  const median = medianTransactionFee(snapshot);
+  const median = useMemo(() => medianTransactionFee(snapshot), [snapshot]);
   const quote = demo ? undefined : snapshot.usdQuote;
-  const usableQuote = hasUsableUsdQuote(quote);
+  const usableQuote = useUsableUsdQuote(quote);
   const feeAmount = formatEstimatedFeeAmount(
     snapshot.chain,
     median.nativeAmount,
@@ -242,4 +241,4 @@ export function InfoBillboard({
       </p>
     </section>
   );
-}
+});

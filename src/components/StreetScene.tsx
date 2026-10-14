@@ -34,6 +34,7 @@ import { feeColorForRate } from '../lib/feeColors';
 import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib/feeDisplay';
 import { Passenger } from './Passenger';
 import { InfoPanel, type SceneActivity } from './InfoPanel';
+import { useUsableUsdQuote } from '../hooks/useSourceFreshness';
 import './StreetScene.css';
 
 const DynamicInfoPanel = memo(InfoPanel);
@@ -512,7 +513,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
   );
 });
 
-export function StreetScene({
+export const StreetScene = memo(function StreetScene({
   snapshot,
   paused,
   speed,
@@ -553,24 +554,31 @@ export function StreetScene({
     () => (x: number) => (x <= CORRIDOR_X ? x : CORRIDOR_X + (x - CORRIDOR_X) * projectionScale),
     [projectionScale],
   );
-  const projectPose = (pose: PassengerPose): PassengerPose => {
-    const radians =
-      pose.movementAngle === undefined ? undefined : (pose.movementAngle * Math.PI) / 180;
-    return {
-      ...pose,
-      x: projectX(pose.x),
-      queueX: projectX(pose.queueX),
-      movementAngle:
-        radians === undefined
-          ? undefined
-          : (Math.atan2(
-              Math.sin(radians),
-              Math.cos(radians) * (pose.x > CORRIDOR_X ? projectionScale : 1),
-            ) *
-              180) /
-            Math.PI,
+  const projectPose = useMemo(() => {
+    const projected = new WeakMap<PassengerPose, PassengerPose>();
+    return (pose: PassengerPose): PassengerPose => {
+      const cached = projected.get(pose);
+      if (cached) return cached;
+      const radians =
+        pose.movementAngle === undefined ? undefined : (pose.movementAngle * Math.PI) / 180;
+      const result = {
+        ...pose,
+        x: projectX(pose.x),
+        queueX: projectX(pose.queueX),
+        movementAngle:
+          radians === undefined
+            ? undefined
+            : (Math.atan2(
+                Math.sin(radians),
+                Math.cos(radians) * (pose.x > CORRIDOR_X ? projectionScale : 1),
+              ) *
+                180) /
+              Math.PI,
+      };
+      projected.set(pose, result);
+      return result;
     };
-  };
+  }, [projectX, projectionScale]);
   const motion = usePassengerMotion({
     snapshot,
     paused: paused || snapshot.status !== 'ok',
@@ -611,11 +619,32 @@ export function StreetScene({
       ? rates.reduce((average, rate, index) => average + (rate - average) / (index + 1), 0)
       : null;
   }, [motion.passengers]);
-  const feeColor = (pose: PassengerPose) => feeColorForRate(pose.tx.feeRate, averageFeeRate);
-  const feeLabel = (tx: Tx) =>
-    feeDisplayUnit === 'usd'
-      ? `${tx.chain === 'ethereum' ? 'estimation avec limite de gas' : 'frais estimés'} : ${formatTransactionFee(tx, 'usd', demo ? null : snapshot.usdQuote)} ; taux observé ${formatFeeRate(tx.chain, tx.feeRate, 'native')}`
-      : formatTransactionFee(tx, 'native');
+  const feeColor = useMemo(() => {
+    const colors = new WeakMap<Tx, string>();
+    return (pose: PassengerPose) => {
+      const cached = colors.get(pose.tx);
+      if (cached !== undefined) return cached;
+      const color = feeColorForRate(pose.tx.feeRate, averageFeeRate);
+      colors.set(pose.tx, color);
+      return color;
+    };
+  }, [averageFeeRate]);
+  const quote = demo ? null : snapshot.usdQuote;
+  const quoteUsable = useUsableUsdQuote(quote);
+  const feeLabel = useMemo(() => {
+    const labels = new WeakMap<Tx, string>();
+    const currentQuote = quoteUsable ? quote : null;
+    return (tx: Tx) => {
+      const cached = labels.get(tx);
+      if (cached !== undefined) return cached;
+      const label =
+        feeDisplayUnit === 'usd'
+          ? `${tx.chain === 'ethereum' ? 'estimation avec limite de gas' : 'frais estimés'} : ${formatTransactionFee(tx, 'usd', currentQuote)} ; taux observé ${formatFeeRate(tx.chain, tx.feeRate, 'native')}`
+          : formatTransactionFee(tx, 'native');
+      labels.set(tx, label);
+      return label;
+    };
+  }, [feeDisplayUnit, quote, quoteUsable]);
   const boardedCount = motion.passengers.filter(
     (pose) => pose.inWagon && pose.sourceObserved,
   ).length;
@@ -643,9 +672,24 @@ export function StreetScene({
       boardedCount,
     ],
   );
-  const styles = { '--scene-duration': `${18 / speed}s` } as CSSProperties;
+  const styles = useMemo(
+    () => ({ '--scene-duration': `${18 / speed}s` }) as CSSProperties,
+    [speed],
+  );
+  const lastActivityAt = useRef(0);
   useEffect(() => {
-    onActivity?.(snapshot.chain, activity);
+    if (!onActivity) return;
+    const publish = () => {
+      lastActivityAt.current = performance.now();
+      onActivity(snapshot.chain, activity);
+    };
+    const delay = Math.max(0, 250 - (performance.now() - lastActivityAt.current));
+    if (delay === 0) {
+      publish();
+      return;
+    }
+    const timer = window.setTimeout(publish, delay);
+    return () => window.clearTimeout(timer);
   }, [onActivity, snapshot.chain, activity]);
   return (
     <div className="scene-workspace scene-workspace--immersive">
@@ -809,4 +853,4 @@ export function StreetScene({
       )}
     </div>
   );
-}
+});

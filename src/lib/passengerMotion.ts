@@ -200,6 +200,99 @@ export interface PassengerClockOptions {
   speed?: number;
 }
 
+interface PathSegment {
+  from: StreetPoint;
+  to: StreetPoint;
+  length: number;
+  heading: number;
+}
+
+interface PathGeometry {
+  segments: PathSegment[];
+  lengths: number[];
+  distance: number;
+}
+
+interface ProjectionOccupancy {
+  projectionCount: Record<WagonKind, number>;
+  projectionUsed: Record<WagonKind, number>;
+  candidateCount: number;
+  candidateUsed: number;
+}
+
+// Paths and transactions are immutable within the engine. Weak keys release their
+// measurements with the corresponding scene instead of retaining transaction IDs.
+const pathGeometryCache = new WeakMap<StreetPoint[], PathGeometry>();
+const transactionAppearanceCache = new WeakMap<
+  Tx,
+  { hash: number; headScale: number; resourceUnits: number }
+>();
+const passengerPoseCache = new WeakMap<Passenger, { elapsedMs: number; pose: PassengerPose }>();
+const passengerCollectionPoseCache = new WeakMap<Passenger[], PassengerPose[]>();
+const projectionOccupancyCache = new WeakMap<Passenger[], ProjectionOccupancy>();
+const WALKING_PHASES = new Set<PassengerPhase>([
+  'arriving',
+  'reordering',
+  'walking',
+  'boarding',
+  'preparing',
+  'exiting',
+  'returning',
+  'retiring',
+]);
+const FALLBACK_PATH_START: StreetPoint = { x: PLATFORM_CORRIDOR_X, y: 118 };
+
+function pathGeometry(path: StreetPoint[]): PathGeometry {
+  const cached = pathGeometryCache.get(path);
+  if (cached) return cached;
+  const segments: PathSegment[] = [];
+  const lengths: number[] = [];
+  let distance = 0;
+  for (let index = 1; index < path.length; index += 1) {
+    const from = path[index - 1]!;
+    const to = path[index]!;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    lengths.push(length);
+    distance += length;
+    segments.push({ from, to, length, heading: (Math.atan2(dy, dx) * 180) / Math.PI });
+  }
+  const geometry = { segments, lengths, distance };
+  pathGeometryCache.set(path, geometry);
+  return geometry;
+}
+
+function transactionAppearance(tx: Tx) {
+  const cached = transactionAppearanceCache.get(tx);
+  if (cached) return cached;
+  const appearance = {
+    hash: stableHash(tx.id),
+    headScale: transactionHeadScale(tx),
+    resourceUnits: transactionResourceUnits(tx),
+  };
+  transactionAppearanceCache.set(tx, appearance);
+  return appearance;
+}
+
+/** Keep an unchanged collection and its passengers reusable by the SVG renderer. */
+function mapPassengers(
+  passengers: Passenger[],
+  update: (passenger: Passenger) => Passenger,
+): Passenger[] {
+  let changed: Passenger[] | null = null;
+  for (let index = 0; index < passengers.length; index += 1) {
+    const passenger = passengers[index]!;
+    const next = update(passenger);
+    if (changed) changed.push(next);
+    else if (next !== passenger) {
+      changed = passengers.slice(0, index);
+      changed.push(next);
+    }
+  }
+  return changed ?? passengers;
+}
+
 function motionContext(snapshot: Snapshot): string {
   return `${snapshot.chain}:${snapshot.mode}:${GEOMETRY_VERSION}`;
 }
@@ -275,7 +368,9 @@ function admissionFor(tx: Tx, plan: ReturnType<typeof planSnapshot>): PassengerA
   };
 }
 
-function projectionOccupancy(passengers: Passenger[]) {
+function projectionOccupancy(passengers: Passenger[]): ProjectionOccupancy {
+  const cached = projectionOccupancyCache.get(passengers);
+  if (cached) return cached;
   const projectionCount: Record<WagonKind, number> = { next: 0, later: 0 };
   const projectionUsed: Record<WagonKind, number> = { next: 0, later: 0 };
   for (const passenger of passengers) {
@@ -283,28 +378,26 @@ function projectionOccupancy(passengers: Passenger[]) {
     projectionCount[passenger.plannedWagon] += 1;
     projectionUsed[passenger.plannedWagon] += transactionResourceUnits(passenger.tx);
   }
-  return {
+  const occupancy = {
     projectionCount,
     projectionUsed,
     candidateCount: projectionCount.next,
     candidateUsed: projectionUsed.next,
   };
+  projectionOccupancyCache.set(passengers, occupancy);
+  return occupancy;
 }
 
 function interpolatePath(path: StreetPoint[], progress: number): StreetPoint {
-  const start = path[0] ?? { x: PLATFORM_CORRIDOR_X, y: 118 };
+  const start = path[0] ?? FALLBACK_PATH_START;
   if (path.length < 2) return start;
-  const lengths = path.slice(1).map((point, index) => {
-    const previous = path[index] ?? start;
-    return Math.hypot(point.x - previous.x, point.y - previous.y);
-  });
-  let remaining =
-    lengths.reduce((sum, length) => sum + length, 0) * Math.max(0, Math.min(1, progress));
-  for (let index = 0; index < lengths.length; index += 1) {
-    const length = lengths[index] ?? 0;
-    const from = path[index] ?? start;
-    const to = path[index + 1] ?? from;
-    if (remaining <= length || index === lengths.length - 1) {
+  if (progress <= 0) return start;
+  if (progress >= 1) return path[path.length - 1] ?? start;
+  const { segments, distance } = pathGeometry(path);
+  let remaining = distance * Math.max(0, Math.min(1, progress));
+  for (let index = 0; index < segments.length; index += 1) {
+    const { from, to, length } = segments[index]!;
+    if (remaining <= length || index === segments.length - 1) {
       const fraction = length > 0 ? remaining / length : 1;
       return { x: from.x + (to.x - from.x) * fraction, y: from.y + (to.y - from.y) * fraction };
     }
@@ -323,29 +416,20 @@ function passengerPosition(passenger: Passenger, elapsedMs: number): StreetPoint
 }
 
 function pathHeadingDegrees(path: StreetPoint[], progress: number): number {
-  const segments = path.slice(1).flatMap((to, index) => {
-    const from = path[index]!;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const length = Math.hypot(dx, dy);
-    return length > 0 ? [{ dx, dy, length }] : [];
-  });
-  let remaining =
-    segments.reduce((total, segment) => total + segment.length, 0) *
-    Math.max(0, Math.min(1, progress));
-  for (const [index, segment] of segments.entries()) {
-    if (remaining <= segment.length || index === segments.length - 1)
-      return (Math.atan2(segment.dy, segment.dx) * 180) / Math.PI;
+  const { segments, distance } = pathGeometry(path);
+  let remaining = distance * Math.max(0, Math.min(1, progress));
+  let lastHeading = 0;
+  for (const segment of segments) {
+    if (segment.length <= 0) continue;
+    lastHeading = segment.heading;
+    if (remaining <= segment.length) return segment.heading;
     remaining -= segment.length;
   }
-  return 0;
+  return lastHeading;
 }
 
 function pathDuration(path: StreetPoint[]): number {
-  const distance = path.slice(1).reduce((total, point, index) => {
-    const previous = path[index] ?? point;
-    return total + Math.hypot(point.x - previous.x, point.y - previous.y);
-  }, 0);
+  const { distance } = pathGeometry(path);
   return Math.max(1_700, Math.min(5_200, distance * 9));
 }
 
@@ -390,13 +474,6 @@ function parkAtQueue(passenger: Passenger, now: number): Passenger {
 }
 
 function alignWaitingQueue(passengers: Passenger[], now: number, instant = false): Passenger[] {
-  const occupied = new Set(
-    passengers
-      .filter(
-        (passenger) => passenger.presentInSample && passenger.queueIndex < HISTORY_QUEUE_START,
-      )
-      .map((passenger) => passenger.queueIndex),
-  );
   // Only reappearing historical IDs need a new current queue slot. Existing arrivals keep theirs.
   const returningToSample = passengers
     .filter(
@@ -413,14 +490,23 @@ function alignWaitingQueue(passengers: Passenger[], now: number, instant = false
       (left, right) => right.tx.feeRate - left.tx.feeRate || left.tx.id.localeCompare(right.tx.id),
     );
   const restoredSlots = new Map<string, number>();
-  for (const passenger of returningToSample) {
-    let slot = 0;
-    while (occupied.has(slot) && slot < HISTORY_QUEUE_START) slot += 1;
-    if (slot === HISTORY_QUEUE_START) break;
-    occupied.add(slot);
-    restoredSlots.set(passenger.tx.id, slot);
+  if (returningToSample.length) {
+    const occupied = new Set(
+      passengers
+        .filter(
+          (passenger) => passenger.presentInSample && passenger.queueIndex < HISTORY_QUEUE_START,
+        )
+        .map((passenger) => passenger.queueIndex),
+    );
+    for (const passenger of returningToSample) {
+      let slot = 0;
+      while (occupied.has(slot) && slot < HISTORY_QUEUE_START) slot += 1;
+      if (slot === HISTORY_QUEUE_START) break;
+      occupied.add(slot);
+      restoredSlots.set(passenger.tx.id, slot);
+    }
   }
-  return passengers.map((passenger) => {
+  return mapPassengers(passengers, (passenger) => {
     if (
       passenger.wagon ||
       passenger.inHandoff ||
@@ -436,7 +522,7 @@ function alignWaitingQueue(passengers: Passenger[], now: number, instant = false
           ? passenger.queueIndex
           : HISTORY_QUEUE_START + (stableHash(passenger.tx.id) % MAX_PASSENGERS)
         : passenger.queueIndex);
-    const updated = { ...passenger, queueIndex };
+    const updated = queueIndex === passenger.queueIndex ? passenger : { ...passenger, queueIndex };
     const phase = passenger.presentInSample ? 'queue' : 'parked';
     const target = queuePosition(queueIndex);
     const point = passengerPosition(passenger, now);
@@ -452,10 +538,7 @@ function alignWaitingQueue(passengers: Passenger[], now: number, instant = false
     if (passenger.phase === 'reordering' && end?.x === target.x && end.y === target.y)
       return updated;
     const path = platformPath(point, target);
-    const distance = path.slice(1).reduce((total, to, index) => {
-      const from = path[index]!;
-      return total + Math.hypot(to.x - from.x, to.y - from.y);
-    }, 0);
+    const { distance } = pathGeometry(path);
     return startPhase(
       updated,
       'reordering',
@@ -495,15 +578,12 @@ function startPreparationExit(
   const remainingMs = passenger.phaseStartedAt + passenger.durationMs - now;
   if (remainingMs <= durationMs) return passenger;
   // Accelerate only the untravelled portion of an existing exit, without going back to the door.
-  const lengths = passenger.path.slice(1).map((to, index) => {
-    const previous = passenger.path[index]!;
-    return Math.hypot(to.x - previous.x, to.y - previous.y);
-  });
+  const { lengths, distance } = pathGeometry(passenger.path);
   const progress = Math.max(
     0,
     Math.min(1, (now - passenger.phaseStartedAt) / passenger.durationMs),
   );
-  let travelled = lengths.reduce((sum, length) => sum + length, 0) * progress;
+  let travelled = distance * progress;
   for (const [index, length] of lengths.entries()) {
     if (travelled <= length)
       return startPhase(
@@ -543,30 +623,35 @@ function retainWaitingArchive(
   additions: ArchivedObservation[] = [],
   removals: string[] = [],
 ) {
-  const waitingArchiveTransactions = new Map(state.waitingArchiveTransactions);
+  let waitingArchiveTransactions = state.waitingArchiveTransactions;
+  const writableArchive = () => {
+    if (waitingArchiveTransactions === state.waitingArchiveTransactions)
+      waitingArchiveTransactions = new Map(waitingArchiveTransactions);
+    return waitingArchiveTransactions;
+  };
   let waitingArchiveUnknownCount = state.waitingArchiveUnknownCount;
   // Claim a proved/reobserved ID before expiring it, so it is not also counted as unknown.
-  for (const id of removals) waitingArchiveTransactions.delete(id);
+  for (const id of removals) if (waitingArchiveTransactions.has(id)) writableArchive().delete(id);
   for (const [id, observation] of waitingArchiveTransactions) {
     if (
       !observation.reservedBlockHash &&
       state.archiveObservedAt - observation.lastSeenAt >= TRACKED_TRANSACTION_TTL_MS
     ) {
-      waitingArchiveTransactions.delete(id);
+      writableArchive().delete(id);
       waitingArchiveUnknownCount += 1;
     }
   }
   for (const observation of additions) {
     // A returning ID reuses its retained observation rather than counting twice.
-    waitingArchiveTransactions.delete(observation.tx.id);
-    waitingArchiveTransactions.set(observation.tx.id, observation);
+    writableArchive().delete(observation.tx.id);
+    writableArchive().set(observation.tx.id, observation);
   }
   while (waitingArchiveTransactions.size > MAX_ARCHIVED_OBSERVATIONS) {
     const evicted = [...waitingArchiveTransactions].find(
       ([, observation]) => !observation.reservedBlockHash,
     );
     if (!evicted) break; // Only existing bounded archive members can reserve an inclusion.
-    waitingArchiveTransactions.delete(evicted[0]);
+    writableArchive().delete(evicted[0]);
     waitingArchiveUnknownCount += 1;
   }
   waitingArchiveUnknownCount = Math.min(MAX_WAITING_ARCHIVE_COUNT, waitingArchiveUnknownCount);
@@ -597,7 +682,9 @@ function groupWaitingObservations(
       passenger.joiningArchive,
   );
   const mergedIds = new Set(merging.map((passenger) => passenger.tx.id));
-  const residents = passengers.filter((passenger) => !mergedIds.has(passenger.tx.id));
+  const residents = merging.length
+    ? passengers.filter((passenger) => !mergedIds.has(passenger.tx.id))
+    : passengers;
   const history = residents.filter(
     (passenger) =>
       !passenger.presentInSample &&
@@ -605,21 +692,19 @@ function groupWaitingObservations(
       !passenger.awaitingVerifiedDeparture,
   );
   const alreadyJoining = history.filter((passenger) => passenger.joiningArchive).length;
+  const joiningCount = Math.max(
+    0,
+    history.length - Math.max(0, MAX_INDIVIDUAL_HISTORY - reservedDeparturePlaces) - alreadyJoining,
+  );
+  if (!merging.length && joiningCount === 0)
+    return { ...retainWaitingArchive(archive), passengers };
   const joiningIds = new Set(
     history
       .filter(
         (passenger) => passenger.phase === 'parked' && !passenger.wagon && !passenger.inHandoff,
       )
       .sort((left, right) => left.phaseStartedAt - right.phaseStartedAt)
-      .slice(
-        0,
-        Math.max(
-          0,
-          history.length -
-            Math.max(0, MAX_INDIVIDUAL_HISTORY - reservedDeparturePlaces) -
-            alreadyJoining,
-        ),
-      )
+      .slice(0, joiningCount)
       .map((passenger) => passenger.tx.id),
   );
   return {
@@ -630,7 +715,7 @@ function groupWaitingObservations(
         lastSeenAt: passenger.lastObservedAt ?? archive.archiveObservedAt,
       })),
     ),
-    passengers: residents.map((passenger) => {
+    passengers: mapPassengers(residents, (passenger) => {
       if (!joiningIds.has(passenger.tx.id)) return passenger;
       const path = platformPath(passengerPosition(passenger, now), WAITING_ARCHIVE_POSITION);
       return {
@@ -653,6 +738,7 @@ function admitPassengers(
   },
   residentLimit = MAX_RESIDENT_PASSENGERS,
 ): { passengers: Passenger[]; pendingAdmissions: PassengerAdmission[] } {
+  if (admissions.length === 0) return { passengers: residents, pendingAdmissions: admissions };
   const passengers = [...residents];
   const occupied = new Set(
     residents
@@ -992,8 +1078,11 @@ function reconcileDesiredPassenger(passenger: Passenger, now: number, moving: bo
   if (passenger.wagon && isInsideDoorway(point)) {
     if (passenger.wagon !== passenger.plannedWagon || passenger.tx.status === 'confirmed')
       return startExit(passenger, now, point);
-    if (passenger.phase === 'boarded')
-      return { ...passenger, path: [wagonSeat(passenger.wagon, passenger.seatIndex)] };
+    if (passenger.phase === 'boarded') {
+      const seat = wagonSeat(passenger.wagon, passenger.seatIndex);
+      if (passenger.path.length === 1 && point.x === seat.x && point.y === seat.y) return passenger;
+      return { ...passenger, path: [seat] };
+    }
     return passenger;
   }
   if (passenger.phase === 'walking' || passenger.phase === 'boarding') {
@@ -1009,8 +1098,11 @@ function reconcileDesiredPassenger(passenger: Passenger, now: number, moving: bo
   }
   if (passenger.plannedWagon && ['queue', 'parked', 'confirmed'].includes(passenger.phase))
     return startWalking(passenger, now, point);
-  if (passenger.tx.status === 'confirmed')
+  if (passenger.tx.status === 'confirmed') {
+    if (passenger.phase === 'confirmed' && passenger.wagon === null && passenger.durationMs === 0)
+      return passenger;
     return { ...startPhase(passenger, 'confirmed', now, [point], 0), wagon: null };
+  }
   if (passenger.phase === 'parked')
     return { ...startPhase(passenger, 'queue', now, [point], 0), retryAt: now + QUEUE_RETRY_MS };
   return passenger;
@@ -1638,7 +1730,7 @@ export function advancePassengerMotion(
       : workingState.candidateArrivalStartedAt;
   const candidateArrivalStartedAt =
     arrivalAt !== null && elapsedMs - arrivalAt < CANDIDATE_ARRIVAL_DURATION_MS ? arrivalAt : null;
-  const advanced = workingState.passengers.map((passenger) =>
+  const advanced = mapPassengers(workingState.passengers, (passenger) =>
     advancePassenger(
       passenger,
       elapsedMs,
@@ -1683,7 +1775,7 @@ export function advancePassengerMotion(
   if (next.preparationStartedAt !== null) next = prepareForDeparture(next, elapsedMs);
   else if (!handoffMoving) {
     next.passengers = alignWaitingQueue(next.passengers, elapsedMs);
-    next.passengers = next.passengers.map((passenger) =>
+    next.passengers = mapPassengers(next.passengers, (passenger) =>
       reconcileDesiredPassenger(
         passenger,
         elapsedMs,
@@ -1700,6 +1792,63 @@ export function advancePassengerMotion(
     }
   }
   return next;
+}
+
+function passengerPose(passenger: Passenger, elapsedMs: number): PassengerPose {
+  const progress =
+    passenger.durationMs > 0
+      ? Math.min(1, Math.max(0, (elapsedMs - passenger.phaseStartedAt) / passenger.durationMs))
+      : 1;
+  const cached = passengerPoseCache.get(passenger);
+  if (cached?.pose.progress === progress) {
+    const walking =
+      !cached.pose.inWagon &&
+      !passenger.inHandoff &&
+      WALKING_PHASES.has(passenger.phase) &&
+      progress > 0 &&
+      progress < 1;
+    if (!walking || cached.elapsedMs === elapsedMs) return cached.pose;
+  }
+  const point = passengerPosition(passenger, elapsedMs);
+  const queue = queuePosition(passenger.queueIndex);
+  const inWagon =
+    passenger.wagon !== null &&
+    (passenger.inHandoff ||
+      ['boarded', 'confirmed'].includes(passenger.phase) ||
+      (['boarding', 'preparing', 'exiting'].includes(passenger.phase) && isInsideDoorway(point)));
+  const from = passenger.path[0] ?? point;
+  const to = passenger.path[passenger.path.length - 1] ?? point;
+  const appearance = transactionAppearance(passenger.tx);
+  const walking =
+    !inWagon &&
+    !passenger.inHandoff &&
+    WALKING_PHASES.has(passenger.phase) &&
+    progress > 0 &&
+    progress < 1;
+  const pose: PassengerPose = {
+    tx: passenger.tx,
+    ...point,
+    queueX: queue.x,
+    queueY: queue.y,
+    phase: passenger.phase,
+    destination: passenger.departureIncluded ? 'next' : (passenger.plannedWagon ?? 'queue'),
+    reason: passenger.reason,
+    selectedForCandidate: passenger.selectedForCandidate,
+    inWagon,
+    wagon: passenger.wagon,
+    inHandoff: passenger.inHandoff,
+    sourceObserved: passenger.presentInSample || passenger.awaitingVerifiedDeparture === true,
+    headScale: appearance.headScale,
+    resourceUnits: appearance.resourceUnits,
+    opacity: 1,
+    progress,
+    facing: to.x < from.x ? -1 : 1,
+    movementAngle: pathHeadingDegrees(passenger.path, progress),
+    // Waiting people have no gait to redraw. Moving people keep the same walking rhythm.
+    walkPhase: walking ? (elapsedMs / 160 + (appearance.hash % 7)) % (Math.PI * 2) : 0,
+  };
+  passengerPoseCache.set(passenger, { elapsedMs, pose });
+  return pose;
 }
 
 export function passengerFrame(state: PassengerMotionState): PassengerFrame {
@@ -1721,19 +1870,14 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
     next: { entry: state.preparationStartedAt !== null, exit: false },
     later: { entry: false, exit: false },
   };
-  const passengers = state.passengers.map((passenger): PassengerPose => {
+  const previousPoses = passengerCollectionPoseCache.get(state.passengers);
+  let unchangedPoses = previousPoses !== undefined;
+  let preparationPassengerCount = 0;
+  let passengers = state.passengers.map((passenger, index): PassengerPose => {
     if (passenger.presentInSample) counts[passenger.phase] += 1;
     else if (passenger.phase === 'parked') counts.parked += 1;
     else counts.retiring += 1;
-    const point = passengerPosition(passenger, state.elapsedMs);
-    const queue = queuePosition(passenger.queueIndex);
-    const progress =
-      passenger.durationMs > 0
-        ? Math.min(
-            1,
-            Math.max(0, (state.elapsedMs - passenger.phaseStartedAt) / passenger.durationMs),
-          )
-        : 1;
+    if (passenger.departureIncluded) preparationPassengerCount += 1;
     const moving =
       state.handoffStartedAt !== null ||
       (state.candidateArrivalStartedAt !== null && passenger.wagon === 'later');
@@ -1741,35 +1885,12 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
       if (['boarding', 'preparing'].includes(passenger.phase)) doors[passenger.wagon].entry = true;
       if (passenger.phase === 'exiting') doors[passenger.wagon].exit = true;
     }
-    const inWagon =
-      passenger.wagon !== null &&
-      (passenger.inHandoff ||
-        ['boarded', 'confirmed'].includes(passenger.phase) ||
-        (['boarding', 'preparing', 'exiting'].includes(passenger.phase) && isInsideDoorway(point)));
-    const from = passenger.path[0] ?? point;
-    const to = passenger.path[passenger.path.length - 1] ?? point;
-    return {
-      tx: passenger.tx,
-      ...point,
-      queueX: queue.x,
-      queueY: queue.y,
-      phase: passenger.phase,
-      destination: passenger.departureIncluded ? 'next' : (passenger.plannedWagon ?? 'queue'),
-      reason: passenger.reason,
-      selectedForCandidate: passenger.selectedForCandidate,
-      inWagon,
-      wagon: passenger.wagon,
-      inHandoff: passenger.inHandoff,
-      sourceObserved: passenger.presentInSample || passenger.awaitingVerifiedDeparture === true,
-      headScale: transactionHeadScale(passenger.tx),
-      resourceUnits: transactionResourceUnits(passenger.tx),
-      opacity: 1,
-      progress,
-      facing: to.x < from.x ? -1 : 1,
-      movementAngle: pathHeadingDegrees(passenger.path, progress),
-      walkPhase: (state.elapsedMs / 160 + (stableHash(passenger.tx.id) % 7)) % (Math.PI * 2),
-    };
+    const pose = passengerPose(passenger, state.elapsedMs);
+    if (pose !== previousPoses?.[index]) unchangedPoses = false;
+    return pose;
   });
+  if (unchangedPoses) passengers = previousPoses!;
+  else passengerCollectionPoseCache.set(state.passengers, passengers);
   const laterArrivalProgress =
     state.candidateArrivalStartedAt === null
       ? null
@@ -1801,8 +1922,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
             1,
             Math.max(0, (state.elapsedMs - state.preparationStartedAt) / PREPARATION_DURATION_MS),
           ),
-    preparationPassengerCount: state.passengers.filter((passenger) => passenger.departureIncluded)
-      .length,
+    preparationPassengerCount,
     waitingArchiveCount: state.waitingArchiveCount,
     waitingArchiveTrackedCount: state.waitingArchiveTransactions.size,
     waitingArchiveUnknownCount: state.waitingArchiveUnknownCount,

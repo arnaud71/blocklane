@@ -1,7 +1,17 @@
-export const number = (value: number | null, digits = 0) =>
-  value === null
-    ? '—'
-    : new Intl.NumberFormat('fr-CH', { maximumFractionDigits: digits }).format(value);
+const numberFormatters = new Map<number, Intl.NumberFormat>();
+const MAX_NUMBER_FORMATTERS = 32;
+
+export function number(value: number | null, digits = 0): string {
+  if (value === null) return '—';
+  let formatter = numberFormatters.get(digits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('fr-CH', { maximumFractionDigits: digits });
+    if (numberFormatters.size >= MAX_NUMBER_FORMATTERS)
+      numberFormatters.delete(numberFormatters.keys().next().value!);
+    numberFormatters.set(digits, formatter);
+  }
+  return formatter.format(value);
+}
 
 export const shortHash = (hash: string) => `${hash.slice(0, 8)}…${hash.slice(-6)}`;
 
