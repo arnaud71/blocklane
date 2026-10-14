@@ -116,6 +116,8 @@ export interface PassengerMotionState {
   initialBlockHeight: number | null;
   preparationStartedAt: number | null;
   handoffStartedAt: number | null;
+  /** Persistent animation-clock marker for the last vehicle departure, not a block timestamp. */
+  lastDepartureStartedAt: number | null;
   candidateArrivalStartedAt: number | null;
   departingBlock: Pick<Block, 'hash' | 'height'> | null;
   departureRecovered: boolean;
@@ -165,6 +167,7 @@ export interface PassengerFrame {
   departingPassengers: PassengerPose[];
   departingBlock: Pick<Block, 'hash' | 'height'> | null;
   departureRecovered: boolean;
+  lastDepartureStartedAt: number | null;
   counts: Record<PassengerPhase, number>;
   candidateCount: number;
   candidateUsed: number;
@@ -903,6 +906,7 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
     initialBlockHeight: snapshot.blocks[0]?.height ?? null,
     preparationStartedAt: null,
     handoffStartedAt: null,
+    lastDepartureStartedAt: null,
     candidateArrivalStartedAt: 0,
     departingBlock: null,
     departureRecovered: false,
@@ -1209,6 +1213,7 @@ function departPreparedWagons(
     preparationStartedAt: null,
     preparationTransactions: [],
     handoffStartedAt: departureAt,
+    lastDepartureStartedAt: departureAt,
     candidateArrivalStartedAt: null,
     departingPassengers,
     passengers: state.passengers
@@ -1727,6 +1732,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
     departingPassengers: state.departingPassengers,
     departingBlock: state.departingBlock,
     departureRecovered: state.departureRecovered,
+    lastDepartureStartedAt: state.lastDepartureStartedAt ?? null,
     counts,
     candidateCount: state.candidateCount,
     candidateUsed: state.candidateUsed,

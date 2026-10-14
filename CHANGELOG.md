@@ -6,6 +6,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
+- Compteur « Depuis départ » sous le dernier bloc, indépendant pour Bitcoin et Ethereum : temps réel depuis le début du dernier départ animé, rafraîchi à la seconde sans dépendre de la vitesse ou de la pause. `—` avant le premier départ ; confirmations statiques en mouvement réduit sans nouveau départ, animations de rattrapage comptées et dernier repère conservé pendant une indisponibilité temporaire. Réinitialisation au rechargement ou au changement direct / démonstration ; simulation explicite, sans confondre ce temps avec l'âge du bloc ou un compte à rebours. Aucune nouvelle requête ni modification du cache API.
 - Frais médians par transaction dans les en-têtes et la page Réseau : médiane des coûts estimés des seules transactions en attente du nouvel instantané, avec effectif, exclusion des confirmations et archives, identifiants dédupliqués et moyenne des deux valeurs centrales pour un effectif pair. Affichage `≈` en BTC/ETH par transaction ou USD par transaction selon le switch ; `—` si l'échantillon est absent. Cette sélection top frais ne constitue pas une médiane mondiale ; Ethereum utilise la limite de gas déclarée, jamais le gas consommé ni les frais payés.
 - Taux conseillé Bitcoin et base fee Ethereum conservés en détails secondaires de la page Réseau ; aucun champ d'API, classement, couleur ou animation modifié par le calcul de médiane.
 - Commande commune frais natifs / USD : médiane exprimée en BTC/ETH ou dollars par transaction ; montants estimés `≈` dans les détails et infobulles des voyageurs en USD, avec taille virtuelle Bitcoin ou limite de gas Ethereum. Les taux natifs restent consultables ; le tri et les couleurs sont conservés.
@@ -53,7 +54,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Validation
 
-- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. La médiane des coûts par transaction, la conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Lecture statique, formatage et aperçu normal de remise uniquement.
+- Tests, lint, TypeScript, compilation, audit et validations automatiques ou visuelles suspendus à la demande du propriétaire. Le compteur depuis le dernier départ animé, la médiane des coûts par transaction, la conversion USD, le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas. Lecture statique, formatage et aperçu normal de remise uniquement.
 
 ## 0.2.0 — 2026-10-14
 

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChainId, Tx } from '../shared/model';
 import { StreetScene } from './components/StreetScene';
 import { InfoPanel } from './components/InfoPanel';
+import { DepartureTimer } from './components/DepartureTimer';
 import { Icon } from './components/Icon';
 import { brand, safeExternalUrl } from './config/brand';
 import { useSnapshot } from './hooks/useSnapshot';
@@ -28,6 +29,15 @@ export function App() {
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [feeDisplayUnit, setFeeDisplayUnit] = useState<FeeDisplayUnit>('native');
+  const [lastDepartures, setLastDepartures] = useState<Record<ChainId, number | null>>({
+    bitcoin: null,
+    ethereum: null,
+  });
+  const recordDeparture = useCallback((id: ChainId, departedAt: number) => {
+    setLastDepartures((current) =>
+      current[id] === departedAt ? current : { ...current, [id]: departedAt },
+    );
+  }, []);
   const [selection, setSelection] = useState<{
     chain: ChainId;
     id: string;
@@ -83,6 +93,7 @@ export function App() {
     setSelection(null);
   }
   function changeMode(value: 'live' | 'demo') {
+    if (value !== mode) setLastDepartures({ bitcoin: null, ethereum: null });
     setMode(value);
     setSelection(null);
   }
@@ -283,6 +294,10 @@ export function App() {
                         <span className="metric-note">
                           {mode === 'demo' ? 'Bloc synthétique' : 'Inclusion observée'}
                         </span>
+                        <span className="metric-note departure-note">
+                          {mode === 'demo' ? 'Départ simulé' : 'Depuis départ'}{' '}
+                          <DepartureTimer departedAt={lastDepartures[id]} demo={mode === 'demo'} />
+                        </span>
                       </dd>
                     </div>
                   </dl>
@@ -296,6 +311,7 @@ export function App() {
                       speed={speed}
                       reducedMotion={reducedMotion}
                       feeDisplayUnit={feeDisplayUnit}
+                      onDeparture={recordDeparture}
                       onSelect={selectTransaction}
                       selectedId={selected?.chain === id ? selected.id : undefined}
                       theme={theme}

@@ -1,5 +1,13 @@
 # État des vérifications — 14 octobre 2026
 
+## Temps depuis le dernier départ animé — non validé
+
+**Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun de ces contrôles n'a été lancé pour cet ajout. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation ; les résultats historiques ci-dessous ne couvrent pas ce compteur.
+
+Chaque chaîne affiche « Depuis départ » sous le dernier bloc, à partir du début du départ réellement animé après la préparation. Un marqueur persistant du moteur fournit l'événement ; la date murale est conservée dans l'interface, avec un rafraîchissement à la seconde indépendant de la pause et de la vitesse. Ce temps n'est ni l'âge du bloc ni une estimation du prochain départ. `—` est affiché avant le premier départ. Un rattrapage animé remet le compteur à zéro, même pour le même hash ; une préparation annulée ne constitue pas un départ. Le mouvement réduit n'invente aucun départ et conserve le précédent s'il existe. L'indisponibilité temporaire préserve le repère ; un rechargement ou un changement direct / démonstration le réinitialise. La simulation reste explicitement distinguée. Aucun appel API, cache, contrat partagé, fournisseur ou dépendance n'est modifié.
+
+À la reprise autorisée, couvrir avec des données contrôlées le premier départ et les départs successifs, les preuves retardées ou de rattrapage, la préparation annulée, la pause, la vitesse, les mouvements réduits, l'indisponibilité temporaire et le changement de mode. Vérifier les transitions du marqueur, le temps réel affiché et les libellés sans annonces répétées aux lecteurs d'écran. Aucun contrôle ni appel API réel n'est ajouté pendant la suspension.
+
 ## Frais médians par transaction — non validé
 
 **Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun de ces contrôles n'a été lancé pour cette modification. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation ; les résultats historiques ci-dessous ne couvrent pas la nouvelle métrique.

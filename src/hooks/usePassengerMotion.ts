@@ -28,6 +28,15 @@ export function usePassengerMotion({
   );
   const motion = useRef(initialMotion);
   const [frame, setFrame] = useState(() => passengerFrame(motion.current));
+  const [lastDepartureAt, setLastDepartureAt] = useState<number | null>(null);
+  const recordedDepartureMarker = useRef<number | null>(null);
+
+  useEffect(() => {
+    // The marker persists after the moving wagon leaves, including while paused or reduced.
+    if (frame.lastDepartureStartedAt === recordedDepartureMarker.current) return;
+    recordedDepartureMarker.current = frame.lastDepartureStartedAt;
+    setLastDepartureAt(frame.lastDepartureStartedAt === null ? null : Date.now());
+  }, [frame.lastDepartureStartedAt]);
 
   useEffect(() => {
     motion.current = reconcilePassengerMotion(motion.current, snapshot);
@@ -64,5 +73,5 @@ export function usePassengerMotion({
     };
   }, [paused, speed, reducedMotion]);
 
-  return frame;
+  return { ...frame, lastDepartureAt };
 }

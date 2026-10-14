@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
-import type { Snapshot, Tx } from '../../shared/model';
+import type { ChainId, Snapshot, Tx } from '../../shared/model';
 import { usePassengerMotion } from '../hooks/usePassengerMotion';
 import type { PassengerPose } from '../lib/passengerMotion';
 import { MAX_WAITING_ARCHIVE_COUNT, WAITING_ARCHIVE_POSITION } from '../lib/passengerMotion';
@@ -38,6 +38,7 @@ export interface StreetSceneProps {
   immersive?: boolean;
   showInfo?: boolean;
   feeDisplayUnit?: FeeDisplayUnit;
+  onDeparture?: (chain: ChainId, departedAt: number) => void;
 }
 
 function SideDoor({ y, open, purpose }: { y: number; open: boolean; purpose: 'entry' | 'exit' }) {
@@ -299,6 +300,7 @@ export function StreetScene({
   onClearSelection,
   showInfo = true,
   feeDisplayUnit = 'native',
+  onDeparture,
 }: StreetSceneProps) {
   const id = useId().replace(/:/g, '');
   const [compactScene, setCompactScene] = useState(
@@ -316,6 +318,9 @@ export function StreetScene({
     speed,
     reducedMotion,
   });
+  useEffect(() => {
+    if (motion.lastDepartureAt !== null) onDeparture?.(snapshot.chain, motion.lastDepartureAt);
+  }, [motion.lastDepartureAt, onDeparture, snapshot.chain]);
   const demo = snapshot.mode === 'demo';
   const moving = motion.handoffProgress !== null;
   const preparing = motion.preparationProgress != null;
