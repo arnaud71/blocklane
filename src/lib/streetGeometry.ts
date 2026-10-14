@@ -19,6 +19,7 @@ export const CANDIDATE_WAGON_Y = LATER_WAGON_Y;
 export const PLATFORM_CORRIDOR_X = 298;
 export const ENTRY_DOOR_Y = 64;
 export const EXIT_DOOR_Y = 176;
+export const HISTORY_QUEUE_START = 160;
 const DOOR_INSIDE_X = 270;
 const DOOR_PLATFORM_X = 294;
 
@@ -51,8 +52,17 @@ export function wagonSeat(kind: WagonKind, index: number): StreetPoint {
 }
 
 export function queuePosition(index: number): StreetPoint {
-  const boundedIndex = Math.max(0, index) % 80;
-  return { x: 318 + (boundedIndex % 4) * 30, y: 118 + Math.floor(boundedIndex / 4) * 28 };
+  const safeIndex = Number.isFinite(index) ? Math.max(0, Math.floor(index)) : 0;
+  if (safeIndex >= HISTORY_QUEUE_START) {
+    const historySlot = (safeIndex - HISTORY_QUEUE_START) % 16;
+    return { x: 318 + (historySlot % 4) * 30, y: 568 + Math.floor(historySlot / 4) * 22 };
+  }
+  const currentSlot = Math.min(79, safeIndex);
+  // The head of the current fee queue is beside the upper entrance, then extends down the quay.
+  return {
+    x: 318 + (currentSlot % 4) * 30,
+    y: NEXT_WAGON_Y + ENTRY_DOOR_Y + Math.floor(currentSlot / 4) * 20,
+  };
 }
 
 /** Door passengers stay clipped inside until they have completely reached the platform. */

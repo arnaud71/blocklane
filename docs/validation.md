@@ -1,5 +1,9 @@
 # État des vérifications — 14 octobre 2026
 
+## File du quai par frais — non validé
+
+Le classement visuel des voyageurs en attente observés suit désormais les frais décroissants. Les changements de place utilisent une phase sur le corridor droit ; les arrivées et les retours terminent leur trajet capturé avant le réordonnancement. Les sièges occupés sont préservés et les mouvements réduits actualisent la file statiquement. Les nouveaux emplacements, les égalités de frais, les changements pendant un trajet, les passages de portes et les compteurs restent à valider lors de la reprise. Aucun test, lint, contrôle de compilation ni validation automatique n'a été lancé ; lecture statique, formatage et aperçu de remise uniquement.
+
 ## Suivi des inclusions, archive et couleurs — non validé
 
 **Les tests, la compilation, le lint et les contrôles automatiques restent suspendus à la demande du propriétaire.** Aucun de ces contrôles n'a été lancé pour le changement ci-dessous. Les lectures statiques, le formatage et un aperçu normal de remise ne constituent pas une validation. Les résultats historiques conservés dans ce document portent sur les anciennes versions.

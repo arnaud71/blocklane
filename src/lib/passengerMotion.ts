@@ -11,6 +11,7 @@ import {
   exitDoorPoint,
   exitPlatformPoint,
   isInsideDoorway,
+  HISTORY_QUEUE_START,
   PLATFORM_CORRIDOR_X,
   queuePosition,
   wagonSeat,
@@ -33,11 +34,12 @@ const QUEUE_RETRY_MS = 8_000;
 export const HANDOFF_DURATION_MS = 1_200;
 export const PREPARATION_DURATION_MS = 500;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'right-platform-tracked-inclusions-v8';
+const GEOMETRY_VERSION = 'right-platform-fee-queue-v9';
 
 export type PassengerPhase =
   | 'arriving'
   | 'queue'
+  | 'reordering'
   | 'parked'
   | 'walking'
   | 'boarding'
@@ -351,12 +353,74 @@ function startReturning(passenger: Passenger, now: number, from: StreetPoint): P
 
 function parkAtQueue(passenger: Passenger, now: number): Passenger {
   return {
-    ...startPhase(passenger, 'parked', now, [queuePosition(passenger.queueIndex)], 0),
+    ...startPhase(passenger, 'parked', now, [passengerPosition(passenger, now)], 0),
     wagon: null,
     plannedWagon: null,
     selectedForCandidate: false,
     joiningArchive: false,
   };
+}
+
+function rankWaitingQueue(passengers: Passenger[], now: number, instant = false): Passenger[] {
+  const pending = passengers
+    .filter(
+      (passenger) =>
+        passenger.presentInSample &&
+        passenger.tx.status === 'pending' &&
+        !passenger.wagon &&
+        !passenger.inHandoff &&
+        !passenger.departureIncluded &&
+        !passenger.awaitingVerifiedDeparture,
+    )
+    .sort(
+      (left, right) => right.tx.feeRate - left.tx.feeRate || left.tx.id.localeCompare(right.tx.id),
+    );
+  const ranks = new Map(pending.map((passenger, index) => [passenger.tx.id, index]));
+  return passengers.map((passenger) => {
+    if (
+      passenger.wagon ||
+      passenger.inHandoff ||
+      passenger.departureIncluded ||
+      passenger.awaitingVerifiedDeparture ||
+      passenger.joiningArchive
+    )
+      return passenger;
+    const rank = ranks.get(passenger.tx.id);
+    const queueIndex =
+      rank ??
+      (!passenger.presentInSample
+        ? passenger.queueIndex >= HISTORY_QUEUE_START
+          ? passenger.queueIndex
+          : HISTORY_QUEUE_START + (stableHash(passenger.tx.id) % MAX_PASSENGERS)
+        : passenger.queueIndex);
+    const updated = { ...passenger, queueIndex };
+    const phase = passenger.presentInSample ? 'queue' : 'parked';
+    const target = queuePosition(queueIndex);
+    const point = passengerPosition(passenger, now);
+    if (instant && ['queue', 'parked', 'reordering'].includes(passenger.phase))
+      return startPhase(updated, phase, now, [target], 0);
+    // Arrivals, door passages and returns finish their captured path before changing places.
+    if (!['queue', 'parked', 'reordering'].includes(passenger.phase)) return updated;
+    if (Math.hypot(point.x - target.x, point.y - target.y) < 0.5)
+      return passenger.phase === 'reordering'
+        ? { ...startPhase(updated, phase, now, [target], 0), retryAt: now + 300 }
+        : updated;
+    const end = passenger.path[passenger.path.length - 1];
+    if (passenger.phase === 'reordering' && end?.x === target.x && end.y === target.y)
+      return updated;
+    const path = platformPath(point, target);
+    const distance = path.slice(1).reduce((total, to, index) => {
+      const from = path[index]!;
+      return total + Math.hypot(to.x - from.x, to.y - from.y);
+    }, 0);
+    return startPhase(
+      updated,
+      'reordering',
+      now,
+      path,
+      Math.max(350, Math.min(1_000, distance * 3)),
+    );
+  });
 }
 
 function startExit(passenger: Passenger, now: number, from: StreetPoint, fast = false): Passenger {
@@ -801,7 +865,13 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
 }
 
 function reconcileDesiredPassenger(passenger: Passenger, now: number, moving: boolean): Passenger {
-  if (passenger.inHandoff || moving || passenger.departureIncluded) return passenger;
+  if (
+    passenger.inHandoff ||
+    moving ||
+    passenger.departureIncluded ||
+    passenger.phase === 'reordering'
+  )
+    return passenger;
   const point = passengerPosition(passenger, now);
   if (!passenger.presentInSample) return waitOutsideSample(passenger, now);
   if (['arriving', 'exiting', 'returning'].includes(passenger.phase)) return passenger;
@@ -1019,6 +1089,7 @@ export function reconcilePassengerMotion(
       : passenger,
   );
   next.queuedDeparture = next.queuedDepartures[0] ?? null;
+  next.passengers = rankWaitingQueue(next.passengers, state.elapsedMs);
   if (next.preparationStartedAt !== null) return prepareForDeparture(next, state.elapsedMs);
   if (
     next.handoffStartedAt === null &&
@@ -1095,7 +1166,14 @@ function departPreparedWagons(
 
 function stationaryPassenger(passenger: Passenger, now: number): Passenger {
   const wagon = passenger.tx.status === 'pending' ? passenger.plannedWagon : null;
-  const settled = { ...passenger, wagon, seatIndex: passenger.plannedSeatIndex };
+  const settled = {
+    ...passenger,
+    wagon,
+    seatIndex:
+      wagon !== null && passenger.wagon === wagon
+        ? passenger.seatIndex
+        : passenger.plannedSeatIndex,
+  };
   return {
     ...settled,
     inHandoff: false,
@@ -1224,7 +1302,7 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
     Math.min(MAX_INDIVIDUAL_HISTORY, MAX_RESIDENT_PASSENGERS - current.length),
   );
   const groupedCount = Math.max(0, history.length - historyCapacity);
-  const passengers = [...current, ...history.slice(groupedCount)];
+  const passengers = rankWaitingQueue([...current, ...history.slice(groupedCount)], now, true);
   return {
     ...state,
     ...projectionOccupancy(passengers),
@@ -1307,6 +1385,11 @@ function advancePassenger(
       ...startPhase(passenger, 'confirmed', now, [wagonSeat('next', passenger.seatIndex)], 0),
       wagon: 'next',
     };
+  if (passenger.phase === 'reordering')
+    return {
+      ...startPhase(passenger, passenger.presentInSample ? 'queue' : 'parked', now, [point], 0),
+      retryAt: now + 300,
+    };
   if (passenger.phase === 'arriving') {
     if (!passenger.presentInSample) return parkAtQueue(passenger, now);
     return {
@@ -1314,7 +1397,7 @@ function advancePassenger(
         passenger,
         passenger.tx.status === 'confirmed' ? 'confirmed' : 'queue',
         now,
-        [queuePosition(passenger.queueIndex)],
+        [point],
         0,
       ),
       wagon: null,
@@ -1375,7 +1458,7 @@ function advancePassenger(
         passenger,
         passenger.tx.status === 'confirmed' ? 'confirmed' : 'queue',
         now,
-        [queuePosition(passenger.queueIndex)],
+        [point],
         0,
       ),
       wagon: null,
@@ -1484,6 +1567,7 @@ export function advancePassengerMotion(
   };
   if (next.preparationStartedAt !== null) next = prepareForDeparture(next, elapsedMs);
   else if (!handoffMoving) {
+    next.passengers = rankWaitingQueue(next.passengers, elapsedMs);
     next.passengers = next.passengers.map((passenger) =>
       reconcileDesiredPassenger(
         passenger,
@@ -1507,6 +1591,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
   const counts: Record<PassengerPhase, number> = {
     arriving: 0,
     queue: 0,
+    reordering: 0,
     parked: 0,
     walking: 0,
     boarding: 0,

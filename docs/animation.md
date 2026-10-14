@@ -45,6 +45,10 @@ Les nouvelles transactions entrent depuis le haut du quai, avec des arrivées d�
 
 La géométrie de la rue, des wagons, des portes et du quai est partagée dans `src/lib/streetGeometry.ts` entre le moteur de mouvement et le dessin SVG. Cette référence commune permet aux trajets de rejoindre les portes effectivement affichées.
 
+La file courante est classée par taux de frais décroissant, séparément par chaîne, avec l'identifiant comme départage stable. Seuls les voyageurs en attente actuellement observés et hors wagon participent au classement. La tête de file est face à la porte haute, à la coordonnée verticale 239 ; les quatre colonnes se prolongent vers le bas avec un pas de 20. Les anciennes observations sans statut actualisé restent dans la partie basse du quai, hors classement courant.
+
+Un changement de rang anime une phase `reordering` de 350 à 1 000 millisecondes, toujours par le corridor droit. Une arrivée ou un retour finit d'abord son trajet capturé, puis rejoint sa nouvelle place ; une destination inchangée ne relance pas l'animation. Les voyageurs peuvent se superposer. Le classement ne réorganise pas les sièges occupés à bord, y compris en mouvement réduit lorsque le wagon reste le même. En mouvement réduit, les places sur le quai sont actualisées statiquement.
+
 Un voyageur déjà embarqué reste à bord pendant le déplacement du wagon. Une sortie nécessaire attend son arrivée et emprunte alors la porte basse à droite ; les portes restent fermées pendant le trajet. Le changement visuel de wagon n'altère jamais le statut fourni par la source.
 
 ## Transfert et statut réseau

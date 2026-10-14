@@ -13,6 +13,7 @@ function stableHash(value: string): number {
 const phaseLabels = {
   arriving: 'arrivée depuis le haut du quai',
   queue: 'sur le quai',
+  reordering: 'changement de place dans la file selon les frais',
   parked: 'en attente visuelle sur le quai, statut actuel non suivi',
   walking: 'en marche',
   boarding: 'embarquement illustré',
@@ -48,9 +49,16 @@ export function Passenger({
   const moving =
     !pose.inWagon &&
     !pose.inHandoff &&
-    ['arriving', 'walking', 'boarding', 'preparing', 'exiting', 'returning', 'retiring'].includes(
-      pose.phase,
-    );
+    [
+      'arriving',
+      'reordering',
+      'walking',
+      'boarding',
+      'preparing',
+      'exiting',
+      'returning',
+      'retiring',
+    ].includes(pose.phase);
   const step = moving ? Math.sin(pose.walkPhase) * 3.5 : 0;
   const label =
     'Transaction ' +
