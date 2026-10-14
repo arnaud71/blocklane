@@ -1,4 +1,16 @@
-# Vérification initiale — 14 octobre 2026
+# État des vérifications — 14 octobre 2026
+
+## Suivi des inclusions, archive et couleurs — non validé
+
+**Les tests, la compilation, le lint et les contrôles automatiques restent suspendus à la demande du propriétaire.** Aucun de ces contrôles n'a été lancé pour le changement ci-dessous. Les lectures statiques, le formatage et un aperçu normal de remise ne constituent pas une validation. Les résultats historiques conservés dans ce document portent sur les anciennes versions.
+
+Le changement ajoute un suivi serveur par chaîne de 2 048 identifiants pendant 30 minutes, temporairement 2 144 pendant la vérification avant éviction, et un journal facultatif de 16 blocs avec 2 048 identifiants d'inclusion au total. Jusqu'à huit blocs intermédiaires sont rattrapés par collecte et les lacunes restent à réessayer. Le journal est volatile et les preuves incompatibles avec une réorganisation doivent être invalidées ; aucune absence d'échantillon ne prouve une confirmation.
+
+L'interface conserve jusqu'à 512 identifiants archivés pendant 30 minutes sans preuve et distingue les observations sans suivi. Une preuve retrouvée réserve l'identifiant dans la même archive, protégé de l'expiration et de l'éviction jusqu'à la préparation de son bloc, y compris au-delà de 30 minutes pendant une pause ou une file de départs. À cette préparation, l'identifiant quitte le groupe et son personnage est réadmis à sa position. Les réservations, leur libération après traitement ou annulation, la file de 16 départs, l'initialisation sans animation de l'ancien journal, le libellé RATTRAPAGE pour une preuve tardive, le recul du dernier bloc et le traitement statique en mouvement réduit restent à vérifier. Un véhicule déjà en mouvement termine son trajet lorsqu'un bloc est révisé.
+
+Le moteur conserve 80 voyageurs en attente affichés, normalement jusqu'à 160 résidents et 80 admissions différées. Une préparation peut monter temporairement à 912 résidents, avec jusqu'à 752 inclusions superposées à bord ; le comportement et le coût de rendu de ces bornes restent non validés. L'expiration, l'éviction, la récupération depuis le groupe, les compteurs, les preuves reçues pendant pause et les réorganisations devront être couverts par des fixtures locales à la reprise des tests.
+
+Les t-shirts interpolent du jaune vers l'orange à la moyenne puis le rouge à au moins deux fois la moyenne des seuls voyageurs en attente affichés, séparément par chaîne. Il ne s'agit pas d'une moyenne du réseau. La moyenne absente ou nulle donne l'orange neutre ; la transition de 300 millisecondes est désactivée en mouvement réduit. Ces couleurs et leurs cas limites restent également à valider.
 
 ## Rafraîchissement et cache du direct à 3 secondes — non validé
 
@@ -10,11 +22,11 @@ La métaphore a ensuite été rapprochée de TxStreet : les deux wagons à l'arr
 
 Le maintien des voyageurs pendant le dernier départ, l'accélération du transfert, l'entrée du nouveau candidat depuis le bas et l'arrivée des transactions par le haut ont ensuite été ajoutés. Le wagon du haut est descendu, les observations précédentes restent en attente sur le quai avec un regroupement visible pour borner leur mémoire, et la disposition se compacte selon la taille de l'écran. Les portes n'ont plus de marches et les voyageurs passent au-dessus de leur dessin. Une préparation d'une demi-seconde rassemble les voyageurs concernés avant le départ. La rubrique Comprendre explique le rôle des deux wagons. Les tests restent suspendus à la demande du propriétaire ; ces changements ne sont pas déclarés validés.
 
-La dernière modification unifie la couleur des wagons, les maintient centrés sur la chaussée et déplace les trajets des voyageurs sur le quai à droite. L'embarquement utilise la porte haute à droite ; la sortie utilise la porte basse à droite et attend l'arrivée du wagon. La géométrie du moteur et du dessin est partagée.
+Une modification précédente a unifié la couleur des wagons, les a maintenus centrés sur la chaussée et déplacé les trajets des voyageurs sur le quai à droite. L'embarquement utilise la porte haute à droite ; la sortie utilise la porte basse à droite et attend l'arrivée du wagon. La géométrie du moteur et du dessin est partagée.
 
 La demande du propriétaire de suspendre les tests reste applicable. Aucun test automatique ni contrôle de compilation n'a été lancé pour cette modification. Le formatage du code et un aperçu de remise ne constituent pas une validation du comportement. Les résultats historiques ci-dessous ne valident donc pas cette nouvelle disposition ni ses trajets. Le réembarquement après transfert et les contraintes de portes, de quai et de mouvement restent à vérifier lors de la reprise des validations.
 
-## Vue immersive et transfert des wagons — en cours
+## Vue immersive et transfert des wagons — résultats historiques avant suspension
 
 Bitcoin et Ethereum sont désormais visibles simultanément. La disposition immersive a été contrôlée aux largeurs 1440, 983, 390 et 320 pixels : les deux scènes tiennent dans la fenêtre, sans défilement de la page. La série de 34 parcours navigateur de cette disposition a réussi avant l'ajout du transfert complet.
 

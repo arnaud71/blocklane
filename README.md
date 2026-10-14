@@ -34,6 +34,10 @@ Les sources publiques sont partagées et n'offrent ici aucune garantie de dispon
 
 La scène représente un échantillon borné, pas toutes les transactions du réseau. L'animation illustre les mécanismes ; elle ne prédit pas l'ordre exact d'inclusion ni le prochain bloc. Les frais indiqués sont des observations ou des estimations, jamais une garantie d'inclusion.
 
+Les t-shirts passent du jaune pour les frais faibles à l'orange à la moyenne, puis au rouge à partir de deux fois la moyenne des voyageurs en attente affichés sur la même blockchain. Cette moyenne concerne notre échantillon visible, pas tout le réseau.
+
+Les anciennes observations regroupées conservent jusqu'à 512 identifiants pendant 30 minutes dans l'interface. Le serveur suit jusqu'à 2 048 identifiants observés pendant 30 minutes et vérifie les nouveaux blocs, avec un rattrapage limité à huit blocs par collecte. Un journal partagé de 16 blocs et 2 048 preuves au total permet de retrouver les inclusions des voyageurs conservés, qui quittent alors le groupe pour le départ correspondant. Au-delà des bornes ou après redémarrage, le suivi individuel reste inconnu ; le groupe ne représente pas un nombre exact de transactions encore en attente sur le réseau.
+
 Le serveur mutualise les appels et attend au moins 3 secondes après chaque collecte avant de pouvoir en lancer une autre. Un dernier instantané valide peut être conservé jusqu'à 120 secondes en étant signalé comme ancien ; au-delà, la source devient indisponible. L'interface attend 3 secondes en direct et 5 secondes en démonstration après chaque réponse avant de consulter à nouveau l'API locale, sans chevaucher ses requêtes. Elle suspend ces lectures dans un onglet masqué. La durée de collecte s'ajoute à ces délais : une nouvelle donnée toutes les 3 secondes n'est pas garantie. Le rythme des blocs et la fréquence d'actualisation de l'interface sont deux choses différentes.
 
 ## Configuration

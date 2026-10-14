@@ -3,6 +3,11 @@ import { z } from 'zod';
 export const chainIdSchema = z.enum(['bitcoin', 'ethereum']);
 export type ChainId = z.infer<typeof chainIdSchema>;
 
+export const MAX_TRACKED_TRANSACTIONS = 2_048;
+export const TRACKED_TRANSACTION_TTL_MS = 30 * 60 * 1_000;
+export const MAX_INCLUSION_BLOCKS = 16;
+export const MAX_CATCHUP_BLOCKS = 8;
+
 const finiteNonnegative = z.number().finite().nonnegative();
 const safeNonnegativeInteger = z.number().int().nonnegative().safe();
 
@@ -45,6 +50,24 @@ export const blockSchema = z
   });
 export type Block = z.infer<typeof blockSchema>;
 
+export const blockInclusionsSchema = z
+  .object({
+    block: blockSchema,
+    /** Previously observed IDs whose inclusion was verified in this exact block. */
+    transactionIds: z.array(z.string().min(1).max(128)).max(MAX_TRACKED_TRANSACTIONS),
+  })
+  .superRefine((inclusions, context) => {
+    const ids = inclusions.transactionIds.map((id) => id.toLowerCase());
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['transactionIds'],
+        message: 'Block inclusion identifiers must be unique',
+      });
+    }
+  });
+export type BlockInclusions = z.infer<typeof blockInclusionsSchema>;
+
 export const snapshotSchema = z
   .object({
     chain: chainIdSchema,
@@ -59,6 +82,8 @@ export const snapshotSchema = z
     feeUnit: z.enum(['sat/vB', 'Gwei']),
     transactions: z.array(transactionSchema).max(120),
     blocks: z.array(blockSchema).max(3),
+    /** Bounded replay journal; its historical blocks need not appear in blocks. */
+    inclusions: z.array(blockInclusionsSchema).max(MAX_INCLUSION_BLOCKS).optional(),
     message: z.string().max(700).optional(),
   })
   .superRefine((snapshot, context) => {
@@ -82,16 +107,85 @@ export const snapshotSchema = z
       (snapshot.transactions.some(
         (tx) => tx.id.startsWith('demo-') || tx.blockHash?.startsWith('demo-'),
       ) ||
-        snapshot.blocks.some((block) => block.hash.startsWith('demo-')))
+        snapshot.blocks.some((block) => block.hash.startsWith('demo-')) ||
+        snapshot.inclusions?.some(
+          (inclusion) =>
+            inclusion.block.hash.startsWith('demo-') ||
+            inclusion.transactionIds.some((id) => id.startsWith('demo-')),
+        ))
     ) {
       context.addIssue({
         code: 'custom',
         message: 'Synthetic demo identifiers cannot be used as live data',
       });
     }
+    const inclusions = snapshot.inclusions ?? [];
+    if (
+      inclusions.reduce((count, inclusion) => count + inclusion.transactionIds.length, 0) >
+      MAX_TRACKED_TRANSACTIONS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['inclusions'],
+        message: 'The inclusion journal exceeds its tracked identifier limit',
+      });
+    }
+    const hashes = inclusions.map((inclusion) => inclusion.block.hash.toLowerCase());
+    if (new Set(hashes).size !== hashes.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['inclusions'],
+        message: 'The inclusion journal must contain unique block hashes',
+      });
+    }
+    const heights = inclusions.map((inclusion) => inclusion.block.height);
+    if (new Set(heights).size !== heights.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['inclusions'],
+        message: 'The inclusion journal must contain unique block heights',
+      });
+    }
+    inclusions.forEach((inclusion, index) => {
+      const displayedBlock = snapshot.blocks.find(
+        (block) => block.height === inclusion.block.height,
+      );
+      if (
+        displayedBlock &&
+        displayedBlock.hash.toLowerCase() !== inclusion.block.hash.toLowerCase()
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['inclusions', index, 'block', 'hash'],
+          message: 'Inclusion journal and displayed block disagree at the same height',
+        });
+      }
+    });
+    if (snapshot.mode === 'live') {
+      const identifierPattern =
+        snapshot.chain === 'bitcoin' ? /^[a-fA-F0-9]{64}$/ : /^0x[a-fA-F0-9]{64}$/;
+      inclusions.forEach((inclusion, index) => {
+        if (!identifierPattern.test(inclusion.block.hash)) {
+          context.addIssue({
+            code: 'custom',
+            path: ['inclusions', index, 'block', 'hash'],
+            message: 'Inclusion block hash does not match the chain format',
+          });
+        }
+        inclusion.transactionIds.forEach((id, transactionIndex) => {
+          if (!identifierPattern.test(id)) {
+            context.addIssue({
+              code: 'custom',
+              path: ['inclusions', index, 'transactionIds', transactionIndex],
+              message: 'Inclusion transaction identifier does not match the chain format',
+            });
+          }
+        });
+      });
+    }
     if (
       snapshot.status === 'unavailable' &&
-      (snapshot.transactions.length || snapshot.blocks.length)
+      (snapshot.transactions.length || snapshot.blocks.length || inclusions.length)
     ) {
       context.addIssue({
         code: 'custom',

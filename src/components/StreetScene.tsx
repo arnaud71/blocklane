@@ -16,6 +16,7 @@ import {
   type WagonKind,
 } from '../lib/streetGeometry';
 import { number } from '../lib/format';
+import { feeColorForRate } from '../lib/feeColors';
 import { Passenger } from './Passenger';
 import { InfoPanel } from './InfoPanel';
 import './StreetScene.css';
@@ -184,16 +185,28 @@ function Wagon({
   );
 }
 
-function WaitingArchive({ count }: { count: number }) {
+function WaitingArchive({
+  count,
+  tracked,
+  unknown,
+}: {
+  count: number;
+  tracked: number;
+  unknown: number;
+}) {
   if (count === 0) return null;
   const label = (count >= MAX_WAITING_ARCHIVE_COUNT ? '≥ ' : '') + number(count);
   return (
     <g
       role="img"
-      aria-label={`${label} observations anciennes regroupées sur le quai. Suivi individuel et statut actuel indisponibles.`}
+      aria-label={`${label} observations anciennes regroupées sur le quai. ${number(tracked)} identifiants conservés pour retrouver leurs inclusions, ${number(unknown)} observations sans suivi individuel. Un regroupement ne signifie pas une attente actuelle sur le réseau.`}
       data-waiting-archive-count={count}
     >
-      <title>{label} observations anciennes regroupées. Leur statut actuel n’est plus suivi.</title>
+      <title>
+        {label} observations regroupées : {number(tracked)} identifiants conservés,{' '}
+        {number(unknown)} sans suivi. Le suivi est borné à 512 identifiants et 30 minutes ; une
+        confirmation vérifiée peut retrouver son voyageur.
+      </title>
       <rect x="318" y="655" width="130" height="49" rx="6" fill="#153d2e" stroke="#789884" />
       <g aria-hidden="true">
         {[-12, -6, 0].map((offset) => (
@@ -213,10 +226,10 @@ function WaitingArchive({ count }: { count: number }) {
           Observations
         </text>
         <text x="405" y="680" textAnchor="middle" fill="#d3dec0" fontSize="9">
-          regroupées
+          Suivies : {number(tracked)}
         </text>
-        <text x="405" y="696" textAnchor="middle" fill="#d3dec0" fontSize="11">
-          {label}
+        <text x="405" y="696" textAnchor="middle" fill="#d3dec0" fontSize="9">
+          Sans suivi : {number(unknown)}
         </text>
       </g>
     </g>
@@ -319,22 +332,16 @@ export function StreetScene({
     ? `#${number(motion.departingBlock.height)}`
     : 'BLOC REÇU';
   const projectionUsed = motion.projectionUsed ?? { next: motion.candidateUsed ?? 0, later: 0 };
-  const feeBounds = motion.passengers
-    .filter((pose) => pose.sourceObserved)
-    .reduce(
-      (bounds, pose) => ({
-        min: Math.min(bounds.min, pose.tx.feeRate),
-        max: Math.max(bounds.max, pose.tx.feeRate),
-      }),
-      { min: Infinity, max: 0 },
-    );
-  const feeColor = (pose: PassengerPose) => {
-    const relative =
-      !Number.isFinite(feeBounds.min) || feeBounds.max === feeBounds.min
-        ? 0.5
-        : (pose.tx.feeRate - feeBounds.min) / (feeBounds.max - feeBounds.min);
-    return relative > 0.66 ? '#efaf72' : relative > 0.33 ? '#79bbb3' : '#afc3a3';
-  };
+  const averageFeeRate = useMemo(() => {
+    const rates = motion.passengers
+      .filter((pose) => pose.sourceObserved && pose.tx.status === 'pending')
+      .map((pose) => pose.tx.feeRate)
+      .filter((rate) => Number.isFinite(rate) && rate >= 0);
+    return rates.length
+      ? rates.reduce((average, rate, index) => average + (rate - average) / (index + 1), 0)
+      : null;
+  }, [motion.passengers]);
+  const feeColor = (pose: PassengerPose) => feeColorForRate(pose.tx.feeRate, averageFeeRate);
   const activity = useMemo(
     () => ({
       walking:
@@ -358,6 +365,7 @@ export function StreetScene({
         >
           <svg
             className="street-scene-svg street-scene-svg--vertical"
+            data-average-fee-rate={averageFeeRate ?? undefined}
             viewBox={
               compactScene
                 ? `172 0 ${SCENE_WIDTH - 172} ${SCENE_HEIGHT}`
@@ -395,9 +403,11 @@ export function StreetScene({
               label={moving || preparing ? blockLabel : 'PROCHAIN'}
               caption={
                 moving
-                  ? `${demo ? 'BLOC SIMULÉ' : 'BLOC CONFIRMÉ'} · DÉPART`
+                  ? `${demo ? 'BLOC SIMULÉ' : motion.departureRecovered ? 'INCLUSIONS RETROUVÉES' : 'BLOC CONFIRMÉ'} · DÉPART`
                   : preparing
-                    ? 'BLOC REÇU · AJUSTEMENT'
+                    ? motion.departureRecovered
+                      ? 'INCLUSIONS RETROUVÉES · RATTRAPAGE'
+                      : 'BLOC REÇU · AJUSTEMENT'
                     : 'PROCHAIN BLOC · ESTIMATION'
               }
               passengers={moving ? (motion.departingPassengers ?? []) : next}
@@ -429,7 +439,11 @@ export function StreetScene({
               onSelect={onSelect}
               feeColor={feeColor}
             />
-            <WaitingArchive count={motion.waitingArchiveCount ?? 0} />
+            <WaitingArchive
+              count={motion.waitingArchiveCount ?? 0}
+              tracked={motion.waitingArchiveTrackedCount ?? 0}
+              unknown={motion.waitingArchiveUnknownCount ?? 0}
+            />
             {pedestrians.map((pose) => (
               <Passenger
                 key={pose.tx.id}
@@ -445,7 +459,19 @@ export function StreetScene({
       {showInfo && (
         <DynamicInfoPanel
           snapshot={snapshot}
-          selectedTx={snapshot.transactions.find((tx) => tx.id === selectedId) ?? null}
+          selectedTx={
+            snapshot.transactions.find((tx) => tx.id === selectedId) ??
+            motion.passengers.find(
+              (pose) =>
+                pose.tx.id === selectedId &&
+                snapshot.inclusions?.some(
+                  (inclusion) =>
+                    inclusion.block.hash === pose.tx.blockHash &&
+                    inclusion.transactionIds.includes(pose.tx.id),
+                ),
+            )?.tx ??
+            null
+          }
           activity={activity}
           paused={paused || snapshot.status !== 'ok'}
           reducedMotion={reducedMotion}

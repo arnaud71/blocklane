@@ -1,9 +1,15 @@
 import { z } from 'zod';
 import {
   MAX_BLOCKS,
+  MAX_CATCHUP_BLOCKS,
+  MAX_INCLUSION_BLOCKS,
+  MAX_TRACKED_TRANSACTIONS,
   MAX_TRANSACTIONS,
+  TRACKED_TRANSACTION_TTL_MS,
+  blockSchema,
   snapshotSchema,
   type Block,
+  type BlockInclusions,
   type Snapshot,
   type Tx,
 } from '../../shared/model.js';
@@ -56,6 +62,7 @@ type EthereumTransaction = z.infer<typeof ethereumTransactionSchema>;
 
 const blockFields = {
   hash: hashSchema.nullable(),
+  parentHash: hashSchema.optional(),
   number: hexQuantitySchema.nullable(),
   timestamp: hexQuantitySchema,
   gasUsed: hexQuantitySchema,
@@ -72,6 +79,12 @@ export const ethereumFullBlockSchema = z
     {
       message: 'Invalid block gas usage',
     },
+  )
+  .refine(
+    (block) =>
+      new Set(block.transactions.map((tx) => tx.hash.toLowerCase())).size ===
+      block.transactions.length,
+    { message: 'Duplicate transaction identifiers in a block' },
   );
 export const ethereumBlockHeaderSchema = z
   .object({
@@ -83,6 +96,11 @@ export const ethereumBlockHeaderSchema = z
     {
       message: 'Invalid block gas usage',
     },
+  )
+  .refine(
+    (block) =>
+      new Set(block.transactions.map((id) => id.toLowerCase())).size === block.transactions.length,
+    { message: 'Duplicate transaction identifiers in a block' },
   );
 type EthereumBlock = z.infer<typeof ethereumFullBlockSchema>;
 type EthereumBlockHeader = z.infer<typeof ethereumBlockHeaderSchema>;
@@ -139,14 +157,14 @@ async function rpc(
 
 function toBlock(block: EthereumBlock | EthereumBlockHeader): Block {
   if (block.hash === null || block.number === null) throw new UpstreamError('invalid');
-  return {
+  return parsePayload(blockSchema, {
     height: bigintToSafeNumber(BigInt(block.number)),
     hash: block.hash.toLowerCase(),
     timestamp: bigintToSafeNumber(BigInt(block.timestamp)),
     txCount: block.transactions.length,
     used: bigintToSafeNumber(BigInt(block.gasUsed)),
     capacity: bigintToSafeNumber(BigInt(block.gasLimit)),
-  };
+  });
 }
 
 function toTransactions(block: EthereumBlock, status: Tx['status'], limit: number): Tx[] {
@@ -181,99 +199,305 @@ function toTransactions(block: EthereumBlock, status: Tx['status'], limit: numbe
   }));
 }
 
+interface ObservedEthereumBlock {
+  block: Block;
+  parentHash: string | undefined;
+  transactionIds: string[];
+}
+
+interface CheckedEthereumBlock {
+  block: Block;
+  parentHash: string | undefined;
+}
+
+function observedBlock(block: EthereumBlock | EthereumBlockHeader): ObservedEthereumBlock {
+  return {
+    block: toBlock(block),
+    parentHash: block.parentHash?.toLowerCase(),
+    transactionIds: block.transactions.map((transaction) =>
+      (typeof transaction === 'string' ? transaction : transaction.hash).toLowerCase(),
+    ),
+  };
+}
+
+/** One bounded tracker and replay journal shared by the server's Ethereum cache. */
+export function createEthereumProvider(
+  config: ServerConfig,
+  fetcher?: Fetcher,
+  now: () => number = Date.now,
+): () => Promise<Snapshot> {
+  const tracked = new Map<string, number>();
+  const checked = new Map<number, CheckedEthereumBlock>();
+  const journal = new Map<number, BlockInclusions>();
+  let lastHead: Block | null = null;
+  let cursor: number | null = null;
+  let skippedHistory = false;
+
+  function resetBranch(): void {
+    checked.clear();
+    journal.clear();
+    cursor = null;
+  }
+
+  function retainProof(observed: ObservedEthereumBlock): void {
+    const previous = journal.get(observed.block.height);
+    const identifiers = new Set(
+      previous?.block.hash === observed.block.hash ? previous.transactionIds : [],
+    );
+    observed.transactionIds.forEach((id) => {
+      if (tracked.has(id)) identifiers.add(id);
+    });
+    journal.set(observed.block.height, {
+      block: observed.block,
+      transactionIds: [...identifiers],
+    });
+  }
+
+  function boundedJournal(): BlockInclusions[] {
+    const entries = [...journal.values()].sort(
+      (left, right) => right.block.height - left.block.height,
+    );
+    journal.clear();
+    let remaining = MAX_TRACKED_TRANSACTIONS;
+    const seen = new Set<string>();
+    for (const entry of entries.slice(0, MAX_INCLUSION_BLOCKS)) {
+      const transactionIds = entry.transactionIds.filter((id) => {
+        if (remaining === 0 || seen.has(id)) return false;
+        seen.add(id);
+        remaining -= 1;
+        return true;
+      });
+      journal.set(entry.block.height, { block: entry.block, transactionIds });
+    }
+    return [...journal.values()];
+  }
+
+  return async () => {
+    const [chainIdRaw, latestRaw, pendingResult] = await Promise.all([
+      rpc(config, 'eth_chainId', [], fetcher),
+      rpc(config, 'eth_getBlockByNumber', ['latest', true], fetcher),
+      rpc(config, 'eth_getBlockByNumber', ['pending', true], fetcher).then(
+        (value) => ({ value, failed: false }),
+        () => ({ value: null, failed: true }),
+      ),
+    ]);
+    const chainId = parsePayload(hexQuantitySchema, chainIdRaw);
+    if (BigInt(chainId) !== 1n) throw new UpstreamError('wrong-chain');
+    const latest = parsePayload(ethereumFullBlockSchema, latestRaw);
+    const latestObserved = observedBlock(latest);
+    const latestBlock = latestObserved.block;
+    if (
+      [...checked.values()].some(
+        (entry) =>
+          entry.block.height !== latestBlock.height && entry.block.hash === latestBlock.hash,
+      )
+    ) {
+      throw new UpstreamError('invalid');
+    }
+    // Validate the complete required latest observation before mutating tracker state.
+    const confirmedTransactions = toTransactions(latest, 'confirmed', MAX_TRANSACTIONS);
+    const collectedAt = now();
+    for (const [id, lastObservedAt] of tracked) {
+      if (collectedAt - lastObservedAt >= TRACKED_TRANSACTION_TTL_MS) tracked.delete(id);
+    }
+
+    const knownAtHeight = checked.get(latestBlock.height)?.block;
+    const knownParent = checked.get(latestBlock.height - 1)?.block;
+    let branchChanged =
+      (lastHead !== null && latestBlock.height < lastHead.height) ||
+      (knownAtHeight !== undefined && knownAtHeight.hash !== latestBlock.hash) ||
+      (latestObserved.parentHash !== undefined &&
+        knownParent !== undefined &&
+        latestObserved.parentHash !== knownParent.hash);
+    if (branchChanged) resetBranch();
+
+    const pendingParsed = ethereumFullBlockSchema.safeParse(pendingResult.value);
+    const pending = pendingParsed.success ? pendingParsed.data : null;
+    const confirmedIds = new Set(latestObserved.transactionIds);
+    for (const inclusion of journal.values()) {
+      inclusion.transactionIds.forEach((id) => confirmedIds.add(id));
+    }
+    // Some providers resolve the "pending" tag to the latest confirmed block.
+    let hasCandidates =
+      pending !== null &&
+      (pending.hash === null || pending.hash.toLowerCase() !== latestBlock.hash) &&
+      (pending.number === null || BigInt(pending.number) > BigInt(latest.number!));
+    let pendingTransactions: Tx[] = [];
+    if (hasCandidates && pending !== null) {
+      try {
+        pendingTransactions = toTransactions(
+          {
+            ...pending,
+            transactions: pending.transactions.filter(
+              (tx) => !confirmedIds.has(tx.hash.toLowerCase()),
+            ),
+          },
+          'pending',
+          PENDING_FEE_SAMPLE_LIMIT,
+        );
+      } catch {
+        // An unusable candidate block cannot invalidate a valid confirmed observation.
+        hasCandidates = false;
+      }
+    }
+    // Insertion order is an LRU for bounded ID retention; disappearance is never a confirmation.
+    for (const transaction of pendingTransactions) {
+      tracked.delete(transaction.id);
+      tracked.set(transaction.id, collectedAt);
+    }
+    const windowStart = Math.max(0, latestBlock.height - MAX_CATCHUP_BLOCKS + 1);
+    let firstHeight =
+      cursor === null ? (branchChanged ? windowStart : latestBlock.height) : cursor + 1;
+    if (firstHeight < windowStart) {
+      // Explicitly abandon an older gap instead of allocating or requesting unbounded history.
+      firstHeight = windowStart;
+      cursor = firstHeight - 1;
+      skippedHistory = true;
+    }
+    const catchupHeights = Array.from(
+      { length: Math.max(0, latestBlock.height - firstHeight + 1) },
+      (_, index) => firstHeight + index,
+    );
+    const previousHeights = Array.from(
+      { length: Math.min(MAX_BLOCKS - 1, latestBlock.height) },
+      (_, index) => latestBlock.height - index - 1,
+    );
+    const neededHeights = [...new Set([...catchupHeights, ...previousHeights])].filter(
+      (height) => height !== latestBlock.height && !checked.has(height),
+    );
+    // One parallel phase: every request keeps the existing 8 s / 2 MiB transport bounds.
+    const previousResults = await Promise.all(
+      neededHeights.map(async (height) => {
+        try {
+          const header = parsePayload(
+            ethereumBlockHeaderSchema,
+            await rpc(config, 'eth_getBlockByNumber', [`0x${height.toString(16)}`, false], fetcher),
+          );
+          const observed = observedBlock(header);
+          if (observed.block.height !== height) throw new UpstreamError('invalid');
+          return observed;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const received = new Map<number, ObservedEthereumBlock>([[latestBlock.height, latestObserved]]);
+    const receivedHashes = new Set([latestBlock.hash]);
+    let invalidHistory = false;
+    for (const observed of previousResults) {
+      if (observed === null) continue;
+      if (
+        receivedHashes.has(observed.block.hash) ||
+        [...checked.values()].some(
+          (entry) =>
+            entry.block.height !== observed.block.height &&
+            entry.block.hash === observed.block.hash,
+        )
+      ) {
+        invalidHistory = true;
+        continue;
+      }
+      receivedHashes.add(observed.block.hash);
+      received.set(observed.block.height, observed);
+    }
+    let inconsistentBranch = false;
+    for (const observed of received.values()) {
+      const parent =
+        received.get(observed.block.height - 1) ?? checked.get(observed.block.height - 1);
+      if (
+        observed.parentHash !== undefined &&
+        parent !== undefined &&
+        observed.parentHash !== parent.block.hash
+      ) {
+        inconsistentBranch = true;
+        break;
+      }
+    }
+    if (inconsistentBranch) {
+      // The provider changed branch during collection. Replay no old-branch evidence and
+      // retry the bounded height window; the independently validated latest block remains usable.
+      resetBranch();
+      branchChanged = true;
+      cursor = windowStart - 1;
+      received.clear();
+      received.set(latestBlock.height, latestObserved);
+    }
+    for (const observed of received.values()) {
+      checked.set(observed.block.height, {
+        block: observed.block,
+        parentHash: observed.parentHash,
+      });
+    }
+    // Only the current head is checked on the first collection, not pre-observation history.
+    const proofHeights = new Set([...catchupHeights, latestBlock.height]);
+    for (const height of proofHeights) {
+      const observed = received.get(height);
+      if (observed !== undefined) retainProof(observed);
+    }
+    // Verify retained IDs before current arrivals can evict them. This transient map
+    // holds at most 2,048 retained IDs plus 96 sampled arrivals, then returns to its cap.
+    while (tracked.size > MAX_TRACKED_TRANSACTIONS) {
+      const oldest = tracked.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      tracked.delete(oldest);
+    }
+    if (!inconsistentBranch) {
+      for (const height of catchupHeights) {
+        if (!checked.has(height)) break;
+        cursor = height;
+      }
+    }
+    lastHead = latestBlock;
+    // Header metadata and inclusion replay have independent fixed retention bounds.
+    const checkedHeights = [...checked.keys()].sort((left, right) => right - left);
+    checkedHeights.slice(MAX_INCLUSION_BLOCKS).forEach((height) => checked.delete(height));
+    const inclusions = boundedJournal();
+    const newlyConfirmedIds = new Set(inclusions.flatMap((entry) => entry.transactionIds));
+    pendingTransactions = pendingTransactions.filter(
+      (transaction) => !newlyConfirmedIds.has(transaction.id),
+    );
+    const transactions = [...pendingTransactions, ...confirmedTransactions].slice(
+      0,
+      MAX_TRANSACTIONS,
+    );
+    const blocks = [
+      latestBlock,
+      ...previousHeights.flatMap((height) => {
+        const previous = checked.get(height);
+        return previous === undefined ? [] : [previous.block];
+      }),
+    ];
+    const candidateCoverage = hasCandidates
+      ? 'Jusqu’à 96 transactions candidates aux meilleurs prix de gas effectifs du bloc pending du fournisseur, classées avant limitation, et confirmations du dernier bloc. Ce classement ne représente pas un top du mempool global.'
+      : 'Transactions confirmées du dernier bloc. Le fournisseur ne fournit pas de candidat distinct ni de comptage du mempool global.';
+    const partialHistory = blocks.length < previousHeights.length + 1 || invalidHistory;
+    const incompleteCatchup = cursor === null || cursor < latestBlock.height;
+    return parsePayload(snapshotSchema, {
+      chain: 'ethereum',
+      mode: 'live',
+      status: 'ok',
+      source: config.ethereumSource,
+      observedAt: now(),
+      coverage: `${candidateCoverage} Taille des blocs en gas ; passagers = limite de gas déclarée. Suivi borné à 2 048 IDs observés pendant 30 min, journal de 16 blocs ; rattrapage de 8 blocs au maximum.`,
+      pendingCount: null,
+      feeRate:
+        latest.baseFeePerGas === undefined
+          ? null
+          : ratioToNumber(BigInt(latest.baseFeePerGas), 1_000_000_000n),
+      feeUnit: 'Gwei',
+      transactions,
+      blocks,
+      inclusions,
+      message: `Indicateur de frais : base fee du dernier bloc, sans pourboire.${partialHistory ? ' Certains blocs précédents sont temporairement indisponibles.' : ''}${incompleteCatchup ? ' Vérification d’inclusions incomplète ; les hauteurs manquantes seront retentées sans présumer de confirmation.' : ''}${skippedHistory ? ' Une interruption a dépassé la fenêtre : certains blocs plus anciens n’ont pas été vérifiés.' : ''}${branchChanged ? ' Modification de branche observée : journal précédent réinitialisé, sans garantie de finalité.' : ''}`,
+    });
+  };
+}
+
+/** Stateless compatibility entry point; the service uses createEthereumProvider instead. */
 export async function fetchEthereumSnapshot(
   config: ServerConfig,
   fetcher?: Fetcher,
   now: () => number = Date.now,
 ): Promise<Snapshot> {
-  const [chainIdRaw, latestRaw, pendingResult] = await Promise.all([
-    rpc(config, 'eth_chainId', [], fetcher),
-    rpc(config, 'eth_getBlockByNumber', ['latest', true], fetcher),
-    rpc(config, 'eth_getBlockByNumber', ['pending', true], fetcher).then(
-      (value) => ({ value, failed: false }),
-      () => ({ value: null, failed: true }),
-    ),
-  ]);
-  const chainId = parsePayload(hexQuantitySchema, chainIdRaw);
-  if (BigInt(chainId) !== 1n) throw new UpstreamError('wrong-chain');
-  const latest = parsePayload(ethereumFullBlockSchema, latestRaw);
-  const latestBlock = toBlock(latest);
-  const pendingParsed = ethereumFullBlockSchema.safeParse(pendingResult.value);
-  const pending = pendingParsed.success ? pendingParsed.data : null;
-  // Proven inclusions take precedence over an inconsistent provider candidate,
-  // before ranking/truncation so they cannot consume a pending sample slot.
-  const confirmedIds = new Set(latest.transactions.map((tx) => tx.hash.toLowerCase()));
-  // Some providers resolve the "pending" tag to the latest confirmed block.
-  let hasCandidates =
-    pending !== null &&
-    (pending.hash === null || pending.hash.toLowerCase() !== latestBlock.hash) &&
-    (pending.number === null || BigInt(pending.number) > BigInt(latest.number!));
-  let pendingTransactions: Tx[] = [];
-  if (hasCandidates && pending !== null) {
-    try {
-      pendingTransactions = toTransactions(
-        {
-          ...pending,
-          transactions: pending.transactions.filter(
-            (tx) => !confirmedIds.has(tx.hash.toLowerCase()),
-          ),
-        },
-        'pending',
-        PENDING_FEE_SAMPLE_LIMIT,
-      );
-    } catch {
-      // An unusable candidate block cannot invalidate a valid confirmed observation.
-      hasCandidates = false;
-    }
-  }
-  const confirmedTransactions = toTransactions(latest, 'confirmed', MAX_TRANSACTIONS);
-  const transactions = [...pendingTransactions, ...confirmedTransactions].slice(
-    0,
-    MAX_TRANSACTIONS,
-  );
-
-  const previousHeights = Array.from(
-    { length: Math.min(MAX_BLOCKS - 1, latestBlock.height) },
-    (_, index) => latestBlock.height - index - 1,
-  );
-  const previousResults = await Promise.all(
-    previousHeights.map(async (height) => {
-      try {
-        const header = parsePayload(
-          ethereumBlockHeaderSchema,
-          await rpc(config, 'eth_getBlockByNumber', [`0x${height.toString(16)}`, false], fetcher),
-        );
-        const block = toBlock(header);
-        if (block.height !== height) throw new UpstreamError('invalid');
-        return block;
-      } catch {
-        return null;
-      }
-    }),
-  );
-  const blocks = [
-    latestBlock,
-    ...previousResults.filter((block): block is Block => block !== null),
-  ];
-  const candidateCoverage = hasCandidates
-    ? 'Jusqu’à 96 transactions candidates sélectionnées aux meilleurs prix de gas effectifs dans le bloc pending du fournisseur, classées avant limitation, et confirmations du dernier bloc. Ce classement du fournisseur ne représente pas un top du mempool global.'
-    : 'Transactions confirmées du dernier bloc. Ce fournisseur ne fournit pas de bloc candidat distinct et aucun comptage du mempool global n’est disponible.';
-  const partialHistory = blocks.length < previousHeights.length + 1;
-  return parsePayload(snapshotSchema, {
-    chain: 'ethereum',
-    mode: 'live',
-    status: 'ok',
-    source: config.ethereumSource,
-    observedAt: now(),
-    coverage: `${candidateCoverage} Taille des blocs en gas ; taille des passagers = limite de gas déclarée.`,
-    pendingCount: null,
-    feeRate:
-      latest.baseFeePerGas === undefined
-        ? null
-        : ratioToNumber(BigInt(latest.baseFeePerGas), 1_000_000_000n),
-    feeUnit: 'Gwei',
-    transactions,
-    blocks,
-    message: `Indicateur de frais : base fee du dernier bloc, sans pourboire.${partialHistory ? ' Certains blocs précédents sont temporairement indisponibles.' : ''}`,
-  });
+  return createEthereumProvider(config, fetcher, now)();
 }

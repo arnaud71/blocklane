@@ -199,6 +199,10 @@
   transform-origin: center bottom;
 }
 
+.street-person-shirt {
+  transition: fill 300ms ease;
+}
+
 .street-scene--demo .street-person--demo .street-person-body {
   animation: street-traveler var(--traveler-duration, 4.8s) ease-in-out infinite;
   animation-delay: var(--person-delay, 0s);

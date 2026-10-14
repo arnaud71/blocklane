@@ -7,17 +7,22 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 ### Interface
 
 - Lecture de l'API locale toutes les 3 secondes après réponse en direct et cache serveur partagé de 3 secondes après collecte ; une seule collecte en cours par chaîne, requêtes clientes séquentielles et suspension dans les onglets masqués conservées.
+- Archive de présentation suivie : jusqu'à 512 identifiants conservés pendant 30 minutes sans preuve, puis observations sans suivi au statut actuel inconnu. Une inclusion vérifiée réserve l'identifiant jusqu'à la préparation du bon bloc, protégée de l'expiration et de l'éviction pendant l'attente ; à cette préparation, le groupe diminue et le voyageur est réadmis depuis sa position.
+- File de 16 départs pour les blocs intermédiaires ; l'ancien journal n'est pas animé au premier chargement. Une preuve reçue après le départ de son bloc est illustrée comme RATTRAPAGE, avec le même hash.
+- Départs conditionnés à la vérification du bloc ; recul du dernier bloc et réorganisation annulent les départs incompatibles encore en file ou en préparation, en laissant finir les véhicules déjà en mouvement.
+- Couleurs des t-shirts interpolées du jaune pour des frais faibles vers l'orange à la moyenne et le rouge à au moins deux fois cette moyenne, calculée séparément sur les voyageurs en attente affichés de chaque chaîne. Moyenne absente ou nulle : orange neutre ; transition de 300 millisecondes désactivée en mouvement réduit.
+- Mouvement réduit : preuves appliquées statiquement, y compris aux observations déjà présentes, sans trajet et en conservant les observations.
 - Occupants du wagon précédent conservés pendant son départ jusqu'à sa sortie de l'écran.
 - Deux projections successives comme dans TxStreet : prochain bloc en haut, bloc suivant en bas, avec priorités réévaluées à l'arrêt.
 - Premier wagon ajusté aux seules inclusions vérifiées du bloc reçu avant son départ ; les voyageurs non inclus restent sur le quai.
 - Hash d'inclusion fourni par les adaptateurs Bitcoin et Ethereum, distinct du simple déplacement animé.
 - Échantillonnage des frais élevés dès la collecte : premier bloc projeté mempool.space pour Bitcoin, bloc `pending` du fournisseur classé avant troncature pour Ethereum ; replis annoncés.
 - Transfert du candidat accéléré et arrivée de son remplaçant depuis le bas de l'écran, avec la même horloge que les voyageurs.
-- Nouvelles transactions arrivant depuis le haut du quai ; wagon observé descendu pour dégager leur arrivée.
+- Nouvelles transactions arrivant depuis le haut du quai ; première projection descendue pour dégager leur arrivée.
 - Portes sans marches, avec personnages dessinés au-dessus pendant leur passage.
 - Préparation rapide des voyageurs concernés pendant une demi-seconde avant le départ du bloc.
 - Voyageurs hors échantillon maintenus en attente sur le quai avec leur dernière observation ; regroupement visible des plus anciennes observations pour borner la mémoire.
-- Wagon observé encore descendu pour dégager l'arrivée des nouvelles transactions.
+- Première projection encore descendue pour dégager l'arrivée des nouvelles transactions.
 - Explication « Pourquoi deux wagons ? » dans la rubrique Comprendre et rappel dans le panneau du dernier bloc.
 - Disposition adaptée aux grands écrans, aux ordinateurs portables et aux petits écrans, avec barres plus compactes pour libérer la scène.
 - Bitcoin et Ethereum visibles simultanément, avec des sources et des états de connexion indépendants.
@@ -29,7 +34,18 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Quai exclusivement à droite, embarquement par la porte haute à droite et sortie par une porte basse à droite, avec ouverture des portes correspondantes.
 - Voyageurs maintenus à bord pendant le déplacement ; les sorties nécessaires commencent après l'arrivée, avec un retour en file sans traversée de la chaussée.
 - Géométrie commune entre les wagons dessinés, leurs portes et le moteur des trajets.
-- Suivi Bitcoin borné en mémoire et vérification des identifiants dans le dernier bloc pour retrouver les transactions réellement incluses. Une disparition de l'échantillon ne confirme rien.
+- Suivi Bitcoin et Ethereum borné à 2 048 identifiants par chaîne pendant 30 minutes, avec au plus 2 144 identifiants transitoires le temps de vérifier avant éviction ; une disparition de l'échantillon ne confirme rien.
+
+### Contrat et suivi
+
+- Journal facultatif `Snapshot.inclusions` : blocs vérifiés et identifiants suivis réellement inclus, maximum 16 blocs et 2 048 identifiants au total, en complément des 120 transactions et trois blocs courants.
+- Rattrapage de huit blocs au maximum par collecte, réessai des lacunes et journal rejoué sans consommation par le premier visiteur. Hashes, hauteurs et identifiants validés ; cohérence avec les blocs affichés à hauteur commune.
+- Suivi et journal volatiles, sensibles aux redémarrages, expirations, évictions et réorganisations ; aucune promesse d'historique exhaustif ou de finalité.
+- Limites de représentation : 80 voyageurs en attente, normalement 160 résidents et 80 admissions différées ; une préparation peut conserver temporairement 912 résidents et jusqu'à 752 inclusions superposables.
+
+### Validation
+
+- Tests et contrôles de compilation suspendus à la demande du propriétaire. Le contrat, le rattrapage, les bornes temporaires, les compteurs d'archive, les mouvements réduits et les couleurs ne sont pas déclarés validés ; les résultats des versions précédentes ne les couvrent pas.
 
 ## 0.2.0 — 2026-10-14
 

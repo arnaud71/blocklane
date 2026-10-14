@@ -19,7 +19,11 @@ export function App() {
   const [view, setView] = useState<'visual' | 'learn' | 'sources'>('visual');
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [selection, setSelection] = useState<{ chain: ChainId; id: string } | null>(null);
+  const [selection, setSelection] = useState<{
+    chain: ChainId;
+    id: string;
+    transaction: Tx;
+  } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [theme, setTheme] = useState<'heg' | 'neutral'>('heg');
   const [fullScreen, setFullScreen] = useState(false);
@@ -34,7 +38,14 @@ export function App() {
   const feeds = { bitcoin, ethereum };
   const snapshot = feeds[chain].snapshot;
   const selected = selection
-    ? (feeds[selection.chain].snapshot?.transactions.find((tx) => tx.id === selection.id) ?? null)
+    ? (feeds[selection.chain].snapshot?.transactions.find((tx) => tx.id === selection.id) ??
+      (feeds[selection.chain].snapshot?.inclusions?.some(
+        (inclusion) =>
+          inclusion.block.hash === selection.transaction.blockHash &&
+          inclusion.transactionIds.includes(selection.id),
+      )
+        ? selection.transaction
+        : null))
     : null;
   const fairUrl = safeExternalUrl(brand.fairOnChainUrl);
 
@@ -68,7 +79,7 @@ export function App() {
   }
   function selectTransaction(tx: Tx) {
     setChain(tx.chain);
-    setSelection({ chain: tx.chain, id: tx.id });
+    setSelection({ chain: tx.chain, id: tx.id, transaction: tx });
     setInfoOpen(true);
   }
   async function toggleFullScreen() {
@@ -344,14 +355,17 @@ export function App() {
                 </h2>
                 <div className="learning-grid">
                   <Lesson n="01" title="Les voyageurs sont des transactions">
-                    Chaque personnage représente une transaction de notre échantillon. Sa couleur
-                    indique ses frais relatifs et la taille de sa tête illustre ses besoins en
-                    espace ou en gas. La ville ne montre pas toutes les transactions.
+                    Chaque personnage représente une transaction de notre échantillon. Son t-shirt
+                    passe du jaune pour des frais faibles à l'orange à la moyenne, puis au rouge
+                    pour des frais élevés. La référence est la moyenne des voyageurs en attente
+                    actuellement affichés sur cette blockchain, pas une moyenne mondiale. Sa tête
+                    illustre ses besoins en espace ou en gas. La ville ne montre pas toutes les
+                    transactions.
                   </Lesson>
                   <Lesson
                     n="02"
                     title="Pourquoi deux wagons ?"
-                    detail="À l’arrivée d’un nouveau bloc, le premier wagon se prépare pendant au moins une demi-seconde : les transactions dont l’inclusion est vérifiée embarquent rapidement, tandis que les autres retournent sur le quai. Il part ensuite avec les inclusions connues. Le second wagon monte à sa place, puis un nouveau second arrive du bas. Les voyageurs sans statut actualisé restent en attente avec leur dernière observation. Seule la source confirme une inclusion : l’animation ne change pas le statut."
+                    detail="À l’arrivée d’un nouveau bloc, le premier wagon se prépare pendant au moins une demi-seconde : les transactions dont l’inclusion est vérifiée embarquent rapidement, tandis que les autres retournent sur le quai. Il part ensuite avec les inclusions connues. Le second wagon monte à sa place, puis un nouveau second arrive du bas. Les anciennes observations regroupées gardent jusqu’à 512 identifiants pendant 30 minutes : si une inclusion est retrouvée, leur voyageur revient du groupe et rejoint le départ du bloc concerné. Les observations au-delà de ces limites restent représentées sans suivi individuel. Seule la source confirme une inclusion : l’animation ne change pas le statut."
                   >
                     Le wagon du haut projette le prochain bloc ; celui du bas projette le bloc qui
                     pourrait suivre. Leurs voyageurs viennent de notre échantillon de transactions
@@ -439,8 +453,9 @@ export function App() {
                   <div>
                     <dt>Actualisation</dt>
                     <dd>
-                      Environ toutes les 10 secondes en direct. Dernière observation affichée dans
-                      la ville.
+                      Lecture 3 secondes après chaque réponse en direct, cache partagé de 3 secondes
+                      après collecte. Le temps de collecte s’ajoute à ces délais. Dernière
+                      observation affichée dans la ville.
                     </dd>
                   </div>
                   <div>
@@ -499,7 +514,7 @@ export function App() {
           </button>
         </div>
         <p className="immersion-hint">
-          Tête = vBytes / limite de gas · Embarquement ≠ confirmation
+          T-shirt : jaune faible → rouge fort · Tête = vBytes / gas · Embarquement ≠ confirmation
         </p>
         <div className="immersion-actions">
           <button

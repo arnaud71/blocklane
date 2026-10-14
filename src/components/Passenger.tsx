@@ -128,7 +128,7 @@ export function Passenger({
           strokeWidth="3"
           strokeLinecap="round"
         />
-        <path d="M-4-17Q0-19 4-17L6-7H-6Z" fill={feeColor} />
+        <path className="street-person-shirt" d="M-4-17Q0-19 4-17L6-7H-6Z" fill={feeColor} />
         <path
           d={'M-5-15L-7 ' + (-8 - step).toFixed(2) + 'M5-15L7 ' + (-9 + step).toFixed(2)}
           stroke={skin}
