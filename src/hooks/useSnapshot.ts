@@ -44,7 +44,7 @@ export function useSnapshot(chain: ChainId, mode: 'live' | 'demo') {
       } finally {
         if (active && generation === currentGeneration) {
           setClock(Date.now());
-          timer = setTimeout(() => void poll(), mode === 'demo' ? 5_000 : 10_000);
+          timer = setTimeout(() => void poll(), mode === 'demo' ? 5_000 : 3_000);
         }
       }
     };

@@ -34,7 +34,7 @@ Les sources publiques sont partagées et n'offrent ici aucune garantie de dispon
 
 La scène représente un échantillon borné, pas toutes les transactions du réseau. L'animation illustre les mécanismes ; elle ne prédit pas l'ordre exact d'inclusion ni le prochain bloc. Les frais indiqués sont des observations ou des estimations, jamais une garantie d'inclusion.
 
-Le serveur mutualise les appels pendant 10 secondes. Un dernier instantané valide peut être conservé jusqu'à 120 secondes en étant signalé comme ancien ; au-delà, la source devient indisponible. L'interface consulte l'API toutes les 10 secondes en direct et toutes les 5 secondes en démonstration. Le rythme des blocs et la fréquence d'actualisation de l'interface sont deux choses différentes.
+Le serveur mutualise les appels et attend au moins 10 secondes après chaque collecte avant de pouvoir en lancer une autre. Un dernier instantané valide peut être conservé jusqu'à 120 secondes en étant signalé comme ancien ; au-delà, la source devient indisponible. L'interface attend 3 secondes en direct et 5 secondes en démonstration après chaque réponse avant de consulter à nouveau l'API locale, sans chevaucher ses requêtes. Elle suspend ces lectures dans un onglet masqué. Plusieurs réponses peuvent donc contenir le même instantané. Le rythme des blocs et la fréquence d'actualisation de l'interface sont deux choses différentes.
 
 ## Configuration
 
