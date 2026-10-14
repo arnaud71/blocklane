@@ -43,7 +43,7 @@ Pour une version majeure, lire le guide officiel de migration, proposer les adap
 1. Vérifier que le service répond à `GET /api/health` puis consulter les états de chaîne dans l'interface ou les instantanés API.
 2. Distinguer liveness du serveur, accès réseau upstream et fraîcheur des données. Une chaîne peut échouer sans arrêter l'autre.
 3. Vérifier DNS, HTTPS, quota, statut fournisseur et présence de la configuration côté serveur. Inspecter des messages sanitizés ; ne pas copier une URL RPC complète.
-4. Respecter le cache de 10 secondes. Éviter de rafraîchir en boucle ou de multiplier les instances : cela augmente les appels upstream.
+4. Respecter le cache partagé de 3 secondes après chaque collecte. Éviter de rafraîchir en boucle ou de multiplier les instances : cela augmente les appels upstream. Le délai court accroît la fréquence possible des collectes ; la déduplication ne vaut que pour une même instance du serveur.
 5. Reproduire un changement de payload avec une fixture anonymisée. Ne jamais désactiver la validation pour accepter un payload inconnu.
 6. Si une clé est compromise, la révoquer et la remplacer dans les secrets de l'hébergeur.
 7. Si un fournisseur doit être remplacé, vérifier le contrat du nouvel endpoint et les tests, puis redémarrer avec la nouvelle configuration. La source affichée doit correspondre à la provenance réelle.

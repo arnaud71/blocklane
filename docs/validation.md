@@ -1,8 +1,8 @@
 # Vérification initiale — 14 octobre 2026
 
-## Rafraîchissement du direct à 3 secondes — non validé
+## Rafraîchissement et cache du direct à 3 secondes — non validé
 
-Le délai entre la réponse de l'API locale et la prochaine lecture passe de 10 à 3 secondes en direct. Le mode démonstration garde 5 secondes. Le cache serveur partagé conserve son délai minimal de 10 secondes après chaque collecte ; les requêtes séquentielles, le délai d'expiration et la suspension dans un onglet masqué restent en place. Seule une lecture statique du changement a été effectuée. Aucun test ni contrôle de compilation n'a été lancé pendant la suspension demandée.
+Le délai entre la réponse de l'API locale et la prochaine lecture passe de 10 à 3 secondes en direct. Le mode démonstration garde 5 secondes. À la demande du propriétaire, le cache serveur partagé passe ensuite lui aussi de 10 à 3 secondes après chaque collecte, réussie ou en échec. L'unique collecte en cours par chaîne, les requêtes clientes séquentielles, le délai d'expiration et la suspension dans un onglet masqué restent en place. Seule une lecture statique du changement a été effectuée. Aucun test ni contrôle de compilation n'a été lancé pendant la suspension demandée.
 
 ## Quai à droite et portes séparées — non validé
 

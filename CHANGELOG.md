@@ -6,7 +6,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Interface
 
-- Lecture de l'API locale toutes les 3 secondes après réponse en direct, avec cache serveur partagé de 10 secondes, requêtes séquentielles et suspension dans les onglets masqués conservés.
+- Lecture de l'API locale toutes les 3 secondes après réponse en direct et cache serveur partagé de 3 secondes après collecte ; une seule collecte en cours par chaîne, requêtes clientes séquentielles et suspension dans les onglets masqués conservées.
 - Occupants du wagon précédent conservés pendant son départ jusqu'à sa sortie de l'écran.
 - Deux projections successives comme dans TxStreet : prochain bloc en haut, bloc suivant en bas, avec priorités réévaluées à l'arrêt.
 - Premier wagon ajusté aux seules inclusions vérifiées du bloc reçu avant son départ ; les voyageurs non inclus restent sur le quai.
