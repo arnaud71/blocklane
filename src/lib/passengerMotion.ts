@@ -220,6 +220,11 @@ interface ProjectionOccupancy {
   candidateUsed: number;
 }
 
+interface PreparationInclusion {
+  tx: Tx;
+  index: number;
+}
+
 // Paths and transactions are immutable within the engine. Weak keys release their
 // measurements with the corresponding scene instead of retaining transaction IDs.
 const pathGeometryCache = new WeakMap<StreetPoint[], PathGeometry>();
@@ -230,6 +235,11 @@ const transactionAppearanceCache = new WeakMap<
 const passengerPoseCache = new WeakMap<Passenger, { elapsedMs: number; pose: PassengerPose }>();
 const passengerCollectionPoseCache = new WeakMap<Passenger[], PassengerPose[]>();
 const projectionOccupancyCache = new WeakMap<Passenger[], ProjectionOccupancy>();
+// Cohorts and resident arrays are replaced rather than mutated. Cached ID sets
+// are read-only here; admission takes its own writable copy before adding IDs.
+const preparationInclusionCache = new WeakMap<Tx[], Map<string, PreparationInclusion>>();
+const residentIdCache = new WeakMap<Passenger[], Set<string>>();
+const departingIdCache = new WeakMap<PassengerPose[], Set<string>>();
 const WALKING_PHASES = new Set<PassengerPhase>([
   'arriving',
   'reordering',
@@ -275,7 +285,7 @@ function transactionAppearance(tx: Tx) {
   return appearance;
 }
 
-/** Keep an unchanged collection and its passengers reusable by the SVG renderer. */
+/** Keep an unchanged collection and its passengers reusable by the scene renderer. */
 function mapPassengers(
   passengers: Passenger[],
   update: (passenger: Passenger) => Passenger,
@@ -291,6 +301,33 @@ function mapPassengers(
     }
   }
   return changed ?? passengers;
+}
+
+function preparationInclusions(transactions: Tx[]): Map<string, PreparationInclusion> {
+  const cached = preparationInclusionCache.get(transactions);
+  if (cached) return cached;
+  const inclusions = new Map<string, PreparationInclusion>();
+  for (const [index, tx] of transactions.entries()) inclusions.set(tx.id, { tx, index });
+  preparationInclusionCache.set(transactions, inclusions);
+  return inclusions;
+}
+
+function residentTransactionIds(passengers: Passenger[]): Set<string> {
+  const cached = residentIdCache.get(passengers);
+  if (cached) return cached;
+  const ids = new Set<string>();
+  for (const passenger of passengers) ids.add(passenger.tx.id);
+  residentIdCache.set(passengers, ids);
+  return ids;
+}
+
+function departingTransactionIds(passengers: PassengerPose[]): Set<string> {
+  const cached = departingIdCache.get(passengers);
+  if (cached) return cached;
+  const ids = new Set<string>();
+  for (const passenger of passengers) ids.add(passenger.tx.id);
+  departingIdCache.set(passengers, ids);
+  return ids;
 }
 
 function motionContext(snapshot: Snapshot): string {
@@ -621,7 +658,7 @@ function waitOutsideSample(passenger: Passenger, now: number): Passenger {
 function retainWaitingArchive(
   state: WaitingArchiveState,
   additions: ArchivedObservation[] = [],
-  removals: string[] = [],
+  removals: Iterable<string> = [],
 ) {
   let waitingArchiveTransactions = state.waitingArchiveTransactions;
   const writableArchive = () => {
@@ -739,20 +776,9 @@ function admitPassengers(
   residentLimit = MAX_RESIDENT_PASSENGERS,
 ): { passengers: Passenger[]; pendingAdmissions: PassengerAdmission[] } {
   if (admissions.length === 0) return { passengers: residents, pendingAdmissions: admissions };
-  const passengers = [...residents];
-  const occupied = new Set(
-    residents
-      .filter(
-        (passenger) =>
-          passenger.presentInSample ||
-          passenger.wagon !== null ||
-          passenger.inHandoff ||
-          passenger.departureIncluded ||
-          passenger.awaitingVerifiedDeparture,
-      )
-      .map((passenger) => passenger.queueIndex),
-  );
-  const residentIds = new Set(residents.map((passenger) => passenger.tx.id));
+  let passengers = residents;
+  let occupied: Set<number> | undefined;
+  const residentIds = new Set(residentTransactionIds(residents));
   const pendingAdmissions: PassengerAdmission[] = [];
   let arrivalIndex = 0;
   const unseen = admissions.filter((admission) => !residentIds.has(admission.tx.id));
@@ -771,6 +797,22 @@ function admitPassengers(
     if (passengers.length >= residentLimit || blockedIds.has(admission.tx.id)) {
       pendingAdmissions.push(admission);
       continue;
+    }
+    // A full preparation can retry pending admissions every tick. Keep its residents
+    // and their cached poses intact until an admission really has a free place.
+    if (passengers === residents) passengers = [...residents];
+    if (!occupied) {
+      occupied = new Set<number>();
+      for (const resident of residents) {
+        if (
+          resident.presentInSample ||
+          resident.wagon !== null ||
+          resident.inHandoff ||
+          resident.departureIncluded ||
+          resident.awaitingVerifiedDeparture
+        )
+          occupied.add(resident.queueIndex);
+      }
     }
     let queueIndex = 0;
     while (occupied.has(queueIndex)) queueIndex += 1;
@@ -894,11 +936,9 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
   const exitMs = Math.min(FAST_EXIT_DURATION_MS, remainingMs);
   // Riders of the lower projection share this deadline between their exit and boarding above.
   const connectingExitMs = Math.max(MIN_PREPARATION_PASSAGE_MS, Math.min(exitMs, remainingMs / 2));
-  const included = new Map(
-    state.preparationTransactions.map((tx, index) => [tx.id, { tx, index }]),
-  );
-  const residentIds = new Set(state.passengers.map((passenger) => passenger.tx.id));
-  const missing = state.preparationTransactions.filter((tx) => !residentIds.has(tx.id));
+  const included = preparationInclusions(state.preparationTransactions);
+  const existingIds = residentTransactionIds(state.passengers);
+  const missing = state.preparationTransactions.filter((tx) => !existingIds.has(tx.id));
   const grouped = groupWaitingObservations(state.passengers, state, now, missing.length);
   const admissions = [
     ...missing.map((tx): PassengerAdmission => ({
@@ -918,24 +958,31 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
     grouped,
     MAX_RESIDENT_PASSENGERS + MAX_DEPARTURE_PASSENGERS,
   );
-  const passengers = admitted.passengers.map((passenger) => {
+  const passengers = mapPassengers(admitted.passengers, (passenger) => {
     if (passenger.inHandoff) return passenger;
     const inclusion = included.get(passenger.tx.id);
-    const point = passengerPosition(passenger, now);
     if (inclusion) {
-      const updated = {
-        ...passenger,
-        tx: inclusion.tx,
-        departureIncluded: true,
-        awaitingVerifiedDeparture: false,
-        joiningArchive: false,
-        presentInSample: true,
-      };
+      const updated =
+        passenger.tx === inclusion.tx &&
+        passenger.departureIncluded === true &&
+        passenger.awaitingVerifiedDeparture === false &&
+        passenger.joiningArchive === false &&
+        passenger.presentInSample
+          ? passenger
+          : {
+              ...passenger,
+              tx: inclusion.tx,
+              departureIncluded: true,
+              awaitingVerifiedDeparture: false,
+              joiningArchive: false,
+              presentInSample: true,
+            };
       if (
         passenger.phase === 'preparing' ||
         (passenger.wagon === 'next' && passenger.phase === 'confirmed')
       )
         return updated;
+      const point = passengerPosition(passenger, now);
       // A rider of the second projection must first use that vehicle's lower door.
       // Its membership remains 'later' throughout this exit, so clipping and doors agree.
       if (passenger.wagon === 'later' && isInsideDoorway(point))
@@ -952,29 +999,29 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
         handoffPhase: undefined,
       };
     }
-    if (passenger.wagon === 'next' && isInsideDoorway(point))
-      return startPreparationExit(passenger, now, point, exitMs);
+    let point: StreetPoint | undefined;
+    if (passenger.wagon === 'next') {
+      point = passengerPosition(passenger, now);
+      if (isInsideDoorway(point)) return startPreparationExit(passenger, now, point, exitMs);
+    }
     // Retained riders may free resident places during this stationary stop. Riders
     // still assigned to either projection stay in the lower vehicle for promotion.
     if (
       passenger.wagon === 'later' &&
-      isInsideDoorway(point) &&
       (!passenger.presentInSample || !passenger.plannedWagon || passenger.tx.status === 'confirmed')
-    )
-      return startPreparationExit(passenger, now, point, exitMs);
+    ) {
+      point = passengerPosition(passenger, now);
+      if (isInsideDoorway(point)) return startPreparationExit(passenger, now, point, exitMs);
+    }
     if (passenger.plannedWagon === 'next' && ['boarding', 'walking'].includes(passenger.phase))
-      return startReturning(passenger, now, point);
+      return startReturning(passenger, now, point ?? passengerPosition(passenger, now));
     return passenger;
   });
   return {
     ...state,
     ...admitted,
     passengers,
-    ...retainWaitingArchive(
-      grouped,
-      [],
-      admitted.passengers.map((passenger) => passenger.tx.id),
-    ),
+    ...retainWaitingArchive(grouped, [], residentTransactionIds(admitted.passengers)),
   };
 }
 
@@ -990,7 +1037,7 @@ function beginPreparation(
     selectedForCandidate: false,
     reason: 'observed',
   }));
-  const residentIds = new Set(state.passengers.map((passenger) => passenger.tx.id));
+  const residentIds = residentTransactionIds(state.passengers);
   const reserve = observation.transactions.filter((tx) => !residentIds.has(tx.id)).length;
   const grouped = groupWaitingObservations(state.passengers, state, state.elapsedMs, reserve);
   const admitted = admitPassengers(
@@ -1005,11 +1052,7 @@ function beginPreparation(
     {
       ...state,
       ...admitted,
-      ...retainWaitingArchive(
-        grouped,
-        [],
-        admitted.passengers.map((passenger) => passenger.tx.id),
-      ),
+      ...retainWaitingArchive(grouped, [], residentTransactionIds(admitted.passengers)),
       pendingAdmissions: [...admitted.pendingAdmissions, ...state.pendingAdmissions].slice(
         0,
         MAX_PASSENGERS,
@@ -1130,7 +1173,7 @@ export function reconcilePassengerMotion(
   const plan = planSnapshot(snapshot);
   const previous = new Map(state.passengers.map((passenger) => [passenger.tx.id, passenger]));
   const nextIds = new Set(plan.sourceTransactions.map((tx) => tx.id));
-  const departingIds = new Set(state.departingPassengers.map((pose) => pose.tx.id));
+  const departingIds = departingTransactionIds(state.departingPassengers);
   const admissions: PassengerAdmission[] = [];
   const passengers: Passenger[] = [];
   const projectedIds = new Set(plan.transactions.map((tx) => tx.id));
@@ -1197,11 +1240,7 @@ export function reconcilePassengerMotion(
   let next: PassengerMotionState = {
     ...state,
     ...admitted,
-    ...retainWaitingArchive(
-      grouped,
-      [],
-      admitted.passengers.map((passenger) => passenger.tx.id),
-    ),
+    ...retainWaitingArchive(grouped, [], residentTransactionIds(admitted.passengers)),
     observedBlockHash:
       snapshot.status === 'ok'
         ? (snapshot.blocks[0]?.hash ?? state.observedBlockHash)
@@ -1342,17 +1381,20 @@ function departPreparedWagons(
   state: PassengerMotionState,
   departureAt: number,
 ): PassengerMotionState {
-  const departingPassengers = passengerFrame({ ...state, elapsedMs: departureAt })
-    .passengers.filter(
-      (pose) =>
-        pose.inWagon &&
-        pose.wagon === 'next' &&
-        pose.tx.status === 'confirmed' &&
-        pose.tx.blockHash === state.departingBlock?.hash,
+  const departingPassengers: PassengerPose[] = [];
+  for (const passenger of state.passengers) {
+    if (
+      passenger.wagon !== 'next' ||
+      passenger.tx.status !== 'confirmed' ||
+      passenger.tx.blockHash !== state.departingBlock?.hash
     )
-    .slice(0, MAX_DEPARTURE_PASSENGERS)
-    .map((pose) => ({ ...pose, sourceObserved: false }));
-  const departingIds = new Set(departingPassengers.map((pose) => pose.tx.id));
+      continue;
+    const pose = passengerPose(passenger, departureAt);
+    if (!pose.inWagon) continue;
+    departingPassengers.push({ ...pose, sourceObserved: false });
+    if (departingPassengers.length === MAX_DEPARTURE_PASSENGERS) break;
+  }
+  const departingIds = departingTransactionIds(departingPassengers);
   return {
     ...state,
     preparationStartedAt: null,
@@ -1361,13 +1403,15 @@ function departPreparedWagons(
     lastDepartureStartedAt: departureAt,
     candidateArrivalStartedAt: null,
     departingPassengers,
-    passengers: state.passengers
-      .filter((passenger) => !departingIds.has(passenger.tx.id))
-      .map((passenger) =>
+    passengers: mapPassengers(
+      state.passengers.filter((passenger) => !departingIds.has(passenger.tx.id)),
+      (passenger) =>
         isRider(passenger, 'later', departureAt)
           ? carryToNext(passenger, departureAt)
-          : { ...passenger, departureIncluded: false },
-      ),
+          : passenger.departureIncluded
+            ? { ...passenger, departureIncluded: false }
+            : passenger,
+    ),
   };
 }
 
@@ -1559,9 +1603,9 @@ function advancePassenger(
     ['boarding', 'exiting'].includes(passenger.phase)
   )
     return { ...passenger, phaseStartedAt: passenger.phaseStartedAt + now - previousTime };
-  const point = passengerPosition(passenger, now);
   if (passenger.inHandoff) {
     if (now - passenger.phaseStartedAt < HANDOFF_DURATION_MS) return passenger;
+    const point = passengerPosition(passenger, now);
     const landed: Passenger = {
       ...passenger,
       wagon: 'next',
@@ -1585,8 +1629,10 @@ function advancePassenger(
     return landed;
   }
   if (['parked', 'boarded', 'confirmed'].includes(passenger.phase)) return passenger;
-  if (passenger.phase === 'retiring') return startReturning(passenger, now, point);
+  if (passenger.phase === 'retiring')
+    return startReturning(passenger, now, passengerPosition(passenger, now));
   if (now - passenger.phaseStartedAt < passenger.durationMs) return passenger;
+  const point = passengerPosition(passenger, now);
   if (passenger.phase === 'preparing')
     return {
       ...startPhase(passenger, 'confirmed', now, [wagonSeat('next', passenger.seatIndex)], 0),
@@ -1694,33 +1740,35 @@ export function advancePassengerMotion(
     workingState = prepareForDeparture(
       {
         ...workingState,
-        passengers: workingState.passengers.map((passenger) =>
+        passengers: mapPassengers(workingState.passengers, (passenger) =>
           advancePassenger(passenger, elapsedMs, state.elapsedMs, false, false, true),
         ),
       },
       elapsedMs,
     );
-    const includedIds = new Set(workingState.preparationTransactions.map((tx) => tx.id));
-    const readyIds = new Set(
-      workingState.passengers
-        .filter(
-          (passenger) =>
-            passenger.departureIncluded &&
-            passenger.wagon === 'next' &&
-            passenger.phase === 'confirmed',
+    if (elapsedMs - state.preparationStartedAt >= PREPARATION_DURATION_MS) {
+      const included = preparationInclusions(workingState.preparationTransactions);
+      const readyIds = new Set<string>();
+      for (const passenger of workingState.passengers) {
+        if (
+          passenger.departureIncluded &&
+          passenger.wagon === 'next' &&
+          passenger.phase === 'confirmed'
         )
-        .map((passenger) => passenger.tx.id),
-    );
-    const allIncludedReady = [...includedIds].every((id) => readyIds.has(id));
-    const allExcludedOutside = workingState.passengers.every(
-      (passenger) => passenger.departureIncluded || !isRider(passenger, 'next', elapsedMs),
-    );
-    if (
-      elapsedMs - state.preparationStartedAt >= PREPARATION_DURATION_MS &&
-      allIncludedReady &&
-      allExcludedOutside
-    )
-      workingState = departPreparedWagons(workingState, elapsedMs);
+          readyIds.add(passenger.tx.id);
+      }
+      let allIncludedReady = true;
+      for (const id of included.keys()) {
+        if (readyIds.has(id)) continue;
+        allIncludedReady = false;
+        break;
+      }
+      const allExcludedOutside = workingState.passengers.every(
+        (passenger) => passenger.departureIncluded || !isRider(passenger, 'next', elapsedMs),
+      );
+      if (allIncludedReady && allExcludedOutside)
+        workingState = departPreparedWagons(workingState, elapsedMs);
+    }
   }
   const handoffAt = workingState.handoffStartedAt;
   const handoffMoving = handoffAt !== null && elapsedMs - handoffAt < HANDOFF_DURATION_MS;
@@ -1741,9 +1789,9 @@ export function advancePassengerMotion(
     ),
   );
   const grouped = groupWaitingObservations(advanced, workingState, elapsedMs);
-  const blockedIds = new Set(
-    handoffMoving ? workingState.departingPassengers.map((pose) => pose.tx.id) : [],
-  );
+  const blockedIds = handoffMoving
+    ? departingTransactionIds(workingState.departingPassengers)
+    : new Set<string>();
   const admitted = admitPassengers(
     grouped.passengers,
     workingState.pendingAdmissions,
@@ -1765,11 +1813,7 @@ export function advancePassengerMotion(
       handoffMoving || workingState.preparationStartedAt !== null
         ? workingState.departingBlock
         : null,
-    ...retainWaitingArchive(
-      grouped,
-      [],
-      admitted.passengers.map((passenger) => passenger.tx.id),
-    ),
+    ...retainWaitingArchive(grouped, [], residentTransactionIds(admitted.passengers)),
     ...projectionOccupancy(admitted.passengers),
   };
   if (next.preparationStartedAt !== null) next = prepareForDeparture(next, elapsedMs);

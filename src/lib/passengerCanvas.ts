@@ -28,6 +28,13 @@ export interface CanvasSceneView {
 export interface CanvasPassengerFrame {
   passengers: readonly CanvasPassenger[];
   view: CanvasSceneView;
+  departure?: CanvasDepartureLayer;
+}
+
+export interface CanvasDepartureLayer {
+  passengers: readonly CanvasPassenger[];
+  clips: readonly CanvasClip[];
+  offsetY: number;
 }
 
 export interface CanvasViewport {
@@ -154,6 +161,9 @@ type SpritePainter = (context: CanvasRenderingContext2D) => void;
 const SPRITE_DENSITY = 4;
 const MAX_SHIRT_SPRITES = 256;
 const MAX_HASHES = 2_048;
+const MAX_DEPARTURE_PIXELS = 1_000_000;
+const MAX_DEPARTURE_DIMENSION = 2_048;
+const MAX_DEPARTURE_DENSITY = 4;
 const skinPalette = ['#ebcba6', '#bf8f65', '#966746', '#d2ad84'] as const;
 
 function createSprite(
@@ -300,6 +310,20 @@ export function createPassengerCanvasRenderer(): {
   const shirts = new Map<string, PassengerSprite>();
   const icons = new Map<string, PassengerSprite>();
   const hashes = new Map<string, number>();
+  let departureImage:
+    | {
+        passengers: readonly CanvasPassenger[];
+        clips: readonly CanvasClip[];
+        mirrored: boolean;
+        density: number;
+        sprite?: PassengerSprite;
+      }
+    | undefined;
+
+  function clearDepartureImage(): void {
+    if (departureImage?.sprite) releaseSprite(departureImage.sprite);
+    departureImage = undefined;
+  }
 
   function hashFor(id: string): number {
     const previous = hashes.get(id);
@@ -421,8 +445,90 @@ export function createPassengerCanvasRenderer(): {
     context.restore();
   }
 
+  function drawDeparture(
+    context: CanvasRenderingContext2D,
+    departure: CanvasDepartureLayer,
+    mirrored: boolean,
+    requestedDensity: number,
+  ): void {
+    const clips = departure.clips.filter(
+      (clip) =>
+        Number.isFinite(clip.x) &&
+        Number.isFinite(clip.y) &&
+        Number.isFinite(clip.width) &&
+        Number.isFinite(clip.height) &&
+        clip.width > 0 &&
+        clip.height > 0,
+    );
+    const left = Math.min(...clips.map((clip) => clip.x));
+    const top = Math.min(...clips.map((clip) => clip.y));
+    const width = Math.max(...clips.map((clip) => clip.x + clip.width)) - left;
+    const height = Math.max(...clips.map((clip) => clip.y + clip.height)) - top;
+    const density = Math.min(
+      Math.max(0.25, Math.min(MAX_DEPARTURE_DENSITY, requestedDensity)),
+      MAX_DEPARTURE_DIMENSION / width,
+      MAX_DEPARTURE_DIMENSION / height,
+      Math.sqrt(MAX_DEPARTURE_PIXELS / (width * height)),
+    );
+    if (
+      departureImage &&
+      (departureImage.passengers !== departure.passengers ||
+        departureImage.clips !== departure.clips ||
+        departureImage.mirrored !== mirrored ||
+        departureImage.density !== density)
+    ) {
+      clearDepartureImage();
+    }
+    if (!departureImage && Number.isFinite(density) && density > 0) {
+      // A failed allocation is attempted once for these inputs, never once per animation frame.
+      departureImage = {
+        passengers: departure.passengers,
+        clips: departure.clips,
+        mirrored,
+        density,
+      };
+      let canvas: HTMLCanvasElement | undefined;
+      try {
+        canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.floor(width * density));
+        canvas.height = Math.max(1, Math.floor(height * density));
+        const imageContext = canvas.getContext('2d');
+        if (imageContext) {
+          // Fit the exact clip bounds into the bounded backing store, including fractional sizes.
+          imageContext.scale(canvas.width / width, canvas.height / height);
+          imageContext.translate(-left, -top);
+          imageContext.beginPath();
+          for (const clip of clips) roundedRectangle(imageContext, clip);
+          imageContext.clip();
+          for (const passenger of departure.passengers) {
+            drawPassenger(imageContext, passenger, mirrored);
+          }
+          departureImage.sprite = { canvas, x: left, y: top, width, height };
+        }
+      } catch {
+        // The individual drawing path still retains every occupant if raster allocation fails.
+      }
+      if (canvas && !departureImage.sprite) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+    context.save();
+    context.translate(0, departure.offsetY);
+    if (departureImage?.sprite) {
+      paintSprite(context, departureImage.sprite);
+    } else {
+      context.beginPath();
+      for (const clip of departure.clips) roundedRectangle(context, clip);
+      context.clip();
+      for (const passenger of departure.passengers) drawPassenger(context, passenger, mirrored);
+    }
+    context.restore();
+  }
+
   return {
     draw(context, frame, viewport, selectedId, highlightedId) {
+      if (!frame.departure) clearDepartureImage();
       const ratio = Number.isFinite(viewport.ratio) && viewport.ratio > 0 ? viewport.ratio : 1;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, viewport.width, viewport.height);
@@ -438,6 +544,9 @@ export function createPassengerCanvasRenderer(): {
       if (frame.view.mirrored) {
         context.translate(2 * frame.view.startX + frame.view.width, 0);
         context.scale(-1, 1);
+      }
+      if (frame.departure) {
+        drawDeparture(context, frame.departure, frame.view.mirrored, layout.scale * ratio);
       }
       // Actors inside the same vehicle share one clip operation and transform.
       // Keep their original order so overlaps and hit testing agree.
@@ -467,6 +576,7 @@ export function createPassengerCanvasRenderer(): {
       context.restore();
     },
     dispose() {
+      clearDepartureImage();
       for (const sprites of [heads, shirts, icons]) {
         for (const sprite of sprites.values()) releaseSprite(sprite);
         sprites.clear();

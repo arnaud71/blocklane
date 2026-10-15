@@ -69,6 +69,8 @@ function wagonPassengerClips(
   return clips;
 }
 
+const DEPARTURE_PASSENGER_CLIPS = wagonPassengerClips(NEXT_WAGON_Y, CLOSED_DOORS, true, false);
+
 function ReadableText({
   mirrored,
   x,
@@ -178,7 +180,10 @@ function Wagon({
     ((handoffProgress !== undefined && handoffProgress >= 0.7) ||
       (arrivalProgress !== undefined && arrivalProgress >= 0.7));
   const [captionMain, ...captionDetails] = caption.split(' · ');
-  const transactionCount = new Set(passengers.map((pose) => pose.tx.id)).size;
+  const transactionCount = useMemo(
+    () => new Set(passengers.map((pose) => pose.tx.id)).size,
+    [passengers],
+  );
   const transactionCountDescription = `${number(transactionCount)} transactions représentées à bord de ce wagon. Ce compteur porte sur l’échantillon animé, pas sur toutes les transactions d’un bloc réel.`;
   return (
     <g
@@ -632,6 +637,15 @@ export const StreetScene = memo(function StreetScene({
       return label;
     };
   }, [feeDisplayUnit, quote, quoteUsable]);
+  const departurePassengers = useMemo(
+    () =>
+      motion.departingPassengers.map((pose) => ({
+        pose: projectPose(pose),
+        color: feeColor(pose),
+        interactive: false,
+      })),
+    [motion.departingPassengers, projectPose, feeColor],
+  );
   const canvasFrame = useMemo<CanvasPassengerFrame>(() => {
     const firstDoors = moving ? CLOSED_DOORS : (motion.doors?.next ?? CLOSED_DOORS);
     const secondDoors = moving || arriving ? CLOSED_DOORS : (motion.doors?.later ?? CLOSED_DOORS);
@@ -646,11 +660,16 @@ export const StreetScene = memo(function StreetScene({
     });
     return {
       view: { startX: VIEW_START_X, width: viewWidth, height: SCENE_HEIGHT, mirrored },
+      departure: moving
+        ? {
+            passengers: departurePassengers,
+            clips: DEPARTURE_PASSENGER_CLIPS,
+            offsetY: departureOffset,
+          }
+        : undefined,
       passengers: [
-        ...(moving ? (motion.departingPassengers ?? []) : next).map((pose) => ({
+        ...(!moving ? next : []).map((pose) => ({
           ...describe(pose),
-          interactive: !moving,
-          offsetY: departureOffset,
           clips: firstClips,
         })),
         ...(moving ? carried : later).map((pose) => ({
@@ -667,7 +686,7 @@ export const StreetScene = memo(function StreetScene({
     progress,
     wagonY,
     motion.doors,
-    motion.departingPassengers,
+    departurePassengers,
     next,
     carried,
     later,
