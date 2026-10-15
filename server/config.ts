@@ -7,6 +7,7 @@ export const UPSTREAM_TIMEOUT_MS = 8_000;
 export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const BITCOIN_DEFAULT_URL = 'https://mempool.space/api';
 export const ETHEREUM_DEFAULT_URL = 'https://ethereum-rpc.publicnode.com';
+export const BITCOIN_RPC_DEFAULT_URL = 'https://bitcoin-rpc.publicnode.com';
 
 export interface ServerConfig {
   host: string;
@@ -15,6 +16,8 @@ export interface ServerConfig {
   ethereumRpcUrl: string;
   bitcoinSource: string;
   ethereumSource: string;
+  bitcoinRpcUrl?: string;
+  bitcoinPoolSource?: string;
   trustedProxyIps: string[];
   apiRateLimitPerMinute: number;
 }
@@ -59,6 +62,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     .parse(env.HOST ?? '127.0.0.1');
   const bitcoinApiUrl = validateUpstreamUrl(env.BITCOIN_API_URL ?? BITCOIN_DEFAULT_URL);
   const ethereumRpcUrl = validateUpstreamUrl(env.ETHEREUM_RPC_URL ?? ETHEREUM_DEFAULT_URL);
+  const configuredBitcoinRpc = env.BITCOIN_RPC_URL ?? BITCOIN_RPC_DEFAULT_URL;
+  const bitcoinRpcUrl = configuredBitcoinRpc.trim()
+    ? validateUpstreamUrl(configuredBitcoinRpc)
+    : undefined;
   if (new URL(bitcoinApiUrl).search)
     throw new Error('Bitcoin API base URL cannot contain query parameters.');
   const proxyValues = (env.TRUSTED_PROXY_IPS ?? '')
@@ -82,6 +89,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port,
     bitcoinApiUrl,
     ethereumRpcUrl,
+    bitcoinRpcUrl,
+    bitcoinPoolSource:
+      bitcoinRpcUrl === BITCOIN_RPC_DEFAULT_URL ? 'Bitcoin PublicNode' : 'RPC Bitcoin configuré',
     bitcoinSource:
       bitcoinApiUrl === BITCOIN_DEFAULT_URL ? 'mempool.space' : 'API Bitcoin configurée',
     ethereumSource:

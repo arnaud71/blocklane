@@ -25,6 +25,7 @@ import {
   parsePayload,
   ratioToNumber,
   requestJson,
+  requestMempoolJson,
   UpstreamError,
   type Fetcher,
 } from '../network.js';
@@ -112,6 +113,81 @@ type EthereumBlock = z.infer<typeof ethereumFullBlockSchema>;
 type EthereumBlockHeader = z.infer<typeof ethereumBlockHeaderSchema>;
 const MEMPOOL_REFRESH_MS = 30_000;
 const MEMPOOL_MAX_AGE_MS = 120_000;
+const POOL_REFRESH_MS = 30_000;
+const POOL_FAILURE_RETRY_MS = 60_000;
+const POOL_RPC_RETRY_MS = 5 * 60_000;
+const MAX_POOL_TRANSACTIONS = 50_000;
+type EthereumPoolFailure = 'rpc' | 'too-large' | 'timeout' | 'invalid' | 'unavailable';
+interface EthereumPool {
+  pending: EthereumTransaction[];
+  pendingCount: number;
+  queuedCount: number;
+  observedAt: number;
+}
+
+function poolRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new UpstreamError('invalid');
+  }
+  return value as Record<string, unknown>;
+}
+
+/** Accept the complete Geth txpool_content account/nonce maps, without truncating them. */
+function parseEthereumPool(value: unknown, observedAt: number): EthereumPool {
+  const content = poolRecord(value);
+  const pending: EthereumTransaction[] = [];
+  const identifiers = new Set<string>();
+  let pendingCount = 0;
+  let queuedCount = 0;
+  for (const category of ['pending', 'queued'] as const) {
+    const accounts = poolRecord(content[category]);
+    const accountEntries = Object.entries(accounts);
+    if (accountEntries.length > MAX_POOL_TRANSACTIONS) throw new UpstreamError('too-large');
+    const seenAccounts = new Set<string>();
+    for (const [account, nonces] of accountEntries) {
+      if (!addressSchema.safeParse(account).success || seenAccounts.has(account.toLowerCase())) {
+        throw new UpstreamError('invalid');
+      }
+      seenAccounts.add(account.toLowerCase());
+      const nonceEntries = Object.entries(poolRecord(nonces));
+      if (nonceEntries.length > MAX_POOL_TRANSACTIONS - identifiers.size) {
+        throw new UpstreamError('too-large');
+      }
+      const seenNonces = new Set<bigint>();
+      for (const [nonceKey, raw] of nonceEntries) {
+        if (!/^(?:0|[1-9][0-9]{0,77}|0x[0-9a-fA-F]{1,64})$/.test(nonceKey)) {
+          throw new UpstreamError('invalid');
+        }
+        const transaction = parsePayload(ethereumTransactionSchema, raw);
+        const nonce = parsePayload(hexQuantitySchema, poolRecord(raw).nonce);
+        const nonceNumber = BigInt(nonce);
+        if (
+          transaction.from.toLowerCase() !== account.toLowerCase() ||
+          nonceNumber !== BigInt(nonceKey) ||
+          seenNonces.has(nonceNumber) ||
+          identifiers.has(transaction.hash.toLowerCase())
+        ) {
+          throw new UpstreamError('invalid');
+        }
+        // Validate resources before retaining a compact transaction representation.
+        if (bigintToSafeNumber(BigInt(transaction.gas)) === 0) {
+          throw new UpstreamError('invalid');
+        }
+        seenNonces.add(nonceNumber);
+        identifiers.add(transaction.hash.toLowerCase());
+        if (identifiers.size > MAX_POOL_TRANSACTIONS) throw new UpstreamError('too-large');
+        if (category === 'pending') {
+          pending.push({ ...transaction, input: transaction.input.length > 2 ? '0x00' : '0x' });
+          pendingCount += 1;
+        } else {
+          queuedCount += 1;
+        }
+      }
+    }
+  }
+  return { pending, pendingCount, queuedCount, observedAt };
+}
+
 const ethereumTxpoolStatusSchema = z.object({
   pending: hexQuantitySchema,
   queued: hexQuantitySchema,
@@ -142,13 +218,14 @@ let nextRpcId = 0;
 
 async function rpc(
   config: ServerConfig,
-  method: 'eth_chainId' | 'eth_getBlockByNumber' | 'txpool_status',
+  method: 'eth_chainId' | 'eth_getBlockByNumber' | 'txpool_status' | 'txpool_content',
   params: unknown[],
   fetcher?: Fetcher,
 ): Promise<unknown> {
   nextRpcId = (nextRpcId % 1_000_000_000) + 1;
   const id = nextRpcId;
-  const raw = await requestJson(config.ethereumRpcUrl, {
+  const request = method === 'txpool_content' ? requestMempoolJson : requestJson;
+  const raw = await request(config.ethereumRpcUrl, {
     ...(fetcher === undefined ? {} : { fetcher }),
     ...(method === 'txpool_status' ? { maxBytes: 64 * 1_024 } : {}),
     body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
@@ -270,6 +347,47 @@ export function createEthereumProvider(
   let mempoolRefreshFailed = false;
   let mempoolNextRefreshAt = 0;
   let mempoolInFlight: Promise<void> | null = null;
+  let lastPool: EthereumPool | null = null;
+  let poolFailure: EthereumPoolFailure | null = null;
+  let poolNextRefreshAt = 0;
+  let poolInFlight: Promise<void> | null = null;
+
+  async function refreshPool(): Promise<void> {
+    try {
+      const raw = await rpc(config, 'txpool_content', [], fetcher);
+      lastPool = parseEthereumPool(raw, now());
+      poolFailure = null;
+      poolNextRefreshAt = now() + POOL_REFRESH_MS;
+    } catch (error) {
+      poolFailure =
+        error instanceof UpstreamError &&
+        ['rpc', 'too-large', 'timeout', 'invalid'].includes(error.kind)
+          ? (error.kind as EthereumPoolFailure)
+          : 'unavailable';
+      // A refusal is usually a provider capability restriction, not a transient block failure.
+      poolNextRefreshAt =
+        now() + (poolFailure === 'rpc' ? POOL_RPC_RETRY_MS : POOL_FAILURE_RETRY_MS);
+    } finally {
+      poolInFlight = null;
+    }
+  }
+
+  function schedulePoolRefresh(): void {
+    if (poolInFlight !== null || now() < poolNextRefreshAt) return;
+    // Drop old contents before a new large response is parsed. They never become a stale top.
+    lastPool = null;
+    poolInFlight = Promise.resolve().then(refreshPool);
+  }
+
+  function currentPool(): EthereumPool | null {
+    if (lastPool === null) return null;
+    const age = now() - lastPool.observedAt;
+    if (age < 0 || age > POOL_REFRESH_MS) {
+      lastPool = null;
+      return null;
+    }
+    return lastPool;
+  }
 
   async function refreshMempool(): Promise<void> {
     try {
@@ -376,6 +494,7 @@ export function createEthereumProvider(
     const confirmedTransactions = toTransactions(latest, 'confirmed', CONFIRMED_SAMPLE_LIMIT);
     // Background refresh on the same fixed, chain-verified RPC; never await this optional call.
     scheduleMempoolRefresh();
+    schedulePoolRefresh();
     const collectedAt = now();
     const latestBlockValue = latestEthereumBlockValue(latest, latestBlock, collectedAt);
     for (const [id, lastObservedAt] of tracked) {
@@ -419,6 +538,32 @@ export function createEthereumProvider(
       } catch {
         // An unusable candidate block cannot invalidate a valid confirmed observation.
         hasCandidates = false;
+      }
+    }
+    const pool = currentPool();
+    let usingPool = false;
+    if (pool !== null && latest.baseFeePerGas !== undefined) {
+      try {
+        const baseFeeWei = BigInt(latest.baseFeePerGas);
+        pendingTransactions = toTransactions(
+          {
+            ...latest,
+            hash: null,
+            transactions: pool.pending.filter(
+              (transaction) =>
+                !confirmedIds.has(transaction.hash.toLowerCase()) &&
+                effectiveGasPriceWei(transaction, baseFeeWei) >= baseFeeWei,
+            ),
+          },
+          'pending',
+          PENDING_SAMPLE_LIMIT,
+        );
+        usingPool = true;
+        hasCandidates = true;
+      } catch {
+        // A malformed fee/resource never invalidates valid blocks or the pending-block fallback.
+        lastPool = null;
+        poolFailure = 'invalid';
       }
     }
     // Insertion order is an LRU for bounded ID retention; disappearance is never a confirmation.
@@ -548,9 +693,23 @@ export function createEthereumProvider(
         return previous === undefined ? [] : [previous.block];
       }),
     ];
-    const candidateCoverage = hasCandidates
-      ? `Jusqu’à ${PENDING_SAMPLE_LIMIT} transactions candidates aux meilleurs prix de gas effectifs du bloc pending du fournisseur, classées avant limitation, et confirmations du dernier bloc. Ce classement ne représente pas un top du mempool global.`
-      : 'Transactions confirmées du dernier bloc. Aucun candidat distinct exploitable fourni.';
+    const candidateCoverage =
+      usingPool && pool !== null
+        ? `Top ${PENDING_SAMPLE_LIMIT} maximum du pending local couvrant la base fee du dernier bloc : ${pool.pendingCount} pending reçues, ${pool.queuedCount} queued exclues via txpool_content. Prix effectif exact avant limitation ; collecte ≤30 s. Aucun classement mondial.`
+        : hasCandidates
+          ? `Jusqu’à ${PENDING_SAMPLE_LIMIT} candidats aux meilleurs prix de gas effectifs du bloc pending fourni, classés avant limitation. Ce repli n’est pas le top du mempool.`
+          : 'Transactions confirmées du dernier bloc ; aucun candidat distinct exploitable.';
+    const poolAttempt = usingPool
+      ? ''
+      : poolFailure === 'rpc'
+        ? ' txpool_content refusé par le fournisseur ; nouvel essai dans 5 min.'
+        : poolFailure === 'too-large'
+          ? ' txpool_content dépasse les bornes ; réponse entière écartée.'
+          : poolFailure === 'invalid'
+            ? ' txpool_content inexploitable ; réponse entière écartée.'
+            : poolFailure === 'timeout' || poolFailure === 'unavailable'
+              ? ' txpool_content temporairement indisponible.'
+              : ' Collecte txpool_content en cours ou expirée.';
     const mempool = currentMempool();
     const mempoolCoverage =
       mempool === null
@@ -564,9 +723,19 @@ export function createEthereumProvider(
       status: 'ok',
       source: config.ethereumSource,
       observedAt: now(),
-      coverage: `${candidateCoverage} ${mempoolCoverage} Taille des blocs en gas ; passagers = limite de gas déclarée. Suivi borné à 2 048 IDs observés pendant 30 min, journal de 16 blocs ; rattrapage de 8 blocs au maximum.`,
+      coverage: `${candidateCoverage} ${mempoolCoverage} Taille des blocs en gas ; passagers = limite de gas déclarée. Suivi : 2 048 IDs/30 min, journal de 16 blocs, rattrapage de 8 blocs.`,
       pendingCount: mempool === null ? null : mempool.pending + mempool.queued,
       mempool,
+      sampling:
+        usingPool && pool !== null
+          ? {
+              method: 'txpool_content',
+              source: config.ethereumSource,
+              observedAt: pool.observedAt,
+              pendingCount: pool.pendingCount,
+              queuedCount: pool.queuedCount,
+            }
+          : null,
       latestBlockValue,
       feeRate:
         latest.baseFeePerGas === undefined
@@ -576,7 +745,7 @@ export function createEthereumProvider(
       transactions,
       blocks,
       inclusions,
-      message: `Indicateur de frais : base fee du dernier bloc, sans pourboire.${partialHistory ? ' Certains blocs précédents sont temporairement indisponibles.' : ''}${incompleteCatchup ? ' Vérification d’inclusions incomplète ; les hauteurs manquantes seront retentées sans présumer de confirmation.' : ''}${skippedHistory ? ' Une interruption a dépassé la fenêtre : certains blocs plus anciens n’ont pas été vérifiés.' : ''}${branchChanged ? ' Modification de branche observée : journal précédent réinitialisé, sans garantie de finalité.' : ''}`,
+      message: `Indicateur de frais : base fee du dernier bloc, sans pourboire.${poolAttempt}${partialHistory ? ' Certains blocs précédents sont temporairement indisponibles.' : ''}${incompleteCatchup ? ' Vérification d’inclusions incomplète ; les hauteurs manquantes seront retentées sans présumer de confirmation.' : ''}${skippedHistory ? ' Une interruption a dépassé la fenêtre : certains blocs plus anciens n’ont pas été vérifiés.' : ''}${branchChanged ? ' Modification de branche observée : journal précédent réinitialisé, sans garantie de finalité.' : ''}`,
     });
   };
 }

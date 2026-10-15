@@ -17,6 +17,7 @@ import {
 } from '../../shared/model.js';
 import type { ServerConfig } from '../config.js';
 import { fetchBitcoinTopFeeSample } from './bitcoinTopFees.js';
+import { createBitcoinPoolReader, type BitcoinPoolReader } from './bitcoinPool.js';
 import {
   parsePayload,
   ratioToNumber,
@@ -349,13 +350,20 @@ export function createBitcoinProvider(
   fetcher?: Fetcher,
   now: () => number = Date.now,
   readProjection?: BitcoinProjectionReader,
+  readPool?: BitcoinPoolReader,
 ): () => Promise<Snapshot> {
   const observations: BitcoinObservations = { pending: new Map(), verified: new Map() };
   // An injected HTTP transport must not unexpectedly open a real WebSocket.
   // Provider fixtures can inject a projection reader separately.
   const projectionReader =
     readProjection ?? (fetcher === undefined ? fetchBitcoinTopFeeSample : undefined);
-  return () => collectBitcoinSnapshot(config, fetcher, now, observations, projectionReader);
+  const poolReader =
+    readPool ??
+    (fetcher === undefined && readProjection === undefined
+      ? createBitcoinPoolReader(config, undefined, now)
+      : undefined);
+  return () =>
+    collectBitcoinSnapshot(config, fetcher, now, observations, projectionReader, poolReader);
 }
 
 export async function fetchBitcoinSnapshot(
@@ -363,6 +371,7 @@ export async function fetchBitcoinSnapshot(
   fetcher?: Fetcher,
   now: () => number = Date.now,
   readProjection?: BitcoinProjectionReader,
+  readPool?: BitcoinPoolReader,
 ): Promise<Snapshot> {
   return collectBitcoinSnapshot(
     config,
@@ -370,6 +379,7 @@ export async function fetchBitcoinSnapshot(
     now,
     { pending: new Map(), verified: new Map() },
     readProjection ?? (fetcher === undefined ? fetchBitcoinTopFeeSample : undefined),
+    readPool,
   );
 }
 
@@ -379,7 +389,11 @@ async function collectBitcoinSnapshot(
   now: () => number,
   observations: BitcoinObservations,
   projectionReader: BitcoinProjectionReader | undefined,
+  poolReader: BitcoinPoolReader | undefined,
 ): Promise<Snapshot> {
+  // A complete-pool download runs in the background. Live block polling never
+  // waits for its potentially large response, and injected transports stay isolated.
+  const previousPool = poolReader?.() ?? null;
   const paths = ['/v1/blocks', '/mempool', '/v1/fees/recommended'];
   const options = fetcher === undefined ? {} : { fetcher };
   const [[blocksRaw, mempoolRaw, feesRaw], recentResult, projectionResult] = await Promise.all([
@@ -388,7 +402,10 @@ async function collectBitcoinSnapshot(
       (value) => ({ value, failed: false }),
       () => ({ value: null, failed: true }),
     ),
-    (projectionReader?.(config) ?? Promise.reject(new UpstreamError('network'))).then(
+    (previousPool
+      ? Promise.resolve(null)
+      : (projectionReader?.(config) ?? Promise.reject(new UpstreamError('network')))
+    ).then(
       (value) => ({ value, failed: false }),
       () => ({ value: null, failed: true }),
     ),
@@ -397,32 +414,35 @@ async function collectBitcoinSnapshot(
   const mempool = parsePayload(bitcoinMempoolSchema, mempoolRaw);
   const fees = parsePayload(bitcoinFeesSchema, feesRaw);
   const observedAt = now();
+  const pool = poolReader?.() ?? null;
   const recentParsed = bitcoinRecentSchema.safeParse(recentResult.value);
   const hasTopFeeSample = !projectionResult.failed && projectionResult.value !== null;
   const hasRecentSample = !recentResult.failed && recentParsed.success;
-  const transactions: Tx[] = hasTopFeeSample
-    ? projectionResult.value!.slice(0, PENDING_SAMPLE_LIMIT)
-    : hasRecentSample
-      ? recentParsed
-          .data!.sort((left, right) => {
-            const leftValue = BigInt(left.fee) * BigInt(right.vsize);
-            const rightValue = BigInt(right.fee) * BigInt(left.vsize);
-            return (
-              (leftValue > rightValue ? -1 : leftValue < rightValue ? 1 : 0) ||
-              left.txid.localeCompare(right.txid)
-            );
-          })
-          .slice(0, PENDING_SAMPLE_LIMIT)
-          .map((tx) => ({
-            id: tx.txid.toLowerCase(),
-            chain: 'bitcoin' as const,
-            feeRate: ratioToNumber(BigInt(tx.fee), BigInt(tx.vsize)),
-            size: tx.vsize,
-            status: 'pending' as const,
-            kind: 'transfer' as const,
-            value: 'Montant non fourni',
-          }))
-      : [];
+  const transactions: Tx[] = pool
+    ? pool.transactions
+    : hasTopFeeSample
+      ? projectionResult.value!.slice(0, PENDING_SAMPLE_LIMIT)
+      : hasRecentSample
+        ? recentParsed
+            .data!.sort((left, right) => {
+              const leftValue = BigInt(left.fee) * BigInt(right.vsize);
+              const rightValue = BigInt(right.fee) * BigInt(left.vsize);
+              return (
+                (leftValue > rightValue ? -1 : leftValue < rightValue ? 1 : 0) ||
+                left.txid.localeCompare(right.txid)
+              );
+            })
+            .slice(0, PENDING_SAMPLE_LIMIT)
+            .map((tx) => ({
+              id: tx.txid.toLowerCase(),
+              chain: 'bitcoin' as const,
+              feeRate: ratioToNumber(BigInt(tx.fee), BigInt(tx.vsize)),
+              size: tx.vsize,
+              status: 'pending' as const,
+              kind: 'transfer' as const,
+              value: 'Montant non fourni',
+            }))
+        : [];
   for (const [id, tracked] of observations.pending) {
     if (observedAt - tracked.lastSeenAt >= BITCOIN_TRACKED_SAMPLE_TTL_MS) {
       observations.pending.delete(id);
@@ -436,7 +456,7 @@ async function collectBitcoinSnapshot(
       ),
     ),
   );
-  // Neither the first projected block nor the recent arrivals cover the whole mempool.
+  // Even a complete pool contributes only its limited top fee sample here.
   // Older samples remain only as candidates for an explicit inclusion check.
   for (const transaction of transactions) {
     const previous = observations.pending.get(transaction.id);
@@ -498,10 +518,19 @@ async function collectBitcoinSnapshot(
     chain: 'bitcoin',
     mode: 'live',
     status: 'ok',
-    source: config.bitcoinSource,
+    source: pool ? `${config.bitcoinSource} · ${pool.source}` : config.bitcoinSource,
     observedAt,
-    coverage: `${hasTopFeeSample ? `Échantillon regroupant jusqu’à ${PENDING_SAMPLE_LIMIT} transactions aux meilleurs frais propres (fee/vsize) parmi le premier bloc projeté du fournisseur Bitcoin, sans inventaire exhaustif ni garantie de sélection par un mineur.` : hasRecentSample ? 'Sélection des meilleurs frais parmi les seules transactions récentes du fournisseur Bitcoin : le classement du premier bloc projeté est indisponible, ce repli ne représente pas un top global.' : 'L’échantillon de transactions en attente est temporairement indisponible ; les blocs et indicateurs du fournisseur restent disponibles.'} Suivi borné à 2 048 identifiants et 30 minutes ; inclusions vérifiées auprès du fournisseur, sans garantie de finalité. Chaque nœud peut observer un mempool différent. Tailles en octets virtuels.`,
-    pendingCount: mempool.count,
+    coverage: `${pool ? `Top ${PENDING_SAMPLE_LIMIT} des frais propres par vB (poids/4) de l’index ${pool.source}, réconcilié avec son dernier inventaire d’IDs : détails des ajouts seuls, au plus toutes les 30 s ; collecte complète au départ et toutes les 10 min. Compteur de cette source ; blocs/frais conseillés : ${config.bitcoinSource}. Index non atomique, CPFP exclu.` : hasTopFeeSample ? `Échantillon regroupant jusqu’à ${PENDING_SAMPLE_LIMIT} transactions aux meilleurs frais propres (fee/vsize) parmi le premier bloc projeté du fournisseur Bitcoin, sans inventaire exhaustif ni garantie de sélection par un mineur.` : hasRecentSample ? 'Sélection des meilleurs frais parmi les seules transactions récentes du fournisseur Bitcoin : le classement du premier bloc projeté est indisponible, ce repli ne représente pas un top global.' : 'L’échantillon de transactions en attente est temporairement indisponible ; les blocs et indicateurs du fournisseur restent disponibles.'} Suivi borné à 2 048 identifiants et 30 minutes ; inclusions vérifiées auprès du fournisseur, sans garantie de finalité. Chaque nœud peut observer un mempool différent. Tailles en octets virtuels.`,
+    pendingCount: pool?.count ?? mempool.count,
+    sampling: pool
+      ? {
+          method: 'getrawmempool',
+          source: pool.source,
+          observedAt: pool.observedAt,
+          pendingCount: pool.count,
+          update: pool.update,
+        }
+      : null,
     latestBlockValue,
     feeRate: fees.halfHourFee,
     feeUnit: 'sat/vB',
@@ -510,6 +539,6 @@ async function collectBitcoinSnapshot(
     inclusions: [...observations.verified.values()].sort(
       (left, right) => left.block.height - right.block.height,
     ),
-    message: `Indicateur de frais : estimation du fournisseur pour environ 30 minutes, sans garantie de confirmation.${hasTopFeeSample ? '' : ' Classement du premier bloc projeté indisponible ; aucun top global annoncé.'}${confirmationUnavailable ? ' Vérification des inclusions partielle : les hauteurs non vérifiées seront réessayées ; la disparition d’une transaction ne prouve rien.' : ''}${inclusionResult.truncated ? ' Interruption prolongée : rattrapage limité aux 8 derniers blocs ; les blocs plus anciens ne sont pas vérifiés.' : ''}${inclusionResult.reorganized ? ' Changement de branche détecté : les anciennes preuves concernées sont retirées, les identifiants encore conservés sont suivis à nouveau.' : ''}`,
+    message: `Frais conseillés par ${config.bitcoinSource} pour environ 30 min, sans garantie d’inclusion.${pool ? ' Classement de l’index RPC complet selon le dernier inventaire reçu ; réconciliation non atomique.' : ' Collecte RPC complète en cours ou indisponible : repli limité, sans top global.'}${confirmationUnavailable ? ' Inclusions partiellement vérifiées : hauteurs manquantes réessayées ; une disparition ne prouve rien.' : ''}${inclusionResult.truncated ? ' Rattrapage limité aux 8 derniers blocs ; les blocs plus anciens ne sont pas vérifiés.' : ''}${inclusionResult.reorganized ? ' Branche modifiée : anciennes preuves concernées retirées, identifiants conservés suivis à nouveau.' : ''}`,
   });
 }

@@ -416,9 +416,17 @@ export function InfoPanel({
           {sourceState}
         </span>
         {snapshot && (
-          <time dateTime={new Date(snapshot.observedAt).toISOString()}>
-            Relevé à {new Date(snapshot.observedAt).toLocaleTimeString('fr-CH')}
-          </time>
+          <span>
+            <time dateTime={new Date(snapshot.observedAt).toISOString()}>
+              Chaîne à {new Date(snapshot.observedAt).toLocaleTimeString('fr-CH')}
+            </time>
+            {snapshot.sampling && (
+              <time dateTime={new Date(snapshot.sampling.observedAt).toISOString()}>
+                {' · Pool à '}
+                {new Date(snapshot.sampling.observedAt).toLocaleTimeString('fr-CH')}
+              </time>
+            )}
+          </span>
         )}
       </div>
     </aside>

@@ -31,7 +31,7 @@ export function useProviderMempool(snapshot: Snapshot | null) {
   const pool = providerMempool(snapshot);
   const deadline =
     snapshot?.mode === 'live' &&
-    snapshot.chain === 'ethereum' &&
+    (snapshot.chain === 'ethereum' || snapshot.sampling?.method === 'getrawmempool') &&
     pool.observedAt !== null &&
     pool.total !== null
       ? pool.observedAt + (pool.status === 'ok' ? 30_001 : 120_001)

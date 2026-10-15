@@ -353,8 +353,13 @@ export function App() {
                   mode={mode}
                   transactionsPerGroup={queueGroupSize}
                 />
-                <p className="chain-coverage">
-                  {mode === 'demo' ? 'Données fictives' : 'Échantillon limité'} ·{' '}
+                <p className="chain-coverage" title={current?.coverage}>
+                  {mode === 'demo'
+                    ? 'Données fictives'
+                    : current?.sampling
+                      ? 'Top des pending · pool observé'
+                      : 'Sélection partielle'}{' '}
+                  ·{' '}
                   {current
                     ? Math.min(
                         PENDING_SAMPLE_LIMIT,
@@ -362,8 +367,9 @@ export function App() {
                       )
                     : 0}{' '}
                   en attente échantillonnées
+                  {current?.sampling ? ` · ${current.sampling.source}` : ''}
                   {current?.observedAt
-                    ? ` · relevé ${new Date(current.observedAt).toLocaleTimeString('fr-CH')}`
+                    ? ` · relevé ${new Date(current.sampling?.observedAt ?? current.observedAt).toLocaleTimeString('fr-CH')}`
                     : ''}
                 </p>
               </section>
@@ -457,9 +463,9 @@ export function App() {
                     <span className="coin bitcoin">₿</span>
                     <h3>Bitcoin</h3>
                     <p>
-                      API mempool.space par défaut. Blocs récents, transactions récentes en attente
-                      et frais recommandés. Source remplaçable par un service compatible hébergé par
-                      la HEG.
+                      Blocs et frais conseillés : mempool.space par défaut. Le classement des frais
+                      utilise le mempool complet d’un RPC distinct, Bitcoin PublicNode par défaut,
+                      lorsque sa collecte aboutit. Sinon, une sélection partielle est signalée.
                     </p>
                     <a
                       className="text-link"
@@ -474,9 +480,10 @@ export function App() {
                     <span className="coin ethereum">◆</span>
                     <h3>Ethereum</h3>
                     <p>
-                      JSON-RPC mainnet, PublicNode par défaut. Dernier bloc et bloc candidat lorsque
-                      le fournisseur le permet. Ce dernier ne couvre pas toutes les transactions en
-                      attente, ni les transactions privées.
+                      JSON-RPC mainnet, PublicNode par défaut. Le classement utilise les
+                      transactions pending éligibles du pool complet lorsque le fournisseur le
+                      permet ; le bloc candidat sert de repli partiel. Cette vue locale ne couvre
+                      pas les transactions privées ni tous les nœuds.
                     </p>
                     <a
                       className="text-link"

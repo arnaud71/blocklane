@@ -54,7 +54,7 @@ export function GlobalQueue({ snapshot, chain, mode, transactionsPerGroup }: Glo
         : 'Aucune foule n’est dessinée sans comptage disponible.'
       : `${number(groupCount)} silhouettes regroupent exactement ${number(total)} transactions : chaque groupe contient ${number(groupSize)} transactions, sauf le dernier qui en contient ${number(lastGroupSize)}. Ces silhouettes collectives ne correspondent pas à des transactions identifiées et leurs couleurs n’indiquent aucun frais.`;
   const note = `${pool.note} ${groupingNote}`;
-  const sourceName = observation?.source ?? 'la source';
+  const sourceName = pool.source ?? observation?.source ?? 'la source';
   const breakdown =
     pool.pending !== null && pool.queued !== null
       ? `Vue locale de ${sourceName} · ${number(pool.pending)} pending + ${number(pool.queued)} queued`

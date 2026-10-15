@@ -1,6 +1,7 @@
 import type { Snapshot } from '../../shared/model';
 
 export type ProviderMempool = {
+  source?: string;
   total: number | null;
   pending: number | null;
   queued: number | null;
@@ -34,13 +35,20 @@ export function providerMempool(snapshot: Snapshot | null): ProviderMempool {
   }
   if (snapshot.chain === 'bitcoin') {
     if (!validCount(snapshot.pendingCount)) return unavailable();
+    const sample = snapshot.sampling?.method === 'getrawmempool' ? snapshot.sampling : null;
+    const observedAt = sample?.observedAt ?? snapshot.observedAt;
+    const source = sample?.source ?? snapshot.source;
+    const age = Date.now() - observedAt;
+    if (sample && (age < -5_000 || age > 120_000)) return unavailable();
+    const status = snapshot.status === 'stale' || (sample && age > 30_000) ? 'stale' : 'ok';
     return {
       total: snapshot.pendingCount,
       pending: snapshot.pendingCount,
       queued: null,
-      observedAt: snapshot.observedAt,
-      status: snapshot.status,
-      note: `Mempool observée par ${snapshot.source}, relevée à ${new Date(snapshot.observedAt).toLocaleTimeString('fr-CH')}. Vue locale de la source, distincte de l’échantillon affiché.`,
+      observedAt,
+      source,
+      status,
+      note: `Mempool observée par ${source}, relevée à ${new Date(observedAt).toLocaleTimeString('fr-CH')}${status === 'stale' ? ', dernière valeur conservée' : ''}. Vue locale de la source, distincte de l’échantillon affiché.`,
     };
   }
   const pool = snapshot.mempool;
@@ -60,6 +68,7 @@ export function providerMempool(snapshot: Snapshot | null): ProviderMempool {
     pool.status === 'stale' || age > 30_000 || snapshot.status === 'stale' ? 'stale' : 'ok';
   return {
     total,
+    source: snapshot.source,
     pending: pool.pending,
     queued: pool.queued,
     observedAt: pool.observedAt,

@@ -39,6 +39,32 @@ export const ethereumMempoolSchema = z
   });
 export type EthereumMempool = z.infer<typeof ethereumMempoolSchema>;
 
+const samplingFields = {
+  source: z.string().min(1).max(100),
+  observedAt: safeNonnegativeInteger,
+};
+
+/** Only populated after a complete bounded pool or ID reconciliation has been validated. */
+export const samplingSchema = z.discriminatedUnion('method', [
+  z.object({
+    ...samplingFields,
+    method: z.literal('getrawmempool'),
+    update: z.enum(['full', 'incremental']),
+    pendingCount: safeNonnegativeInteger.max(100_000),
+  }),
+  z
+    .object({
+      ...samplingFields,
+      method: z.literal('txpool_content'),
+      pendingCount: safeNonnegativeInteger.max(50_000),
+      queuedCount: safeNonnegativeInteger.max(50_000),
+    })
+    .refine((sample) => sample.pendingCount + sample.queuedCount <= 50_000, {
+      message: 'Pool sample exceeds its bounded transaction count',
+    }),
+]);
+export type Sampling = z.infer<typeof samplingSchema>;
+
 const blockValueFields = {
   blockHeight: safeNonnegativeInteger,
   /** Exact nonnegative integer amount in the chain's smallest unit. */
@@ -137,6 +163,8 @@ export const snapshotSchema = z
     pendingCount: safeNonnegativeInteger.nullable(),
     /** Optional Ethereum local pool breakdown with its own observation time. */
     mempool: ethereumMempoolSchema.nullable().optional(),
+    /** Full-pool sampling provenance, separate from the chain poll and pool counters. */
+    sampling: samplingSchema.nullable().optional(),
     feeRate: finiteNonnegative.nullable(),
     feeUnit: z.enum(['sat/vB', 'Gwei']),
     /** Optional market conversion; its availability is independent of chain data. */
@@ -171,6 +199,22 @@ export const snapshotSchema = z
         path: ['usdQuote'],
         message: 'Demonstration snapshots cannot carry a live market quote',
       });
+    }
+    if (snapshot.sampling != null) {
+      const sample = snapshot.sampling;
+      if (
+        snapshot.mode !== 'live' ||
+        snapshot.status === 'unavailable' ||
+        (sample.method === 'getrawmempool') !== (snapshot.chain === 'bitcoin') ||
+        (sample.method === 'getrawmempool' && snapshot.pendingCount !== sample.pendingCount) ||
+        snapshot.transactions.filter((tx) => tx.status === 'pending').length > sample.pendingCount
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['sampling'],
+          message: 'Full-pool sampling metadata does not match the snapshot',
+        });
+      }
     }
     if (snapshot.latestBlockValue != null) {
       const value = snapshot.latestBlockValue;

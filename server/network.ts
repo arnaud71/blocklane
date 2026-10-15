@@ -21,6 +21,29 @@ export interface JsonRequestOptions {
 }
 
 export async function requestJson(url: string, options: JsonRequestOptions = {}): Promise<unknown> {
+  return requestBoundedJson(url, options, MAX_RESPONSE_BYTES);
+}
+
+/** Pool snapshots and inventories only; ordinary upstream reads retain their 2 MiB ceiling. */
+export async function requestMempoolJson(
+  url: string,
+  options: JsonRequestOptions = {},
+): Promise<unknown> {
+  return requestBoundedJson(
+    url,
+    {
+      ...options,
+      timeoutMs: Math.min(options.timeoutMs ?? UPSTREAM_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS),
+    },
+    32 * 1024 * 1024,
+  );
+}
+
+async function requestBoundedJson(
+  url: string,
+  options: JsonRequestOptions,
+  ceilingBytes: number,
+): Promise<unknown> {
   validateUpstreamUrl(url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? UPSTREAM_TIMEOUT_MS);
@@ -43,7 +66,7 @@ export async function requestJson(url: string, options: JsonRequestOptions = {})
       await response.body?.cancel();
       throw new UpstreamError('http');
     }
-    const maxBytes = Math.min(options.maxBytes ?? MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES);
+    const maxBytes = Math.min(options.maxBytes ?? ceilingBytes, ceilingBytes);
     const contentLength = response.headers.get('content-length');
     if (contentLength !== null && Number(contentLength) > maxBytes) {
       await response.body?.cancel();
