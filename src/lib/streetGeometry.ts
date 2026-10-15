@@ -31,7 +31,9 @@ const DOOR_PLATFORM_X = 294;
 const WAGON_SEAT_COLUMNS = 4;
 const WAGON_SEAT_COLUMN_SPACING = 49 / (WAGON_SEAT_COLUMNS - 1);
 const WAGON_SEAT_ROW_SPACING = 9;
-const QUEUE_COLUMNS = 8;
+// Keep the full sample on the quay; denser columns may overlap on narrow displays.
+const QUEUE_ROWS = 30;
+const QUEUE_COLUMNS = Math.max(8, Math.ceil(PENDING_SAMPLE_LIMIT / QUEUE_ROWS));
 const QUEUE_COLUMN_SPACING = 90 / (QUEUE_COLUMNS - 1);
 const QUEUE_ROW_SPACING = 14;
 

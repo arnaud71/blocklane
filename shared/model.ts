@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const chainIdSchema = z.enum(['bitcoin', 'ethereum']);
 export type ChainId = z.infer<typeof chainIdSchema>;
 
-export const PENDING_SAMPLE_LIMIT = 240;
+export const PENDING_SAMPLE_LIMIT = 480;
 export const CONFIRMED_SAMPLE_LIMIT = 24;
 export const MAX_TRANSACTIONS = PENDING_SAMPLE_LIMIT + CONFIRMED_SAMPLE_LIMIT;
 export const MAX_BLOCKS = 3;

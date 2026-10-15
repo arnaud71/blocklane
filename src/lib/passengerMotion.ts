@@ -39,7 +39,7 @@ export const PREPARATION_DURATION_MS = 1_000;
 const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v13';
+const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v14';
 
 export type PassengerPhase =
   | 'arriving'

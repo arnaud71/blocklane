@@ -515,8 +515,8 @@ export function createEthereumProvider(
       const observed = received.get(height);
       if (observed !== undefined) retainProof(observed);
     }
-    // Verify retained IDs before current arrivals can evict them. This transient map
-    // holds at most 2,048 retained IDs plus 240 sampled arrivals (2,288), then returns to its cap.
+    // Verify retained IDs before current arrivals can evict them. The transient map
+    // holds retained IDs plus PENDING_SAMPLE_LIMIT arrivals, then returns to the retained cap.
     while (tracked.size > MAX_TRACKED_TRANSACTIONS) {
       const oldest = tracked.keys().next().value as string | undefined;
       if (oldest === undefined) break;

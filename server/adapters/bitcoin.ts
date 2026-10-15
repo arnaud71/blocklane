@@ -458,8 +458,8 @@ async function collectBitcoinSnapshot(
   );
   const inclusionResult = await collectBitcoinInclusions(config, fetcher, observations, blocks);
   const confirmationUnavailable = inclusionResult.unavailable;
-  // Verify retained IDs before the new fee sample can evict them. This temporary
-  // map is bounded by 2,048 retained observations plus at most 240 current arrivals (2,288).
+  // Verify retained IDs before the new fee sample can evict them. The temporary map
+  // holds retained observations plus at most PENDING_SAMPLE_LIMIT current arrivals.
   if (confirmationUnavailable) {
     // A failed optional inclusion check must not evict the IDs needed for its retry.
     // Keep their refreshed metadata when they are still sampled; fill remaining
