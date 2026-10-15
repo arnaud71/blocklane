@@ -8,7 +8,7 @@ Les demandes explicites de l'utilisateur priment sur ce guide. Progresser de fa�
 
 ## Architecture à préserver
 
-- React, TypeScript strict et Vite pour l'interface ; SVG/CSS pour la ville animée.
+- React, TypeScript strict et Vite pour l'interface ; Canvas 2D natif pour les voyageurs individuels et SVG/CSS pour les wagons, portes, phares, maisons, textes et groupes collectifs statiques. Préserver la sélection au pointeur et le navigateur de transactions HTML accessible au clavier, sans recréer un élément DOM par voyageur.
 - API HTTP Node 24 en lecture seule ; fournisseurs et clés configurés côté serveur.
 - Contrat partagé validé par Zod entre les adaptateurs et l'interface.
 - Aucun accès FairOnChain nécessaire au chargement, aux données ou aux animations.

@@ -2,21 +2,32 @@
 
 ## Recommandation
 
-Construire une application web portable : **React + TypeScript + Vite, SVG/CSS pour la scène, petit serveur HTTP Node 24 et adaptateurs de données en lecture seule**. Un seul langage, un contrat explicite et aucun service de stockage pour la version initiale. Le serveur sert les fichiers compilés et l'API sur le même domaine.
+Construire une application web portable : **React + TypeScript + Vite, Canvas 2D natif pour les voyageurs individuels et SVG/CSS pour le décor, petit serveur HTTP Node 24 et adaptateurs de données en lecture seule**. Un seul langage, un contrat explicite et aucun service de stockage pour la version initiale. Le serveur sert les fichiers compilés et l'API sur le même domaine.
 
 TxStreet fournit la référence de métaphore. Son dépôt décrit Vue, Bulma, Phaser, des communications socket.io et un backend distinct historiquement accompagné de nœuds, MongoDB et Redis. Ce projet propose une implémentation originale avec une infrastructure plus petite ; il ne dépend ni du backend ni des ressources TxStreet. [Source : dépôt TxStreet](https://github.com/txstreet/txstreet).
 
 ## Options de rendu
 
-| Option             | Atouts                                                                                               | Coût d'entretien                                                        | Décision                                                |
-| ------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------- |
-| SVG/CSS avec React | Dessins nets, éléments inspectables, accessibilité, tests DOM, aucun moteur graphique supplémentaire | Limiter les objets animés et le travail React                           | Retenue pour l'échantillon pédagogique initial          |
-| Canvas/PixiJS      | Adapté à des milliers d'objets et effets GPU                                                         | Cycle de rendu, hit testing, accessibilité et tests visuels spécifiques | À introduire seulement après profilage d'un besoin réel |
-| Moteur de jeu / 3D | Grande liberté de caméra et de mise en scène                                                         | Assets, GPU, compatibilité mobile et dépendances supplémentaires        | Différé ; aucune nécessité pour comprendre les chaînes  |
+| Option                           | Atouts                                                                      | Coût d'entretien                                                              | Décision                                                                               |
+| -------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| SVG/CSS avec React               | Dessins nets, éléments inspectables, accessibilité native                   | Coût DOM et réconciliation pour de nombreux voyageurs                         | Conservé pour wagons, décor, textes et groupes collectifs                              |
+| Canvas 2D natif                  | Un dessin raster par rue, images préparées réutilisables, aucune dépendance | Découpes, sélection au pointeur et parcours clavier à maintenir explicitement | Retenu pour les voyageurs individuels le 15 octobre 2026, à la demande du propriétaire |
+| PixiJS ou autre moteur graphique | Effets et gestion graphique plus élaborés                                   | Dépendance et cycle de rendu supplémentaires                                  | Différé ; aucun besoin concret supplémentaire                                          |
+| Moteur de jeu / 3D               | Grande liberté de caméra et de mise en scène                                | Assets, GPU, compatibilité mobile et dépendances supplémentaires              | Différé ; aucune nécessité pour comprendre les chaînes                                 |
 
 Une belle scène ne nécessite pas une transaction visible pour chaque transaction du réseau. Le serveur limite les données et la scène regroupe les voyageurs. Le design privilégie la composition, les couleurs, les détails vectoriels et des mouvements sobres. Le texte et les statistiques restent utilisables lorsque les animations sont en pause ou réduites.
 
-L'optimisation conserve React et SVG, les 240 voyageurs courants et les 48 unités des projections. Les valeurs immuables réutilisables restent séparées des phases de mouvement : poses immobiles, projections du quai, dessin des voyageurs et libellés de frais. Les têtes et accessoires sont mémorisés séparément des bras, jambes et flèches animés. Les formateurs numériques sont partagés et bornés ; les caches liés aux transactions utilisent des références faibles afin de ne pas ajouter une rétention d'observations. Les médianes natives dépendent de l'instantané, tandis que l'ancienneté des cours et du pool continue d'être évaluée séparément. La scène et le campus sont mémorisés, avec des commandes de sélection stables ; la publication des effectifs vers l'interface est espacée d'au moins 250 ms et ne change pas la cadence des déplacements à environ 24 images par seconde. Aucun moteur graphique, dépendance ou service n'est introduit. Aucun profilage ni mesure du coût ou du gain n'est effectué ; cette optimisation reste non validée pendant la suspension des contrôles.
+### Décision de rendu du 15 octobre 2026
+
+Le propriétaire demande la migration en Canvas 2D après avoir constaté des ralentissements avec l'échantillon étendu. La décision réduit le nombre d'éléments DOM individuels sans réduire l'échantillon de 240 voyageurs ni les 48 unités des projections. Ce choix est explicite ; il ne constitue pas une conclusion de profilage et aucun gain mesuré n'est annoncé.
+
+React conserve les panneaux, contrôles, détails et données de sélection. Chaque rue reçoit un Canvas transparent pour ses voyageurs individuels. Les wagons, portes, phares, textes, maisons et groupes collectifs statiques restent en SVG. Un cache borné de petites surfaces prépare les têtes, torses et icônes ; membres, flèches et sélection suivent les poses. La couleur des t-shirts est appliquée directement à chaque observation sans l'ancienne transition CSS de 300 ms. Le painter consomme les mises à jour existantes et n'ajoute aucune boucle d'animation, moteur graphique, dépendance ou service.
+
+Le moteur pur reste indépendant du rendu. Le painter reproduit le `viewBox`, la projection du quai, le miroir Bitcoin, les positions des wagons et les découpes de l'intérieur et des portes. Le hit test utilise les transformations inverses et les mêmes découpes dans l'ordre de profondeur du dessin ; un occupant masqué ne devient pas une cible à travers la carrosserie. Les cohortes historiques en départ restent non interactives. La sélection clavier passe par un navigateur HTML natif par rue, avec choix de transaction, ouverture des détails, Échap et gestion du focus, au lieu d'un élément SVG ou d'un bouton par avatar. Un Canvas indisponible affiche une explication tout en conservant les contrôles HTML.
+
+Le ratio de pixels est plafonné à 2. Chaque surface est bornée à quatre millions de pixels et 8 192 pixels par dimension, avec adaptation au viewport et nettoyage des observations de taille et événements. Les petites surfaces mises en cache sont également bornées : douze variantes de tête, 256 couleurs de torse et cinq icônes, à une densité de quatre pixels par unité de scène. Le cache d'apparence conserve au plus 2 048 hashes par rue ; les surfaces sont libérées au démontage. La migration conserve les limites de résidents et d'archives, les preuves d'inclusion, la préparation minimale d'une seconde, les panneaux à quatre secondes et le cache blockchain à trois secondes. Elle reste non validée pendant la suspension des contrôles ; les anciens tests DOM fondés sur les personnages SVG devront être adaptés lors de leur reprise autorisée.
+
+Les réutilisations déjà introduites restent applicables : poses immobiles, projections du quai, libellés de frais, formateurs numériques partagés et bornés, et caches à références faibles liés aux transactions. Les médianes natives dépendent de l'instantané, tandis que l'ancienneté des cours et du pool continue d'être évaluée séparément. La scène et le campus sont mémorisés, avec des commandes de sélection stables ; la publication des effectifs vers l'interface est espacée d'au moins 250 ms et ne change pas la cadence des déplacements à environ 24 images par seconde. Aucun profilage ni mesure du coût ou du gain n'est effectué.
 
 Le moteur garde les références des personnages et collections inchangés, avec caches `WeakMap` pour la géométrie des chemins, l'apparence des transactions et leurs poses. Les longueurs et directions des segments sont calculées une seule fois pour un même chemin immuable ; la table d'archive est copiée seulement lorsqu'elle change. Le hook compare les informations effectivement dessinées avant de publier un état React, tout en avançant son horloge interne pour les échéances et admissions. Il annule sa boucle `requestAnimationFrame` quand le document devient masqué et la relance avec un repère de temps neuf au retour. Les limites, preuves, réservations, portes, marqueur du dernier départ, pause et mouvements réduits restent indépendants de ces réutilisations ; aucun cache ne devient une source de données blockchain.
 
@@ -60,7 +71,7 @@ Le bandeau occupe une ligne de 92 pixels en bas de chaque réseau, avant la couv
 
 ```mermaid
 flowchart LR
-    B[Navigateur : interface et ville SVG] --> A[API Node : routes fixes]
+    B[Navigateur : React, voyageurs Canvas 2D et décor SVG] --> A[API Node : routes fixes]
     A --> C[Cache partagé et contrôle de fraîcheur]
     C --> V[Validation et normalisation]
     V --> BTC[Adaptateur Bitcoin]
@@ -168,7 +179,7 @@ Le lien FairOnChain est optionnel et désactivé par défaut. Il ouvre une resso
 
 ## Décisions initiales — 14 octobre 2026
 
-- Retenir SVG et un échantillon limité pour réduire l'entretien et garder une interface accessible.
+- Retenir initialement SVG et un échantillon limité pour réduire l'entretien et garder une interface accessible ; le rendu des voyageurs est remplacé par Canvas 2D dans la décision du 15 octobre 2026 ci-dessus.
 - Garder un backend HTTP natif et un contrat Zod, sans framework serveur, base ou broker initial.
 - Démarrer sur des sources publiques remplaçables, en rendant leurs limites visibles.
 - Conserver les clés et les appels fournisseur côté serveur.
@@ -182,3 +193,7 @@ Le lien FairOnChain est optionnel et désactivé par défaut. Il ouvre une resso
 - Partager un seul campus central entre deux rues symétriques occupant la largeur du desktop. Conserver un moteur géométrique canonique, projeter Bitcoin en miroir et élargir les quais selon le viewport sans étirer les personnages ; faire entrer les nouveaux voyageurs par les bords extérieurs.
 - Représenter collectivement le compte local du fournisseur dans une file inférieure bornée à 48 silhouettes par réseau, avec total exact et échelle commune explicite. Garder ce bandeau indépendant des voyageurs échantillonnés, des archives et des confirmations, sans inventer un total mondial ni ajouter une collecte.
 - Réduire le travail répété de React et des calculs du rendu par réutilisation de valeurs immuables et caches bornés ou à références faibles, sans réduire l'échantillon ni ajouter un moteur. Séparer l'actualisation des effectifs de la cadence des mouvements et garder indépendants provenance, fraîcheur des données et caches réseau. Conditionner toute affirmation de gain à des mesures préalables.
+
+## Évolution — 15 octobre 2026
+
+- Migrer les voyageurs individuels vers Canvas 2D natif à la demande du propriétaire, avec images préparées bornées, transformations et découpes communes au hit test. Garder le décor SVG, les contrôles React et un parcours de sélection HTML accessible. Ne pas annoncer de gain sans mesure et conserver la suspension des contrôles.

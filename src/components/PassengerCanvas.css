@@ -1,0 +1,206 @@
+.passenger-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.street-scene--passenger-hovered {
+  cursor: pointer;
+}
+
+.passenger-canvas-controls {
+  position: absolute;
+  top: 7px;
+  max-width: calc(100% - 16px);
+  z-index: 4;
+  cursor: default;
+}
+
+.passenger-canvas-controls--bitcoin {
+  left: 8px;
+}
+
+.passenger-canvas-controls--ethereum {
+  right: 8px;
+}
+
+.passenger-canvas-browse {
+  display: block;
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid #a7c9ac40;
+  border-radius: 5px;
+  background: #102b27ed;
+  color: #d1e3d5;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.passenger-canvas-controls--ethereum .passenger-canvas-browse {
+  margin-left: auto;
+}
+
+.passenger-canvas-browse:hover,
+.passenger-canvas-browse:focus-visible,
+.passenger-canvas-browse[aria-expanded='true'] {
+  background: #23483b;
+  color: #f0f6eb;
+}
+
+.passenger-canvas-browser {
+  width: min(350px, calc(100vw - 32px));
+  max-width: 100%;
+  max-height: calc(100svh - 180px);
+  overflow-y: auto;
+  margin-top: 7px;
+  padding: 14px;
+  border: 1px solid #aecdbb66;
+  border-radius: 8px;
+  background: #102c28;
+  box-shadow: 0 10px 28px #00120e66;
+  color: #deece1;
+  font-size: 12px;
+}
+
+.passenger-canvas-browser-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.passenger-canvas-browser-heading strong {
+  font-size: 13px;
+}
+
+.passenger-canvas-browser-heading button {
+  padding: 5px 0 5px 5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 11px;
+}
+
+.passenger-canvas-browser label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.passenger-canvas-browser select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px;
+  border: 1px solid #9cb7a8;
+  border-radius: 4px;
+  background: #0b231f;
+  color: #e3f1e5;
+  font-size: 12px;
+}
+
+.passenger-canvas-browser p {
+  margin: 10px 0 14px;
+  color: #b0cabb;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.passenger-canvas-browser .passenger-canvas-browser-description {
+  color: #d4e4d8;
+}
+
+.passenger-canvas-details {
+  min-height: 35px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: #add3b7;
+  color: #102c28;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.passenger-canvas-details:hover {
+  color: #102c28;
+  background: #c7e7ce;
+}
+
+.passenger-canvas-details:disabled {
+  opacity: 0.5;
+}
+
+.passenger-canvas-tooltip {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -100%);
+  padding: 10px 12px;
+  border: 1px solid #d2e0b775;
+  border-radius: 7px;
+  background: #0d2824f5;
+  color: #dce7da;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.passenger-canvas-tooltip strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.passenger-canvas-tooltip--below {
+  transform: translate(-50%, 0);
+}
+
+.passenger-canvas-tooltip > span {
+  display: block;
+  margin-top: 5px;
+  color: #f0d7a0;
+}
+
+.passenger-canvas-tooltip p {
+  margin: 6px 0 0;
+  color: #b5c9b9;
+}
+
+.passenger-canvas-unavailable {
+  position: absolute;
+  top: 47px;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #e4c68188;
+  border-radius: 6px;
+  background: #142c26f5;
+  color: #efe2c4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .passenger-canvas-browse {
+    min-height: 28px;
+    padding: 5px 6px;
+    font-size: 9px;
+  }
+
+  .passenger-canvas-browser {
+    padding: 10px;
+  }
+
+  .passenger-canvas-browser-heading {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+}

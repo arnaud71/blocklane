@@ -175,39 +175,6 @@
   border: 0;
 }
 
-.street-person {
-  cursor: pointer;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.street-person-ring {
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
-
-.street-person:hover .street-person-ring,
-.street-person:focus-visible .street-person-ring,
-.street-person--selected .street-person-ring {
-  opacity: 1;
-}
-
-.street-person:focus-visible .street-person-hit {
-  fill: #f5d589;
-  fill-opacity: 0.14;
-  stroke: #f5d589;
-  stroke-width: 1.5;
-}
-
-.street-person-body {
-  transform-box: fill-box;
-  transform-origin: center bottom;
-}
-
-.street-person-shirt {
-  transition: fill 300ms ease;
-}
-
 .street-wagon-headlight-emission,
 .street-wagon-brake-emission {
   opacity: 0;
@@ -245,21 +212,12 @@
   transition: none;
 }
 
-.street-scene--demo .street-person--demo .street-person-body {
-  animation: street-traveler var(--traveler-duration, 4.8s) ease-in-out infinite;
-  animation-delay: var(--person-delay, 0s);
-}
-
 .street-scene--demo .street-tram--a {
   animation: street-departure-a var(--scene-duration, 18s) cubic-bezier(0.45, 0, 0.2, 1) infinite;
 }
 
 .street-scene--demo .street-tram--b {
   animation: street-departure-b var(--scene-duration, 18s) cubic-bezier(0.45, 0, 0.2, 1) infinite;
-}
-
-.street-scene:not(.street-scene--demo) .street-person--arrival .street-person-body {
-  animation: street-live-arrival 680ms cubic-bezier(0.2, 0.7, 0.3, 1) 1;
 }
 
 .street-scene:not(.street-scene--demo) .street-tram--observed-departure {
@@ -277,23 +235,6 @@
 .street-scene--reduced-motion *::after {
   animation: none !important;
   transition: none !important;
-}
-
-@keyframes street-traveler {
-  0%,
-  38%,
-  100% {
-    rotate: 0deg;
-    translate: 0 0;
-  }
-  45% {
-    rotate: -2deg;
-    translate: 0 -1px;
-  }
-  52% {
-    rotate: 1deg;
-    translate: 0 0;
-  }
 }
 
 @keyframes street-departure-a {
@@ -340,17 +281,6 @@
     opacity: 1;
   }
   99.99% {
-    translate: 0 0;
-    opacity: 1;
-  }
-}
-
-@keyframes street-live-arrival {
-  0% {
-    translate: 0 -7px;
-    opacity: 0;
-  }
-  100% {
     translate: 0 0;
     opacity: 1;
   }

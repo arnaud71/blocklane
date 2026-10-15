@@ -1,4 +1,16 @@
-# État des vérifications — 14 octobre 2026
+# État des vérifications — 15 octobre 2026
+
+## Migration des voyageurs en Canvas 2D — non validé
+
+**Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour cette migration. Aucun profilage, benchmark, appel API de validation ou mesure de fréquence, de mémoire ou de gain n'est réalisé. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous, y compris les contrôles de l'ancienne scène SVG, ne couvrent pas ce rendu.
+
+Les voyageurs individuels passent à un Canvas 2D natif transparent par rue, sans dépendance. React garde l'interface ; SVG garde les wagons, portes, phares, textes, maisons et groupes collectifs statiques. Des petites surfaces mises en cache avec une borne explicite réutilisent les têtes, torses et icônes ; membres, flèches et sélection suivent les poses. Les frais colorés et tailles de tête sont conservés, avec couleurs appliquées directement sans l'ancienne transition CSS de 300 ms. Le dessin réutilise l'horloge existante sans seconde boucle d'animation.
+
+Les matrices de vue, largeur du quai, miroir Bitcoin, positions des wagons et découpes de portes ou d'intérieur déterminent le dessin et le hit test inverse au pointeur. Le parcours clavier utilise un navigateur HTML natif par rue avec sélection, détails, Échap et gestion du focus ; il ne recrée pas un bouton ou un titre par personnage. Les historiques non suivis et le groupe en départ restent non interactifs. Un message signale explicitement une indisponibilité de Canvas, avec informations HTML conservées.
+
+Le ratio de pixels est plafonné à 2 ; chaque surface est bornée à quatre millions de pixels et 8 192 pixels par dimension. Les observations de taille, événements et caches ont un cycle de nettoyage. Le moteur pur et les bornes de 240 voyageurs courants, 48 unités par wagon, 480 résidents ordinaires et les limites temporaires sont conservés. Les sources, preuves, contrats, préparation d'une seconde, cache blockchain de trois secondes et rotation des panneaux de quatre secondes sont inchangés.
+
+À la reprise autorisée, adapter les sélecteurs et fixtures qui cherchent les voyageurs dans le DOM SVG, sans supprimer les contrôles de provenance ou de bornes. Couvrir par données contrôlées les matrices et leur inverse, les deux miroirs, les rapports de viewport et pixels, les découpes, l'ordre de profondeur, les portes, les superpositions et cohortes maximales pendant départ, promotion et arrivée. Examiner le parcours clavier, la fermeture et le retour du focus, une transaction disparue, la sélection au pointeur, l'indisponibilité de Canvas et le nettoyage des surfaces ou événements. Couvrir pause, onglet masqué, mouvements réduits, couleurs et expiration du cours, puis mesurer le coût avant/après dans les mêmes conditions. Aucun de ces contrôles n'est exécuté pendant la suspension ; aucun gain de fluidité n'est déclaré validé.
 
 ## Optimisation des calculs et du rendu — non validé
 

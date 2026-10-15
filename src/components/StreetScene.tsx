@@ -32,7 +32,8 @@ import {
 import { number } from '../lib/format';
 import { feeColorForRate } from '../lib/feeColors';
 import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib/feeDisplay';
-import { Passenger } from './Passenger';
+import { PassengerCanvas } from './PassengerCanvas';
+import type { CanvasClip, CanvasPassengerFrame } from '../lib/passengerCanvas';
 import { InfoPanel, type SceneActivity } from './InfoPanel';
 import { useUsableUsdQuote } from '../hooks/useSourceFreshness';
 import './StreetScene.css';
@@ -43,6 +44,30 @@ const CLOSED_DOORS = { entry: false, exit: false };
 const VIEW_START_X = 172;
 const CORRIDOR_X = 298;
 const MIN_VIEW_WIDTH = 236;
+
+function wagonPassengerClips(
+  y: number,
+  doors: { entry: boolean; exit: boolean },
+  moving: boolean,
+  preparing: boolean,
+): readonly CanvasClip[] {
+  const clips: CanvasClip[] = [
+    {
+      x: WAGON_X + 3,
+      y: y + 40,
+      width: WAGON_WIDTH - 6,
+      height: WAGON_HEIGHT - 51,
+      radius: 6,
+    },
+  ];
+  if (doors.entry || moving || preparing) {
+    clips.push({ x: WAGON_X + 72, y: y + ENTRY_DOOR_Y - 34, width: 54, height: 56 });
+  }
+  if (doors.exit || moving || preparing) {
+    clips.push({ x: WAGON_X + 72, y: y + EXIT_DOOR_Y - 34, width: 54, height: 56 });
+  }
+  return clips;
+}
 
 function ReadableText({
   mirrored,
@@ -127,13 +152,7 @@ function Wagon({
   arrivalProgress,
   offsetY = 0,
   opacity = 1,
-  historical = false,
-  selectedId,
-  onSelect,
-  feeColor,
-  feeLabel,
   mirrored,
-  projectPose,
 }: {
   kind: WagonKind | 'handoff';
   y: number;
@@ -147,19 +166,11 @@ function Wagon({
   arrivalProgress?: number;
   offsetY?: number;
   opacity?: number;
-  historical?: boolean;
-  selectedId?: string;
-  onSelect: (tx: Tx) => void;
-  feeColor: (pose: PassengerPose) => string;
-  feeLabel?: (tx: Tx) => string;
   mirrored: boolean;
-  projectPose: (pose: PassengerPose) => PassengerPose;
 }) {
-  const clipId = useId().replace(/:/g, '') + '-wagon-interior';
-  const headlightGradientId = `${clipId}-headlight-beam`;
+  const headlightGradientId = useId().replace(/:/g, '') + '-headlight-beam';
   const entryOpen = !moving && doors.entry;
   const exitOpen = !moving && doors.exit;
-  const preservePassages = moving || preparationProgress !== undefined;
   const headlightsOn = moving || preparationProgress !== undefined;
   const brakeLightsOn =
     moving &&
@@ -201,21 +212,6 @@ function Wagon({
           <stop offset="0" stopColor="#fff4bb" stopOpacity="0" />
           <stop offset="1" stopColor="#fff4bb" stopOpacity=".38" />
         </linearGradient>
-        <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-          <rect
-            x={WAGON_X + 3}
-            y={y + 40}
-            width={WAGON_WIDTH - 6}
-            height={WAGON_HEIGHT - 51}
-            rx="6"
-          />
-          {(entryOpen || preservePassages) && (
-            <rect x={WAGON_X + 72} y={y + ENTRY_DOOR_Y - 34} width="54" height="56" />
-          )}
-          {(exitOpen || preservePassages) && (
-            <rect x={WAGON_X + 72} y={y + EXIT_DOOR_Y - 34} width="54" height="56" />
-          )}
-        </clipPath>
       </defs>
       <g transform={`translate(${WAGON_X} ${y})`} aria-hidden="true">
         <g className="street-wagon-headlight-emission">
@@ -300,20 +296,6 @@ function Wagon({
       <g transform={`translate(${WAGON_X} ${y})`}>
         <SideDoor y={ENTRY_DOOR_Y} open={entryOpen} purpose="entry" mirrored={mirrored} />
         <SideDoor y={EXIT_DOOR_Y} open={exitOpen} purpose="exit" mirrored={mirrored} />
-      </g>
-      <g clipPath={`url(#${clipId})`}>
-        {passengers.map((pose) => (
-          <Passenger
-            key={pose.tx.id}
-            pose={projectPose(pose)}
-            selected={!historical && selectedId === pose.tx.id}
-            feeColor={feeColor(pose)}
-            feeLabel={feeLabel?.(pose.tx)}
-            onSelect={onSelect}
-            interactive={!historical}
-            mirrored={mirrored}
-          />
-        ))}
       </g>
       <g
         className="street-wagon-transaction-count"
@@ -596,16 +578,21 @@ export const StreetScene = memo(function StreetScene({
   const arrivalProgress = motion.laterArrivalProgress ?? 1;
   const laterY = SCENE_HEIGHT + 12 + (LATER_WAGON_Y - SCENE_HEIGHT - 12) * arrivalProgress;
   const wagonY = moving ? LATER_WAGON_Y + (NEXT_WAGON_Y - LATER_WAGON_Y) * progress : laterY;
-  const next = motion.passengers.filter(
-    (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'next',
+  const { next, later, carried, pedestrians } = useMemo(
+    () => ({
+      next: motion.passengers.filter(
+        (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'next',
+      ),
+      later: motion.passengers.filter(
+        (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'later',
+      ),
+      carried: motion.passengers.filter((pose) => pose.inWagon && pose.inHandoff),
+      pedestrians: motion.passengers
+        .filter((pose) => !pose.inWagon)
+        .sort((left, right) => left.y - right.y),
+    }),
+    [motion.passengers],
   );
-  const later = motion.passengers.filter(
-    (pose) => pose.inWagon && !pose.inHandoff && pose.wagon === 'later',
-  );
-  const carried = motion.passengers.filter((pose) => pose.inWagon && pose.inHandoff);
-  const pedestrians = motion.passengers
-    .filter((pose) => !pose.inWagon)
-    .sort((left, right) => left.y - right.y);
   const blockLabel = motion.departingBlock
     ? `#${number(motion.departingBlock.height)}`
     : 'BLOC REÇU';
@@ -645,6 +632,52 @@ export const StreetScene = memo(function StreetScene({
       return label;
     };
   }, [feeDisplayUnit, quote, quoteUsable]);
+  const canvasFrame = useMemo<CanvasPassengerFrame>(() => {
+    const firstDoors = moving ? CLOSED_DOORS : (motion.doors?.next ?? CLOSED_DOORS);
+    const secondDoors = moving || arriving ? CLOSED_DOORS : (motion.doors?.later ?? CLOSED_DOORS);
+    const firstClips = wagonPassengerClips(NEXT_WAGON_Y, firstDoors, moving, preparing);
+    const secondClips = wagonPassengerClips(wagonY, secondDoors, moving || arriving, preparing);
+    const departureOffset = moving ? -progress * (SCENE_HEIGHT + WAGON_HEIGHT) : 0;
+    const describe = (pose: PassengerPose) => ({
+      pose: projectPose(pose),
+      color: feeColor(pose),
+      feeLabel: feeLabel(pose.tx),
+      interactive: true,
+    });
+    return {
+      view: { startX: VIEW_START_X, width: viewWidth, height: SCENE_HEIGHT, mirrored },
+      passengers: [
+        ...(moving ? (motion.departingPassengers ?? []) : next).map((pose) => ({
+          ...describe(pose),
+          interactive: !moving,
+          offsetY: departureOffset,
+          clips: firstClips,
+        })),
+        ...(moving ? carried : later).map((pose) => ({
+          ...describe(pose),
+          clips: secondClips,
+        })),
+        ...pedestrians.map(describe),
+      ],
+    };
+  }, [
+    moving,
+    arriving,
+    preparing,
+    progress,
+    wagonY,
+    motion.doors,
+    motion.departingPassengers,
+    next,
+    carried,
+    later,
+    pedestrians,
+    projectPose,
+    feeColor,
+    feeLabel,
+    viewWidth,
+    mirrored,
+  ]);
   const boardedCount = motion.passengers.filter(
     (pose) => pose.inWagon && pose.sourceObserved,
   ).length;
@@ -716,8 +749,8 @@ export const StreetScene = memo(function StreetScene({
               place. Les voyageurs arrivent depuis le bord {mirrored ? 'gauche' : 'droit'} et
               circulent sur le quai extérieur. Les portes restent fermées pendant les déplacements.
               Le déplacement ne confirme aucune transaction.{' '}
-              {demo ? 'Données simulées.' : 'Les inclusions sont fournies par la source.'}{' '}
-              Sélectionnez un voyageur au clavier ou à la souris.
+              {demo ? 'Données simulées.' : 'Les inclusions sont fournies par la source.'} Cliquez
+              sur un voyageur ou utilisez « Parcourir les transactions » au clavier.
             </desc>
             <g
               transform={
@@ -778,13 +811,7 @@ export const StreetScene = memo(function StreetScene({
                   preparing ? (motion.preparationProgress ?? undefined) : undefined
                 }
                 offsetY={moving ? -progress * (SCENE_HEIGHT + WAGON_HEIGHT) : 0}
-                historical={moving}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                feeColor={feeColor}
-                feeLabel={feeLabel}
                 mirrored={mirrored}
-                projectPose={projectPose}
               />
               <Wagon
                 kind={moving ? 'handoff' : 'later'}
@@ -799,12 +826,7 @@ export const StreetScene = memo(function StreetScene({
                   preparing ? (motion.preparationProgress ?? undefined) : undefined
                 }
                 arrivalProgress={arriving ? arrivalProgress : undefined}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                feeColor={feeColor}
-                feeLabel={feeLabel}
                 mirrored={mirrored}
-                projectPose={projectPose}
               />
               <WaitingArchive
                 count={motion.waitingArchiveCount ?? 0}
@@ -813,19 +835,14 @@ export const StreetScene = memo(function StreetScene({
                 projectX={projectX}
                 mirrored={mirrored}
               />
-              {pedestrians.map((pose) => (
-                <Passenger
-                  key={pose.tx.id}
-                  pose={projectPose(pose)}
-                  selected={selectedId === pose.tx.id}
-                  feeColor={feeColor(pose)}
-                  feeLabel={feeLabel(pose.tx)}
-                  onSelect={onSelect}
-                  mirrored={mirrored}
-                />
-              ))}
             </g>
           </svg>
+          <PassengerCanvas
+            frame={canvasFrame}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            chain={snapshot.chain}
+          />
         </div>
       </div>
       {showInfo && (
