@@ -21,6 +21,7 @@ import {
   type StreetPoint,
   type WagonKind,
 } from './streetGeometry';
+import { capacityForSnapshot, transactionBlockSize } from './blockCapacity';
 
 export const MAX_PASSENGERS = PENDING_SAMPLE_LIMIT;
 export const MAX_RESIDENT_PASSENGERS = MAX_PASSENGERS * 2;
@@ -30,7 +31,7 @@ const MAX_DEPARTURE_PASSENGERS =
   MAX_RESIDENT_PASSENGERS + MAX_ARCHIVED_OBSERVATIONS + MAX_PASSENGERS;
 export const MAX_WAITING_ARCHIVE_COUNT = 1_000_000;
 export const WAITING_ARCHIVE_POSITION: StreetPoint = { x: 360, y: 686 };
-/** This illustrated budget does not describe either chain's consensus capacity. */
+/** @deprecated Geometric places only; native block capacity comes from the snapshot. */
 export const CANDIDATE_CAPACITY = WAGON_SEAT_COUNT;
 const MAX_STEP_MS = 100;
 const QUEUE_RETRY_MS = 8_000;
@@ -39,7 +40,7 @@ export const PREPARATION_DURATION_MS = 1_000;
 const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v15';
+const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v16';
 
 export type PassengerPhase =
   | 'arriving'
@@ -90,7 +91,7 @@ interface PassengerAdmission {
 }
 
 interface DepartureObservation {
-  block: Pick<Block, 'hash' | 'height'>;
+  block: Block;
   transactions: Tx[];
   recovered?: boolean;
 }
@@ -124,7 +125,7 @@ export interface PassengerMotionState {
   /** Persistent animation-clock marker for the last vehicle departure, not a block timestamp. */
   lastDepartureStartedAt: number | null;
   candidateArrivalStartedAt: number | null;
-  departingBlock: Pick<Block, 'hash' | 'height'> | null;
+  departingBlock: Block | null;
   departureRecovered: boolean;
   preparationTransactions: Tx[];
   queuedDeparture: DepartureObservation | null;
@@ -133,6 +134,8 @@ export interface PassengerMotionState {
   feeThreshold: number | null;
   candidateCount: number;
   candidateUsed: number;
+  /** Native block resource budget; null when the observed provider has no capacity. */
+  candidateCapacity: number | null;
   projectionCount: Record<WagonKind, number>;
   projectionUsed: Record<WagonKind, number>;
   passengers: Passenger[];
@@ -170,13 +173,13 @@ export interface PassengerPose {
 export interface PassengerFrame {
   passengers: PassengerPose[];
   departingPassengers: PassengerPose[];
-  departingBlock: Pick<Block, 'hash' | 'height'> | null;
+  departingBlock: Block | null;
   departureRecovered: boolean;
   lastDepartureStartedAt: number | null;
   counts: Record<PassengerPhase, number>;
   candidateCount: number;
   candidateUsed: number;
-  candidateCapacity: number;
+  candidateCapacity: number | null;
   projectionCount: Record<WagonKind, number>;
   projectionUsed: Record<WagonKind, number>;
   feeThreshold: number | null;
@@ -347,6 +350,7 @@ export function transactionHeadScale(tx: Pick<Tx, 'chain' | 'size'>): number {
   return Math.max(0.8, Math.min(1.85, 0.8 + Math.log2(1 + size / reference) * 0.31));
 }
 
+/** Three illustrative baggage sizes; never used as a block admission budget. */
 export function transactionResourceUnits(tx: Pick<Tx, 'chain' | 'size'>): number {
   const reference = tx.chain === 'bitcoin' ? 400 : 100_000;
   const size = Number.isFinite(tx.size) ? Math.max(0, tx.size) : 0;
@@ -354,6 +358,7 @@ export function transactionResourceUnits(tx: Pick<Tx, 'chain' | 'size'>): number
 }
 
 function planSnapshot(snapshot: Snapshot) {
+  const capacity = capacityForSnapshot(snapshot);
   const sourceTransactions = [...snapshot.transactions]
     .sort((left, right) => right.feeRate - left.feeRate || left.id.localeCompare(right.id))
     .filter((tx, index, array) => array.findIndex((other) => other.id === tx.id) === index);
@@ -370,16 +375,21 @@ function planSnapshot(snapshot: Snapshot) {
       reasons.set(tx.id, 'fee');
       continue;
     }
-    const units = transactionResourceUnits(tx);
+    // Seats are reusable drawing positions. Only native bytes/gas reserve block space.
+    const size = transactionBlockSize(tx);
+    if (size <= 0) {
+      reasons.set(tx.id, 'capacity');
+      continue;
+    }
     const wagon: WagonKind | null =
-      used.next + units <= CANDIDATE_CAPACITY
+      capacity !== null && used.next + size <= capacity
         ? 'next'
-        : used.later + units <= CANDIDATE_CAPACITY
+        : capacity !== null && used.later + size <= capacity
           ? 'later'
           : null;
     if (wagon) {
       admitted.set(tx.id, { wagon, seat: count[wagon]++ });
-      used[wagon] += units;
+      used[wagon] += size;
       reasons.set(tx.id, 'accepted');
     } else reasons.set(tx.id, 'capacity');
   }
@@ -391,6 +401,7 @@ function planSnapshot(snapshot: Snapshot) {
     used,
     count,
     feeThreshold: snapshot.feeRate,
+    capacity,
   };
 }
 
@@ -413,7 +424,7 @@ function projectionOccupancy(passengers: Passenger[]): ProjectionOccupancy {
   for (const passenger of passengers) {
     if (!passenger.presentInSample || !passenger.plannedWagon) continue;
     projectionCount[passenger.plannedWagon] += 1;
-    projectionUsed[passenger.plannedWagon] += transactionResourceUnits(passenger.tx);
+    projectionUsed[passenger.plannedWagon] += transactionBlockSize(passenger.tx);
   }
   const occupancy = {
     projectionCount,
@@ -845,7 +856,7 @@ function departingObservation(snapshot: Snapshot): DepartureObservation | null {
   const block = snapshot.blocks[0];
   if (!block || snapshot.status !== 'ok') return null;
   return {
-    block: { hash: block.hash, height: block.height },
+    block,
     transactions: snapshot.transactions
       .filter((tx) => tx.status === 'confirmed' && tx.blockHash === block.hash)
       .slice(0, MAX_PASSENGERS),
@@ -1102,6 +1113,7 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
     waitingArchiveUnknownCount: 0,
     archiveObservedAt: snapshot.observedAt,
     feeThreshold: plan.feeThreshold,
+    candidateCapacity: plan.capacity,
     ...projectionOccupancy(admitted.passengers),
     ...admitted,
   };
@@ -1250,6 +1262,7 @@ export function reconcilePassengerMotion(
         ? (snapshot.blocks[0]?.height ?? state.observedBlockHeight)
         : state.observedBlockHeight,
     feeThreshold: plan.feeThreshold,
+    candidateCapacity: plan.capacity,
     queuedDepartures: state.queuedDepartures.map((observation) => ({
       ...observation,
       transactions: [...observation.transactions],
@@ -1299,11 +1312,13 @@ export function reconcilePassengerMotion(
       const included = new Map(next.preparationTransactions.map((tx) => [tx.id, tx]));
       for (const tx of observation.transactions) included.set(tx.id, tx);
       next.preparationTransactions = [...included.values()].slice(0, MAX_DEPARTURE_PASSENGERS);
+      next.departingBlock = observation.block;
     } else {
       const queued = next.queuedDepartures.find(
         (item) => item.block.hash === observation.block.hash,
       );
       if (queued) {
+        queued.block = observation.block;
         const included = new Map(queued.transactions.map((tx) => [tx.id, tx]));
         for (const tx of observation.transactions) included.set(tx.id, tx);
         queued.transactions = [...included.values()].slice(0, MAX_DEPARTURE_PASSENGERS);
@@ -1954,7 +1969,7 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
     counts,
     candidateCount: state.candidateCount,
     candidateUsed: state.candidateUsed,
-    candidateCapacity: CANDIDATE_CAPACITY,
+    candidateCapacity: state.candidateCapacity,
     projectionCount: state.projectionCount,
     projectionUsed: state.projectionUsed,
     feeThreshold: state.feeThreshold,

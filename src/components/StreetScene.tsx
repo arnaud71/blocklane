@@ -8,14 +8,10 @@ import {
   type CSSProperties,
   type SVGProps,
 } from 'react';
-import type { ChainId, Snapshot, Tx } from '../../shared/model';
+import type { Block, ChainId, Snapshot, Tx } from '../../shared/model';
 import { usePassengerMotion } from '../hooks/usePassengerMotion';
 import type { PassengerPose } from '../lib/passengerMotion';
-import {
-  CANDIDATE_CAPACITY,
-  MAX_WAITING_ARCHIVE_COUNT,
-  WAITING_ARCHIVE_POSITION,
-} from '../lib/passengerMotion';
+import { MAX_WAITING_ARCHIVE_COUNT, WAITING_ARCHIVE_POSITION } from '../lib/passengerMotion';
 import {
   SCENE_WIDTH,
   SCENE_HEIGHT,
@@ -30,6 +26,7 @@ import {
   type WagonKind,
 } from '../lib/streetGeometry';
 import { number } from '../lib/format';
+import { blockUsagePercent, wagonBlockOccupancy } from '../lib/blockCapacity';
 import { feeColorForRate } from '../lib/feeColors';
 import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib/feeDisplay';
 import { PassengerCanvas } from './PassengerCanvas';
@@ -44,6 +41,13 @@ const CLOSED_DOORS = { entry: false, exit: false };
 const VIEW_START_X = 172;
 const CORRIDOR_X = 298;
 const MIN_VIEW_WIDTH = 236;
+
+function occupancyPercentLabel(percentage: number | null, estimate = false): string {
+  if (percentage === null) return '—';
+  const value =
+    percentage > 0 && percentage < 0.01 ? '<0,01' : number(percentage, percentage < 1 ? 2 : 1);
+  return `${estimate ? '≈ ' : ''}${value} %`;
+}
 
 function wagonPassengerClips(
   y: number,
@@ -147,6 +151,10 @@ function Wagon({
   label,
   caption,
   passengers,
+  chain,
+  capacity,
+  confirmedBlock,
+  simulated = false,
   doors,
   moving = false,
   handoffProgress,
@@ -161,6 +169,10 @@ function Wagon({
   label: string;
   caption: string;
   passengers: PassengerPose[];
+  chain: ChainId;
+  capacity: number | null;
+  confirmedBlock?: Block | null;
+  simulated?: boolean;
   doors: { entry: boolean; exit: boolean };
   moving?: boolean;
   handoffProgress?: number;
@@ -180,19 +192,25 @@ function Wagon({
     ((handoffProgress !== undefined && handoffProgress >= 0.7) ||
       (arrivalProgress !== undefined && arrivalProgress >= 0.7));
   const [captionMain, ...captionDetails] = caption.split(' · ');
-  const { transactionCount, occupiedUnits } = useMemo(() => {
-    const ids = new Set<string>();
-    let occupiedUnits = 0;
-    for (const pose of passengers) {
-      if (ids.has(pose.tx.id)) continue;
-      ids.add(pose.tx.id);
-      occupiedUnits += pose.resourceUnits;
-    }
-    return { transactionCount: ids.size, occupiedUnits };
-  }, [passengers]);
-  const occupancyPercent = Math.round((occupiedUnits / CANDIDATE_CAPACITY) * 100);
-  const transactionCountLabel = `${number(transactionCount)} TX · ${number(occupancyPercent)} %`;
-  const transactionCountDescription = `${number(transactionCount)} transactions représentées à bord de ce wagon ; ${number(occupiedUnits)} unités occupées sur ${CANDIDATE_CAPACITY}, soit ${number(occupancyPercent)} % de sa capacité illustrative. Ces mesures portent sur les voyageurs effectivement embarqués, pas sur les places réservées ni sur toutes les transactions ou le remplissage d’un bloc réel.${occupancyPercent > 100 ? ' Pendant un ajustement ou un départ, des occupants peuvent se superposer au-delà du budget illustratif.' : ''}`;
+  const occupancy = useMemo(
+    () =>
+      wagonBlockOccupancy(
+        passengers.map((pose) => pose.tx),
+        capacity,
+        confirmedBlock,
+      ),
+    [passengers, capacity, confirmedBlock],
+  );
+  const unit = chain === 'bitcoin' ? 'vB' : 'gas';
+  const occupancyLabel = occupancyPercentLabel(occupancy.percentage, occupancy.kind === 'sample');
+  const transactionCountLabel = `${number(occupancy.transactionCount)} TX · ${occupancyLabel}`;
+  const transactionCountDescription = `${simulated ? 'Données simulées. ' : ''}${number(occupancy.transactionCount)} transactions de l’échantillon représentées à bord. ${
+    occupancy.kind === 'block'
+      ? `Occupation ${simulated ? 'du bloc simulé' : 'réelle du bloc'} ${confirmedBlock?.hash} complet : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. Ce taux concerne tout le bloc, tandis que le compteur TX compte seulement les voyageurs représentés.`
+      : occupancy.kind === 'sample'
+        ? `Estimation de la place représentée à bord : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. ${chain === 'ethereum' ? 'Limites de gas déclarées divisées par la limite du dernier bloc observé ; elles ne mesurent pas le gas réellement consommé et la limite du prochain bloc peut évoluer.' : 'Somme des tailles virtuelles divisée par le budget de poids du bloc exprimé en vB ; les frais de structure du bloc ne sont pas inclus.'} Les places réservées hors du wagon sont exclues. Cet échantillon limité ne représente pas tout le futur bloc.`
+        : 'Occupation indisponible : capacité ou consommation nécessaire absente.'
+  }`;
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
@@ -314,10 +332,12 @@ function Wagon({
         className="street-wagon-transaction-count"
         role="img"
         aria-label={transactionCountDescription}
-        data-transaction-count={transactionCount}
-        data-occupancy-percent={occupancyPercent}
-        data-resource-used={occupiedUnits}
-        data-resource-capacity={CANDIDATE_CAPACITY}
+        data-transaction-count={occupancy.transactionCount}
+        data-occupancy-percent={occupancy.percentage ?? undefined}
+        data-resource-used={occupancy.used ?? undefined}
+        data-resource-capacity={occupancy.capacity ?? undefined}
+        data-resource-unit={unit}
+        data-occupancy-kind={occupancy.kind}
       >
         <title>{transactionCountDescription}</title>
         <rect
@@ -820,7 +840,20 @@ export const StreetScene = memo(function StreetScene({
                 >
                   {preparing
                     ? `Embarquement · ${motion.preparationPassengerCount}`
-                    : `Proch. ${projectionUsed.next}/${CANDIDATE_CAPACITY} · Suiv. ${projectionUsed.later}/${CANDIDATE_CAPACITY}`}
+                    : `${snapshot.chain === 'bitcoin' ? 'vB' : 'gas'} · P ${occupancyPercentLabel(blockUsagePercent(projectionUsed.next, motion.candidateCapacity), true)} · S ${occupancyPercentLabel(blockUsagePercent(projectionUsed.later, motion.candidateCapacity), true)}`}
+                  <title>
+                    Réservations des projections dans l’échantillon : prochain{' '}
+                    {number(projectionUsed.next, 2)}
+                    {' / '}
+                    {number(motion.candidateCapacity)} {snapshot.chain === 'bitcoin' ? 'vB' : 'gas'}
+                    {' ; suivant '}
+                    {number(projectionUsed.later, 2)}
+                    {' / '}
+                    {number(motion.candidateCapacity)} {snapshot.chain === 'bitcoin' ? 'vB' : 'gas'}
+                    .
+                    {snapshot.chain === 'ethereum' &&
+                      ' Limites de gas déclarées, estimation prudente.'}
+                  </title>
                 </ReadableText>
               </g>
               <Wagon
@@ -837,6 +870,10 @@ export const StreetScene = memo(function StreetScene({
                       : 'PROCHAIN BLOC · ESTIMATION'
                 }
                 passengers={moving ? (motion.departingPassengers ?? []) : next}
+                chain={snapshot.chain}
+                capacity={motion.candidateCapacity}
+                confirmedBlock={moving || preparing ? motion.departingBlock : undefined}
+                simulated={demo}
                 doors={moving ? CLOSED_DOORS : (motion.doors?.next ?? CLOSED_DOORS)}
                 moving={moving}
                 preparationProgress={
@@ -851,6 +888,9 @@ export const StreetScene = memo(function StreetScene({
                 label={moving ? 'PROCHAIN' : arriving ? 'ARRIVÉE' : 'SUIVANT'}
                 caption={moving ? 'PROCHAIN BLOC · ESTIMATION' : 'BLOC SUIVANT · ESTIMATION'}
                 passengers={moving ? carried : later}
+                chain={snapshot.chain}
+                capacity={motion.candidateCapacity}
+                simulated={demo}
                 doors={moving || arriving ? CLOSED_DOORS : (motion.doors?.later ?? CLOSED_DOORS)}
                 moving={moving || arriving}
                 handoffProgress={moving ? progress : undefined}
