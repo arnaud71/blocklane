@@ -180,11 +180,19 @@ function Wagon({
     ((handoffProgress !== undefined && handoffProgress >= 0.7) ||
       (arrivalProgress !== undefined && arrivalProgress >= 0.7));
   const [captionMain, ...captionDetails] = caption.split(' · ');
-  const transactionCount = useMemo(
-    () => new Set(passengers.map((pose) => pose.tx.id)).size,
-    [passengers],
-  );
-  const transactionCountDescription = `${number(transactionCount)} transactions représentées à bord de ce wagon. Ce compteur porte sur l’échantillon animé, pas sur toutes les transactions d’un bloc réel.`;
+  const { transactionCount, occupiedUnits } = useMemo(() => {
+    const ids = new Set<string>();
+    let occupiedUnits = 0;
+    for (const pose of passengers) {
+      if (ids.has(pose.tx.id)) continue;
+      ids.add(pose.tx.id);
+      occupiedUnits += pose.resourceUnits;
+    }
+    return { transactionCount: ids.size, occupiedUnits };
+  }, [passengers]);
+  const occupancyPercent = Math.round((occupiedUnits / CANDIDATE_CAPACITY) * 100);
+  const transactionCountLabel = `${number(transactionCount)} TX · ${number(occupancyPercent)} %`;
+  const transactionCountDescription = `${number(transactionCount)} transactions représentées à bord de ce wagon ; ${number(occupiedUnits)} unités occupées sur ${CANDIDATE_CAPACITY}, soit ${number(occupancyPercent)} % de sa capacité illustrative. Ces mesures portent sur les voyageurs effectivement embarqués, pas sur les places réservées ni sur toutes les transactions ou le remplissage d’un bloc réel.${occupancyPercent > 100 ? ' Pendant un ajustement ou un départ, des occupants peuvent se superposer au-delà du budget illustratif.' : ''}`;
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
@@ -307,12 +315,15 @@ function Wagon({
         role="img"
         aria-label={transactionCountDescription}
         data-transaction-count={transactionCount}
+        data-occupancy-percent={occupancyPercent}
+        data-resource-used={occupiedUnits}
+        data-resource-capacity={CANDIDATE_CAPACITY}
       >
         <title>{transactionCountDescription}</title>
         <rect
-          x={WAGON_X + 9}
+          x={WAGON_X + 6}
           y={y + 190}
-          width="67"
+          width="73"
           height="14"
           rx="4"
           fill="#d1dfc0"
@@ -324,12 +335,14 @@ function Wagon({
           x={WAGON_X + WAGON_WIDTH / 2}
           y={y + 201}
           fill="#173c30"
-          fontSize={transactionCount >= 1_000 ? 9 : 11}
+          fontSize={
+            transactionCountLabel.length > 16 ? 7 : transactionCountLabel.length > 13 ? 8 : 9.5
+          }
           fontWeight="700"
           textAnchor="middle"
           aria-hidden="true"
         >
-          {number(transactionCount)} TX
+          {transactionCountLabel}
         </ReadableText>
       </g>
     </g>

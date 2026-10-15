@@ -1,5 +1,11 @@
 # État des vérifications — 15 octobre 2026
 
+## Pourcentage d'occupation sur la plaque des wagons — 15 octobre 2026 — non validé
+
+La plaque arrière affiche désormais `N TX · P %` sur les deux wagons de Bitcoin et Ethereum. Le nombre et le pourcentage reposent sur les mêmes identifiants uniques effectivement représentés à bord, conservés pendant le départ et la promotion. Le pourcentage est la somme de leurs `resourceUnits` divisée par les 96 unités de `CANDIDATE_CAPACITY`, multipliée par 100 et arrondie à l'entier. Les réservations de voyageurs encore hors du wagon sont exclues ; à vide, il vaut 0 %. Des inclusions vérifiées superposées peuvent dépasser 100 %, sans plafond artificiel. Infobulle et libellé accessible expliquent les unités et ce dépassement ; il ne s'agit pas du remplissage d'un bloc réel.
+
+Tests et contrôles restent suspendus à la demande du propriétaire : aucun test écrit ou exécuté, lint, TypeScript, compilation, audit, profilage, benchmark, appel API ou QA de validation. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. À la reprise autorisée, couvrir les doublons d'identifiants, coûts de une à trois unités, zéro, arrondi, places réservées hors bus, cohortes au-delà du budget, départ, promotion et lisibilité des deux miroirs. Limites, API, cache et durées sont conservés ; les résultats historiques ci-dessous ne couvrent pas cet ajout.
+
 ## Capacité doublée à 96 unités par wagon — 15 octobre 2026 — non validé
 
 **Les tests, le lint, TypeScript, la compilation, l’audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n’est écrit ni exécuté pour cette extension. Aucun profilage, benchmark, appel API de validation ou mesure de capacité n’est effectué. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les sections antérieures ci-dessous conservent les plafonds en vigueur lors de chaque changement ; elles ne valident pas cette nouvelle capacité.
