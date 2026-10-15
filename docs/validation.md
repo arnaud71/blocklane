@@ -1,5 +1,15 @@
 # État des vérifications — 15 octobre 2026
 
+## Capacité doublée à 96 unités par wagon — 15 octobre 2026 — non validé
+
+**Les tests, le lint, TypeScript, la compilation, l’audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n’est écrit ni exécuté pour cette extension. Aucun profilage, benchmark, appel API de validation ou mesure de capacité n’est effectué. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les sections antérieures ci-dessous conservent les plafonds en vigueur lors de chaque changement ; elles ne valident pas cette nouvelle capacité.
+
+Chaque projection passe de 48 à **96 unités illustratives**, avec 96 emplacements répartis sur huit colonnes et douze rangées. `WAGON_SEAT_COUNT` reste le repère partagé avec `CANDIDATE_CAPACITY`. Les huit colonnes occupent le même intervalle horizontal, de `WAGON_X + 17.5` à `WAGON_X + 66.5` ; les rangées gardent le pas de 9, de `y=80` à `y=179`. La version de géométrie passe de `v14` à `v15`. Taille du wagon, portes, découpes et trajets sont conservés ; une superposition plus dense est possible.
+
+Le coût illustratif reste de une à trois unités par transaction : jusqu’à 96 voyageurs d’une unité, ou moins selon les besoins de ressources. Le compteur arrière `N TX` compte les identifiants uniques effectivement représentés à bord et non les unités disponibles ni le total réel du bloc. Les inclusions vérifiées d’un départ peuvent se superposer au-delà des places dessinées. Les limites de 480 voyageurs courants, 960 résidents ordinaires, 1 952 inclusions en départ et 2 912 résidents pendant la préparation sont conservées, ainsi que l’archive et le cache de départ limité à un million de pixels par rue. La file collective du fournisseur conserve ses propres 48 silhouettes, indépendantes de la capacité des wagons. Aucun appel, contrat, délai réseau ou dépendance n’est ajouté.
+
+À la reprise autorisée, adapter les tests et fixtures fondés sur le précédent budget ou la précédente grille. Couvrir les coûts de une à trois unités, les deux projections, le remplissage et les retours, les cohortes dépassant 96 places, les plafonds conservés et les compteurs arrière. Examiner portes, découpes, superpositions, sélection au pointeur et parcours HTML au clavier dans les deux miroirs, pendant préparation, départ, promotion, pause et mouvements réduits. Aucun de ces contrôles n’est exécuté pendant la suspension.
+
 ## Allègement du départ des wagons — 15 octobre 2026 — non validé
 
 **Les tests, le lint, TypeScript, la compilation, l'audit et les validations automatiques ou visuelles restent suspendus à la demande du propriétaire.** Aucun test n'est écrit ni exécuté pour ce changement ; aucun profilage, benchmark, appel API de validation ou mesure de fréquence, de mémoire ou de gain n'est réalisé. Lecture statique, formatage et aperçu normal de remise ne constituent pas une validation. Les résultats historiques ci-dessous ne couvrent pas cette optimisation.
