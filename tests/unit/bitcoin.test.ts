@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BITCOIN_TRACKED_SAMPLE_LIMIT,
   BITCOIN_TRACKED_SAMPLE_TTL_MS,
+  bitcoinRecentSchema,
   createBitcoinProvider,
   fetchBitcoinSnapshot,
 } from '../../server/adapters/bitcoin.js';
+import { PENDING_SAMPLE_LIMIT } from '../../shared/model.js';
 import { SnapshotService } from '../../server/cache.js';
 import { CACHE_TTL_MS } from '../../server/config.js';
 import type { Fetcher } from '../../server/network.js';
@@ -21,11 +23,11 @@ describe('Bitcoin read-only adapter', () => {
     expect(snapshot.transactions[0]?.feeRate).toBe(5);
     expect(snapshot.blocks[0]?.used).toBe(975_000);
     expect(snapshot.blocks[0]?.capacity).toBe(1_000_000);
-    expect(snapshot.coverage).toContain('échantillon');
+    expect(snapshot.coverage).toContain('transactions récentes');
     expect(snapshot.observedAt).toBe(now);
   });
 
-  it('rejects malformed hashes, unsafe fees, noninteger bytes and impossible block weight', async () => {
+  it('discards malformed optional arrivals and still rejects impossible required block weight', async () => {
     for (const transaction of [
       { ...btcTx, txid: 'untrusted' },
       { ...btcTx, fee: Number.MAX_SAFE_INTEGER + 1 },
@@ -33,9 +35,14 @@ describe('Bitcoin read-only adapter', () => {
       { ...btcTx, vsize: 1.5 },
       { ...btcTx, vsize: 0 },
     ]) {
-      await expect(
-        fetchBitcoinSnapshot(config, bitcoinFetcher({ '/mempool/recent': [transaction] })),
-      ).rejects.toMatchObject({ kind: 'invalid' });
+      expect(bitcoinRecentSchema.safeParse([transaction]).success).toBe(false);
+      const snapshot = await fetchBitcoinSnapshot(
+        config,
+        bitcoinFetcher({ '/mempool/recent': [transaction] }),
+      );
+      expect(snapshot.status).toBe('ok');
+      expect(snapshot.transactions).toEqual([]);
+      expect(snapshot.coverage).toContain('temporairement indisponible');
     }
     await expect(
       fetchBitcoinSnapshot(
@@ -45,14 +52,24 @@ describe('Bitcoin read-only adapter', () => {
     ).rejects.toMatchObject({ kind: 'invalid' });
   });
 
-  it('bounds large samples and performs satoshi/vbyte division without premature float conversion', async () => {
-    const transactions = Array.from({ length: 121 }, () => ({ ...btcTx, fee: 10, vsize: 3 }));
+  it('preserves the 1000-entry REST arrival bound and divides satoshis/vbyte without premature float conversion', async () => {
+    const transactions = Array.from({ length: 1_000 }, (_, index) => ({
+      ...btcTx,
+      txid: (index + 10_000).toString(16).padStart(64, '0'),
+      fee: 10,
+      vsize: 3,
+    }));
     const snapshot = await fetchBitcoinSnapshot(
       config,
       bitcoinFetcher({ '/mempool/recent': transactions }),
     );
-    expect(snapshot.transactions).toHaveLength(120);
+    expect(snapshot.transactions).toHaveLength(Math.min(PENDING_SAMPLE_LIMIT, transactions.length));
     expect(snapshot.transactions[0]?.feeRate).toBe(3.333);
+    expect(bitcoinRecentSchema.safeParse(transactions).success).toBe(true);
+    expect(
+      bitcoinRecentSchema.safeParse([...transactions, { ...transactions[0]!, txid: hash('f') }])
+        .success,
+    ).toBe(false);
   });
 
   it('carries only previously sampled transactions proved present in the new latest block', async () => {
@@ -133,12 +150,18 @@ describe('Bitcoin read-only adapter', () => {
       () => time,
     );
     await read();
-    const arrivals = Array.from({ length: BITCOIN_TRACKED_SAMPLE_LIMIT }, (_, index) => ({
+    const arrivals = Array.from({ length: PENDING_SAMPLE_LIMIT * 5 }, (_, index) => ({
       ...btcTx,
       txid: (index + 10_000).toString(16).padStart(64, '0'),
     }));
-    current = bitcoinFetcher({ '/mempool/recent': arrivals });
-    await read();
+    expect(arrivals.length).toBeGreaterThan(BITCOIN_TRACKED_SAMPLE_LIMIT);
+    const recentBatchSize = Math.min(PENDING_SAMPLE_LIMIT, 1_000);
+    for (let offset = 0; offset < arrivals.length; offset += recentBatchSize) {
+      current = bitcoinFetcher({
+        '/mempool/recent': arrivals.slice(offset, offset + recentBatchSize),
+      });
+      await read();
+    }
     const newBlock = { ...btcBlock, id: hash('d'), tx_count: 2 };
     current = bitcoinFetcher({
       '/v1/blocks': [newBlock],
@@ -172,7 +195,7 @@ describe('Bitcoin read-only adapter', () => {
       );
       expect(result.status).toBe('ok');
       expect(result.transactions[0]?.status).toBe('pending');
-      expect(result.message).toContain('vérification des confirmations');
+      expect(result.message).toContain('Inclusions partiellement vérifiées');
     }
 
     let failed = true;
@@ -202,7 +225,12 @@ describe('Bitcoin read-only adapter', () => {
     let time = now;
     let current = bitcoinFetcher();
     const fetcher = vi.fn<Fetcher>((...args) => current(...args));
-    const service = new SnapshotService({ config, fetcher, now: () => time });
+    const service = new SnapshotService({
+      config,
+      fetcher,
+      now: () => time,
+      usdQuotes: { get: async () => null },
+    });
     await Promise.all(Array.from({ length: 20 }, () => service.get('bitcoin', 'live')));
     expect(fetcher).toHaveBeenCalledTimes(5);
     time += CACHE_TTL_MS;

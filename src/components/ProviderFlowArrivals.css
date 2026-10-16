@@ -1,0 +1,57 @@
+.provider-flow-arrivals {
+  pointer-events: none;
+}
+.provider-flow-arrivals-motion {
+  animation: provider-flow-entry 2800ms ease-out both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.provider-flow-arrivals[data-flow-paused='true'] .provider-flow-arrivals-motion {
+  animation-play-state: paused;
+}
+.provider-flow-arrivals[data-flow-reduced='true'] .provider-flow-arrivals-motion {
+  animation: none;
+}
+.provider-flow-arrivals rect {
+  fill: #143b38;
+  stroke: #92b8ab;
+  stroke-width: 1;
+}
+.provider-flow-arrivals-symbols {
+  fill: #a6cabb;
+  stroke: #244b43;
+  stroke-width: 0.8;
+}
+.provider-flow-arrivals text {
+  fill: #e3f1de;
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.provider-flow-arrivals .provider-flow-arrivals-caption {
+  fill: #bbd3c7;
+  font-size: 9px;
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .provider-flow-arrivals-motion {
+    animation: none;
+  }
+}
+@keyframes provider-flow-entry {
+  0% {
+    opacity: 0;
+    transform: translateX(var(--provider-flow-shift));
+  }
+  15% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}

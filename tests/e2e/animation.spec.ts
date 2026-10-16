@@ -1,6 +1,21 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
-import { generateDemoSnapshot } from '../../server/demo';
-import type { ChainId, Snapshot, Tx } from '../../shared/model';
+import { expect, test, type Page } from '@playwright/test';
+import {
+  snapshotSchema,
+  type Block,
+  type ChainId,
+  type Snapshot,
+  type Tx,
+} from '../../shared/model';
+
+const OBSERVED_AT = Date.parse('2026-10-15T12:00:00Z');
+const pane = (page: Page, chain: ChainId = 'bitcoin') =>
+  page.locator(`section.chain-pane[data-chain="${chain}"]`);
+const firstWagon = (page: Page, chain: ChainId = 'bitcoin') =>
+  pane(page, chain).locator('.street-first-wagon');
+const browser = (page: Page, chain: ChainId = 'bitcoin') =>
+  page.getByRole('dialog', {
+    name: `Transactions observées ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+  });
 
 function transaction(chain: ChainId, index: number, feeRate: number, size: number): Tx {
   return {
@@ -10,188 +25,333 @@ function transaction(chain: ChainId, index: number, feeRate: number, size: numbe
     size,
     status: 'pending',
     kind: chain === 'ethereum' && size > 21_000 ? 'contract' : 'transfer',
-    value: 'Montant de test',
+    value: chain === 'bitcoin' ? '0.01 BTC' : '0.01 ETH',
   };
 }
 
-function liveSnapshot(chain: ChainId, transactions: Tx[]): Snapshot {
-  const demo = generateDemoSnapshot(chain, Date.now());
+function block(chain: ChainId, offset = 0): Block {
   return {
-    ...demo,
+    hash: `${chain === 'ethereum' ? '0x' : ''}${(100 + offset).toString(16).padStart(64, '0')}`,
+    height: (chain === 'bitcoin' ? 900_000 : 23_000_000) + offset,
+    timestamp: OBSERVED_AT / 1_000 - 12 + offset * 12,
+    txCount: 100,
+    used: chain === 'bitcoin' ? 500_000 : 30_000_000,
+    capacity: chain === 'bitcoin' ? 1_000_000 : 60_000_000,
+  };
+}
+
+/** Explicit live observations, with confirmed IDs supplied only by the relevant scenario. */
+function liveSnapshot(
+  chain: ChainId,
+  transactions: Tx[],
+  stage = 0,
+  overrides: Partial<Snapshot> = {},
+): Snapshot {
+  return snapshotSchema.parse({
+    chain,
     mode: 'live',
+    status: 'ok',
     source: 'Source contrôlée pour les animations',
-    coverage: 'Échantillon contrôlé de test, aucune couverture globale.',
+    observedAt: OBSERVED_AT + stage * 3_000,
+    coverage: `Animation contrôlée étape ${stage}. Échantillon partiel ; seul un identifiant exact prouve une inclusion.`,
     pendingCount: chain === 'ethereum' ? null : 4_200,
     feeRate: 1,
+    feeUnit: chain === 'bitcoin' ? 'sat/vB' : 'Gwei',
     transactions,
-    blocks: demo.blocks.map((block, index) => ({
-      ...block,
-      hash: `${chain === 'ethereum' ? '0x' : ''}${(index + 100).toString(16).padStart(64, '0')}`,
-    })),
-  };
-}
-
-async function routeSnapshots(page: Page, current: (chain: ChainId) => Snapshot) {
-  await page.route('**/api/snapshot?*', async (route) => {
-    const url = new URL(route.request().url());
-    const chain = url.searchParams.get('chain') === 'ethereum' ? 'ethereum' : 'bitcoin';
-    await route.fulfill({ json: current(chain) });
+    blocks: [block(chain)],
+    inclusions: [],
+    ...overrides,
   });
 }
 
-function traveler(page: Page, tx: Tx) {
-  return page.locator(
-    `section.chain-pane[data-chain="${tx.chain}"] .street-person[data-tx-id="${tx.id}"]`,
+async function routeSnapshots(page: Page, current: (chain: ChainId, stage: number) => Snapshot) {
+  let stage = 0;
+  const fetched = new Map<ChainId, Set<number>>();
+  await page.route('**/api/snapshot?*', async (route) => {
+    const url = new URL(route.request().url());
+    expect(url.searchParams.get('mode')).toBe('live');
+    const chain = url.searchParams.get('chain') === 'ethereum' ? 'ethereum' : 'bitcoin';
+    const stages = fetched.get(chain) ?? new Set<number>();
+    stages.add(stage);
+    fetched.set(chain, stages);
+    await route.fulfill({ json: current(chain, stage) });
+  });
+  return async (nextStage: number, chain: ChainId = 'bitcoin') => {
+    stage = nextStage;
+    for (let attempt = 0; attempt < 20 && !fetched.get(chain)?.has(stage); attempt += 1)
+      await page.clock.runFor(200);
+    expect(fetched.get(chain)?.has(stage)).toBe(true);
+    await expect(pane(page, chain).locator('.chain-coverage')).toHaveAttribute(
+      'title',
+      new RegExp(`Animation contrôlée étape ${stage}\\.`),
+    );
+  };
+}
+
+async function openTraveler(page: Page, tx: Tx) {
+  const dialog = browser(page, tx.chain);
+  if (!(await dialog.count())) {
+    await page
+      .getByRole('button', {
+        name: `Parcourir les transactions ${tx.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+      })
+      .focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('combobox')).toBeFocused();
+  }
+  const selector = dialog.getByRole('combobox');
+  await expect(selector.locator(`option[value="${tx.id}"]`)).toHaveCount(1);
+  await selector.selectOption(tx.id);
+  return dialog.locator('.passenger-canvas-browser-description');
+}
+
+async function closeBrowser(page: Page, chain: ChainId = 'bitcoin') {
+  await browser(page, chain).getByRole('button', { name: 'Fermer les transactions' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(browser(page, chain)).toHaveCount(0);
+}
+
+async function showDetails(page: Page, tx: Tx) {
+  await openTraveler(page, tx);
+  await browser(page, tx.chain).getByRole('button', { name: 'Afficher les détails' }).focus();
+  await page.keyboard.press('Enter');
+  await closeBrowser(page, tx.chain);
+  await expect(page.getByTestId('info-panel')).toHaveAttribute('data-page', 'transaction');
+  await expect(page.getByTestId('info-panel').locator('.info-transaction-hash')).toHaveAttribute(
+    'title',
+    tx.id,
   );
 }
 
-async function position(person: Locator) {
-  await expect
-    .poll(() => person.evaluate((node) => (node as SVGGraphicsElement).getCTM() !== null))
-    .toBe(true);
-  return person.evaluate((node) => {
-    const matrix = (node as SVGGraphicsElement).getCTM();
-    if (!matrix) throw new Error('Le voyageur doit être attaché à la scène SVG.');
-    return { x: matrix.e, y: matrix.f };
-  });
+/** Fingerprint the real traveler bitmap without creating an element per avatar. */
+async function canvasFingerprint(page: Page, chain: ChainId = 'bitcoin') {
+  return pane(page, chain)
+    .locator('canvas.passenger-canvas')
+    .evaluate((node) => {
+      const canvas = node as HTMLCanvasElement;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Le dessin Canvas 2D doit être disponible.');
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let hash = 2_166_136_261;
+      let painted = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 3]) painted += 1;
+        for (let offset = 0; offset < 4; offset += 1)
+          hash = Math.imul(hash ^ pixels[index + offset]!, 16_777_619);
+      }
+      return { hash: hash >>> 0, painted };
+    });
 }
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.clock.install();
+  await page.clock.install({ time: OBSERVED_AT });
+  await page.clock.pauseAt(OBSERVED_AT + 100);
 });
 
-test('a traveler walks to the candidate wagon and boarding never confirms a live transaction', async ({
+test('a Canvas traveler walks to the candidate wagon and boarding never confirms a live transaction', async ({
   page,
 }) => {
   const tx = transaction('bitcoin', 1, 20, 200);
   await routeSnapshots(page, (chain) => liveSnapshot(chain, chain === 'bitcoin' ? [tx] : []));
   await page.goto('/');
-  const person = traveler(page, tx);
-  await expect(person).toHaveAttribute('data-motion-state', 'queue');
-  const start = await position(person);
-  await page.clock.runFor(2_000);
-  const walking = await position(person);
-  expect(Math.hypot(walking.x - start.x, walking.y - start.y)).toBeGreaterThan(20);
+  const description = await openTraveler(page, tx);
+  await expect(description).toContainText(/sur le quai|en marche/);
+  const start = await canvasFingerprint(page);
+  expect(start.painted).toBeGreaterThan(0);
+  await page.clock.runFor(1_000);
+  await expect(description).toContainText('en marche');
+  expect(await canvasFingerprint(page)).not.toEqual(start);
   await page.clock.runFor(7_000);
-  await expect(person).toHaveAttribute('data-motion-state', 'boarded');
-  await person.focus();
-  await page.keyboard.press('Enter');
+  await expect(description).toContainText('à bord du wagon illustratif');
+  await expect(description).toContainText('en attente dans la source');
+  await expect(firstWagon(page).getByRole('img')).toHaveAttribute('data-transaction-count', '1');
+  await showDetails(page, tx);
   await expect(
     page.getByTestId('info-panel').getByText('En attente', { exact: true }),
   ).toBeVisible();
-  await expect(page.locator('.street-tram--observed-departure')).toHaveCount(0);
+  await expect(firstWagon(page)).toHaveAttribute('data-moving', 'false');
+  await expect(pane(page).locator('[data-preparation-progress]')).toHaveCount(0);
 });
 
-test('a higher-fee arrival displaces a boarded traveler back to the queue without inventing a rejection', async ({
+test('native block-capacity competition returns a lower-fee rider to the quay without inventing rejection', async ({
   page,
 }) => {
-  const target = transaction('bitcoin', 1, 2, 400);
-  const peers = Array.from({ length: 11 }, (_, index) =>
-    transaction('bitcoin', index + 2, 20, 400),
-  );
-  let newcomer = false;
-  await routeSnapshots(page, (chain) =>
+  const target = transaction('bitcoin', 1, 2, 400_000);
+  const peers = [transaction('bitcoin', 2, 20, 600_000), transaction('bitcoin', 3, 25, 1_000_000)];
+  const arrival = transaction('bitcoin', 50, 30, 700_000);
+  const refresh = await routeSnapshots(page, (chain, stage) =>
     liveSnapshot(
       chain,
-      chain === 'bitcoin'
-        ? [target, ...peers, ...(newcomer ? [transaction(chain, 50, 30, 400)] : [])]
-        : [],
+      chain === 'bitcoin' ? [target, ...peers, ...(stage ? [arrival] : [])] : [],
+      stage,
     ),
   );
   await page.goto('/');
-  const person = traveler(page, target);
-  await expect(person).toHaveAttribute('data-motion-state', 'queue');
+  const description = await openTraveler(page, target);
   await page.clock.runFor(9_000);
-  await expect(person).toHaveAttribute('data-motion-state', 'boarded');
-  const seat = await position(person);
-  await person.focus();
-  await page.keyboard.press('Enter');
-  newcomer = true;
-  await page.clock.runFor(1_100);
-  await expect(person).toHaveAttribute('data-motion-state', /exiting|returning/);
-  await page.clock.runFor(6_000);
-  await expect(person).toHaveAttribute('data-motion-state', 'queue');
-  const queue = await position(person);
-  expect(queue).not.toEqual(seat);
+  await expect(description).toContainText('à bord du wagon illustratif');
+  await expect(firstWagon(page).getByRole('img')).toHaveAttribute('data-resource-used', '1000000');
+  await closeBrowser(page);
+  await refresh(1);
+  const returning = await openTraveler(page, target);
+  await expect(returning).toContainText(/sortie illustrée|retour en file illustré/);
+  await page.clock.runFor(7_000);
+  await expect(returning).toContainText('sur le quai');
+  await expect(returning).toContainText('Capacité insuffisante');
+  await expect(returning).toContainText('en attente dans la source');
+  await showDetails(page, target);
   await expect(
     page.getByTestId('info-panel').getByText('En attente', { exact: true }),
   ).toBeVisible();
+  await expect(firstWagon(page)).toHaveAttribute('data-moving', 'false');
 });
 
-test('a traveler below the illustrative fee threshold returns to the platform', async ({
+test('an Ethereum traveler below the next-block base fee stays waiting instead of simulating rejection', async ({
   page,
 }) => {
-  const tx = transaction('bitcoin', 1, 0.1, 200);
-  await routeSnapshots(page, (chain) => liveSnapshot(chain, chain === 'bitcoin' ? [tx] : []));
+  const tx = transaction('ethereum', 1, 1, 21_000);
+  await routeSnapshots(page, (chain) =>
+    liveSnapshot(
+      chain,
+      chain === 'ethereum' ? [tx] : [],
+      0,
+      chain === 'ethereum'
+        ? {
+            feeRate: 8,
+            ethereumProjection: {
+              parentBlockHash: block(chain).hash,
+              height: block(chain).height + 1,
+              observedAt: OBSERVED_AT,
+              baseFeePerGasWei: '10000000000',
+              source: 'calculated',
+            },
+          }
+        : {},
+    ),
+  );
   await page.goto('/');
-  const person = traveler(page, tx);
-  await expect(person).toHaveAttribute('data-motion-state', 'queue');
-  const platform = await position(person);
-  await page.clock.runFor(2_000);
-  await expect(person).toHaveAttribute('data-motion-state', 'walking');
-  await page.clock.runFor(5_000);
-  await expect(person).toHaveAttribute('data-motion-state', 'returning');
-  await page.clock.runFor(5_000);
-  await expect(person).toHaveAttribute('data-motion-state', 'queue');
-  expect(await position(person)).toEqual(platform);
-  await person.focus();
-  await page.keyboard.press('Enter');
+  const description = await openTraveler(page, tx);
+  await expect(description).toContainText('sur le quai');
+  await expect(description).toContainText('Frais inférieurs à la base fee Ethereum de référence');
+  await page.clock.runFor(12_000);
+  await expect(description).toContainText('sur le quai');
+  await expect(firstWagon(page, 'ethereum').getByRole('img')).toHaveAttribute(
+    'data-transaction-count',
+    '0',
+  );
+  await showDetails(page, tx);
   await expect(
     page.getByTestId('info-panel').getByText('En attente', { exact: true }),
   ).toBeVisible();
+  await expect(page.getByTestId('info-panel')).toContainText(
+    'Un déplacement animé ne prouve aucune confirmation.',
+  );
 });
 
-test('head size reflects virtual bytes or declared gas and stays bounded', async ({ page }) => {
-  const smallBtc = transaction('bitcoin', 1, 20, 140);
-  const largeBtc = transaction('bitcoin', 2, 10, 1_140);
-  const smallEth = transaction('ethereum', 1, 20, 21_000);
-  const largeEth = transaction('ethereum', 2, 10, 240_000);
+test('Canvas head drawing scales with bounded virtual bytes or declared gas and sizes stay inspectable', async ({
+  page,
+}, testInfo) => {
+  // Capture real local head transforms; no app state, SVG avatars or production instrumentation.
+  await page.addInitScript(() => {
+    const capture = window as typeof window & { renderedHeadScales: Record<string, number[]> };
+    capture.renderedHeadScales = {};
+    const atHead = new WeakSet<CanvasRenderingContext2D>();
+    const translate = CanvasRenderingContext2D.prototype.translate;
+    const scale = CanvasRenderingContext2D.prototype.scale;
+    CanvasRenderingContext2D.prototype.translate = function (x, y) {
+      if (x === 0 && y === -22) atHead.add(this);
+      else atHead.delete(this);
+      return translate.call(this, x, y);
+    };
+    CanvasRenderingContext2D.prototype.scale = function (x, y) {
+      if (atHead.has(this) && x === y && this.canvas.classList.contains('passenger-canvas')) {
+        const chain = this.canvas.closest<HTMLElement>('[data-chain]')?.dataset.chain;
+        if (chain) {
+          const values = capture.renderedHeadScales[chain] ?? [];
+          if (!values.includes(x)) values.push(x);
+          capture.renderedHeadScales[chain] = values;
+        }
+      }
+      atHead.delete(this);
+      return scale.call(this, x, y);
+    };
+  });
+  const pairs = [
+    [transaction('bitcoin', 1, 20, 140), transaction('bitcoin', 2, 10, 1_140)],
+    [transaction('ethereum', 1, 20, 21_000), transaction('ethereum', 2, 10, 240_000)],
+  ] as const;
   await routeSnapshots(page, (chain) =>
-    liveSnapshot(chain, chain === 'bitcoin' ? [smallBtc, largeBtc] : [smallEth, largeEth]),
+    liveSnapshot(chain, chain === 'bitcoin' ? [...pairs[0]] : [...pairs[1]]),
   );
   await page.goto('/');
-  for (const [small, large] of [
-    [smallBtc, largeBtc],
-    [smallEth, largeEth],
-  ] as const) {
-    await expect(traveler(page, small)).toHaveAttribute('data-resource-size', String(small.size));
-    await expect(traveler(page, large)).toHaveAttribute('data-resource-size', String(large.size));
-    const smallScale = Number(await traveler(page, small).getAttribute('data-head-scale'));
-    const largeScale = Number(await traveler(page, large).getAttribute('data-head-scale'));
-    expect(smallScale).toBeGreaterThan(0);
-    expect(largeScale).toBeGreaterThan(smallScale);
-    expect(largeScale).toBeLessThanOrEqual(2.5);
+  await page.getByRole('button', { name: 'Réduire les mouvements', exact: true }).click();
+  for (const [small, large] of pairs) {
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          (chain) =>
+            (window as typeof window & { renderedHeadScales: Record<string, number[]> })
+              .renderedHeadScales[chain]?.length ?? 0,
+          small.chain,
+        ),
+      )
+      .toBe(2);
+    const scales = await page.evaluate(
+      (chain) =>
+        (window as typeof window & { renderedHeadScales: Record<string, number[]> })
+          .renderedHeadScales[chain]!,
+      small.chain,
+    );
+    expect(Math.min(...scales)).toBeGreaterThanOrEqual(0.8);
+    expect(Math.max(...scales)).toBeGreaterThanOrEqual(Math.min(...scales) * 2);
+    expect(Math.max(...scales)).toBeLessThanOrEqual(2.5);
+    expect((await canvasFingerprint(page, small.chain)).painted).toBeGreaterThan(0);
+    for (const tx of [small, large]) {
+      await showDetails(page, tx);
+      const detail = page
+        .getByTestId('info-panel')
+        .locator('.info-detail')
+        .filter({
+          hasText: tx.chain === 'bitcoin' ? 'Taille virtuelle' : 'Limite de gas déclarée',
+        });
+      expect((await detail.locator('dd').innerText()).replace(/['’\s\u00a0\u202f]/g, '')).toBe(
+        `${tx.size}${tx.chain === 'bitcoin' ? 'vB' : 'gas'}`,
+      );
+    }
   }
-  await expect(
-    page
-      .locator('section.chain-pane[data-chain="ethereum"] .chain-metrics div')
-      .filter({ hasText: 'Mempool global' }),
-  ).toContainText('Non mesuré');
+  await expect(page.getByTestId('info-panel')).toContainText(
+    'La tête représente la limite de gas déclarée, pas les octets ni le gas consommé.',
+  );
+  await page.screenshot({ path: testInfo.outputPath('canvas-resource-heads.png'), fullPage: true });
 });
 
-test('pause and reduced motion freeze the actual traveler coordinates', async ({ page }) => {
+test('pause freezes actual Canvas pixels and reduced motion settles the traveler without animation', async ({
+  page,
+}) => {
   const tx = transaction('bitcoin', 1, 20, 200);
   await routeSnapshots(page, (chain) => liveSnapshot(chain, chain === 'bitcoin' ? [tx] : []));
   await page.goto('/');
-  const person = traveler(page, tx);
-  await expect(person).toHaveAttribute('data-motion-state', 'queue');
+  await openTraveler(page, tx);
   await page.clock.runFor(2_000);
   await page.getByRole('button', { name: 'Mettre l’animation en pause' }).click();
-  const paused = await position(person);
+  const paused = await canvasFingerprint(page);
+  expect(paused.painted).toBeGreaterThan(0);
   await page.clock.runFor(3_000);
-  expect(await position(person)).toEqual(paused);
+  expect(await canvasFingerprint(page)).toEqual(paused);
   await page.getByRole('button', { name: 'Reprendre l’animation' }).click();
   await page.clock.runFor(500);
-  expect(await position(person)).not.toEqual(paused);
-  await page.getByRole('button', { name: 'Mouvements actifs' }).click();
-  await expect(person).toHaveAttribute('data-motion-state', 'boarded');
-  const reduced = await position(person);
+  expect(await canvasFingerprint(page)).not.toEqual(paused);
+  await page.getByRole('button', { name: 'Réduire les mouvements', exact: true }).click();
+  await expect(browser(page).locator('.passenger-canvas-browser-description')).toContainText(
+    'à bord du wagon illustratif',
+  );
+  const reduced = await canvasFingerprint(page);
   await page.clock.runFor(3_000);
-  expect(await position(person)).toEqual(reduced);
+  expect(await canvasFingerprint(page)).toEqual(reduced);
 });
 
-test('the information panel cycles automatically and respects pause and reduced motion', async ({
+test('the information panel cycles every four seconds and respects pause and reduced motion', async ({
   page,
 }) => {
   const tx = transaction('bitcoin', 1, 20, 200);
@@ -202,18 +362,18 @@ test('the information panel cycles automatically and respects pause and reduced 
   const panel = page.getByTestId('info-panel');
   await expect(panel).toHaveAttribute('data-page', 'network');
   await expect(panel).toHaveAttribute('data-auto-rotating', 'true');
-  await page.clock.runFor(8_100);
+  await page.clock.runFor(4_100);
   await expect(panel).toHaveAttribute('data-page', 'block');
   await page.getByRole('button', { name: 'Mettre l’animation en pause' }).click();
   await expect(panel).toHaveAttribute('data-auto-rotating', 'false');
-  await page.clock.runFor(16_000);
+  await page.clock.runFor(8_000);
   await expect(panel).toHaveAttribute('data-page', 'block');
   await page.getByRole('button', { name: 'Reprendre l’animation' }).click();
-  await page.clock.runFor(8_100);
+  await page.clock.runFor(4_100);
   await expect(panel).toHaveAttribute('data-page', 'travelers');
-  await page.getByRole('button', { name: 'Mouvements actifs' }).click();
+  await page.getByRole('button', { name: 'Réduire les mouvements', exact: true }).click();
   await expect(panel).toHaveAttribute('data-auto-rotating', 'false');
-  await page.clock.runFor(16_000);
+  await page.clock.runFor(8_000);
   await expect(panel).toHaveAttribute('data-page', 'travelers');
   await page.getByRole('button', { name: 'Masquer le panneau d’informations' }).click();
   await expect(panel).toHaveCount(0);
@@ -221,141 +381,116 @@ test('the information panel cycles automatically and respects pause and reduced 
   await expect(panel).toHaveAttribute('data-page', 'network');
 });
 
-test('selected information follows new observations and tabs support keyboard inspection', async ({
+test('keyboard-selected details follow observations and information tabs support keyboard inspection', async ({
   page,
 }) => {
-  let updated = false;
-  await routeSnapshots(page, (chain) =>
-    liveSnapshot(chain, [transaction(chain, 1, updated ? 30 : 20, updated ? 800 : 200)]),
+  const refresh = await routeSnapshots(page, (chain, stage) =>
+    liveSnapshot(chain, [transaction(chain, 1, stage ? 30 : 20, stage ? 800 : 200)], stage),
   );
   await page.goto('/');
-  await page.locator('section.chain-pane[data-chain="bitcoin"] .street-person').first().focus();
-  await page.keyboard.press('Enter');
+  await showDetails(page, transaction('bitcoin', 1, 20, 200));
   const panel = page.getByTestId('info-panel');
-  await expect(panel).toHaveAttribute('data-page', 'transaction');
   await expect(panel.getByText('20 sat/vB', { exact: true })).toBeVisible();
   await expect(panel).toHaveAttribute('data-auto-rotating', 'false');
-  updated = true;
-  await page.clock.runFor(11_000);
+  await refresh(1);
   await expect(panel.getByText('30 sat/vB', { exact: true })).toBeVisible();
   await expect(panel.getByText('800 vB', { exact: true })).toBeVisible();
   await expect(panel.getByText('En attente', { exact: true })).toBeVisible();
   await expect(panel).toHaveAttribute('data-page', 'transaction');
   await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Afficher le panneau d’informations', exact: true })
+    .click();
   await expect(panel).toHaveAttribute('data-page', 'network');
   await panel.getByRole('tab', { name: 'Réseau', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(panel.getByRole('tab', { name: 'Bloc', exact: true })).toBeFocused();
   await expect(panel).toHaveAttribute('data-page', 'block');
   await expect(panel).toHaveAttribute('data-auto-rotating', 'false');
-  await page.clock.runFor(16_000);
+  await page.clock.runFor(8_000);
   await expect(panel).toHaveAttribute('data-page', 'block');
 });
 
-test('a candidate handoff keeps only source-confirmed travelers aboard the observed wagon', async ({
+test('a real block departure carries only exact proved IDs and leaves unproved riders available', async ({
   page,
-}) => {
+}, testInfo) => {
   const included = transaction('bitcoin', 1, 20, 200);
   const waiting = transaction('bitcoin', 2, 15, 200);
-  let blockIndex = 1;
-  await routeSnapshots(page, (chain) => {
+  const refresh = await routeSnapshots(page, (chain, stage) => {
+    const latest = block(chain, chain === 'bitcoin' ? stage : 0);
     const transactions =
       chain === 'bitcoin'
-        ? [
-            {
-              ...included,
-              status: blockIndex >= 2 ? ('confirmed' as const) : ('pending' as const),
-            },
-            { ...waiting, status: blockIndex >= 3 ? ('confirmed' as const) : ('pending' as const) },
-          ]
+        ? stage >= 2
+          ? [{ ...waiting, status: 'confirmed' as const, blockHash: latest.hash }]
+          : [
+              {
+                ...included,
+                ...(stage === 1 ? { status: 'confirmed' as const, blockHash: latest.hash } : {}),
+              },
+              waiting,
+            ]
         : [];
-    const snapshot = liveSnapshot(chain, transactions);
-    const first = snapshot.blocks[0];
-    if (!first) throw new Error('Bloc requis par le scénario de transfert');
-    const observedIndex = chain === 'bitcoin' ? blockIndex : 1;
-    return {
-      ...snapshot,
-      blocks: [
-        {
-          ...first,
-          height: first.height + observedIndex,
-          hash: `${chain === 'ethereum' ? '0x' : ''}${observedIndex.toString(16).padStart(64, '0')}`,
-        },
-      ],
-    };
+    return liveSnapshot(chain, transactions, stage, {
+      blocks: [latest],
+      inclusions:
+        chain === 'bitcoin' && stage > 0
+          ? [
+              { block: block(chain, 1), transactionIds: [included.id] },
+              ...(stage >= 2 ? [{ block: latest, transactionIds: [waiting.id] }] : []),
+            ]
+          : [],
+    });
   });
   await page.goto('/');
-  const bitcoin = page.locator('section.chain-pane[data-chain="bitcoin"]');
-  const handoff = bitcoin.locator('.street-candidate--handoff');
-  const observed = bitcoin.locator('.street-observed-wagon');
-  const candidate = bitcoin.locator('.street-candidate-wagon:not(.street-candidate--handoff)');
-  const includedPerson = traveler(page, included);
-  const waitingPerson = traveler(page, waiting);
-  await expect(includedPerson).toHaveAttribute('data-motion-state', 'queue');
-  await expect(handoff).toHaveCount(0);
+  const description = await openTraveler(page, included);
   await page.clock.runFor(9_000);
-  await expect(includedPerson).toHaveAttribute('data-motion-state', 'boarded');
-  await expect(waitingPerson).toHaveAttribute('data-motion-state', 'boarded');
-  await page.clock.fastForward(11_000);
-  await expect(handoff).toHaveCount(0);
-
-  blockIndex = 2;
-  await page.clock.fastForward(11_000);
-  await expect(handoff).toHaveCount(1);
-  await expect(handoff.locator(`.street-person[data-tx-id="${included.id}"]`)).toHaveAttribute(
-    'data-source-status',
-    'confirmed',
-  );
-  await expect(handoff.locator(`.street-person[data-tx-id="${waiting.id}"]`)).toHaveCount(0);
-  await expect(waitingPerson).toHaveAttribute('data-motion-state', /exiting|returning/);
-  await expect(waitingPerson).toHaveAttribute('data-source-status', 'pending');
-  await expect(observed.locator(`.street-person[data-tx-id="${waiting.id}"]`)).toHaveCount(0);
+  await expect(description).toContainText('à bord du wagon illustratif');
+  await expect(firstWagon(page).getByRole('img')).toHaveAttribute('data-transaction-count', '2');
+  await expect(firstWagon(page)).toHaveAttribute('data-moving', 'false');
+  await closeBrowser(page);
+  await refresh(1);
+  await expect(firstWagon(page)).toHaveAttribute('data-preparation-progress', /^[0-9.]+$/);
+  await page.clock.runFor(1_150);
+  await expect(firstWagon(page)).toHaveAttribute('data-moving', 'false');
+  await page.clock.runFor(2_000);
+  await expect(firstWagon(page)).toHaveAttribute('data-moving', 'true');
+  await expect(firstWagon(page).getByRole('img')).toHaveAttribute('data-transaction-count', '1');
+  await expect(firstWagon(page, 'ethereum')).toHaveAttribute('data-moving', 'false');
+  await expect(await openTraveler(page, waiting)).toContainText('en attente dans la source');
   await expect(
-    page.locator('section.chain-pane[data-chain="ethereum"] .street-candidate--handoff'),
+    browser(page).getByRole('combobox').locator(`option[value="${included.id}"]`),
   ).toHaveCount(0);
-
+  await closeBrowser(page);
   await page.getByRole('button', { name: 'Mettre l’animation en pause' }).click();
-  const progress = await handoff.getAttribute('data-handoff-progress');
-  const pausedPosition = await position(includedPerson);
+  const position = await firstWagon(page).getAttribute('transform');
+  const paused = await canvasFingerprint(page);
   await page.clock.runFor(500);
-  expect(await handoff.getAttribute('data-handoff-progress')).toBe(progress);
-  expect(await position(includedPerson)).toEqual(pausedPosition);
+  expect(await firstWagon(page).getAttribute('transform')).toBe(position);
+  expect(await canvasFingerprint(page)).toEqual(paused);
   await page.getByRole('button', { name: 'Reprendre l’animation' }).click();
-  await page.clock.runFor(1_000);
-  expect(await position(includedPerson)).not.toEqual(pausedPosition);
-  await page.clock.runFor(4_000);
-  await expect(handoff).toHaveCount(0);
-  await expect(observed.locator(`.street-person[data-tx-id="${included.id}"]`)).toHaveAttribute(
-    'data-source-status',
-    'confirmed',
-  );
-  await expect(observed.locator(`.street-person[data-tx-id="${waiting.id}"]`)).toHaveCount(0);
-  await expect(candidate).toHaveCount(1);
-  await expect(candidate).toBeVisible();
-  await expect(waitingPerson).toHaveAttribute('data-source-status', 'pending');
-  await page.clock.runFor(18_000);
-  await expect(candidate.locator(`.street-person[data-tx-id="${waiting.id}"]`)).toHaveAttribute(
-    'data-motion-state',
-    'boarded',
-  );
-  await waitingPerson.focus();
-  await page.keyboard.press('Enter');
+  await page.clock.runFor(500);
+  expect(await firstWagon(page).getAttribute('transform')).not.toBe(position);
+  await page.clock.runFor(6_000);
+  await expect(firstWagon(page)).toHaveAttribute('data-moving', 'false');
+  await expect(firstWagon(page).getByRole('img')).toHaveAttribute('data-transaction-count', '1');
+  await showDetails(page, waiting);
   await expect(
     page.getByTestId('info-panel').getByText('En attente', { exact: true }),
   ).toBeVisible();
-
-  await page.getByRole('button', { name: 'Mouvements actifs' }).click();
-  blockIndex = 3;
-  await page.clock.fastForward(11_000);
+  await page.getByRole('button', { name: 'Réduire les mouvements', exact: true }).click();
+  await refresh(2);
+  await expect(firstWagon(page)).toHaveAttribute('data-moving', 'false');
+  await expect(firstWagon(page).getByRole('img')).toHaveAttribute('data-transaction-count', '0');
+  await page.getByRole('button', { name: 'Masquer le panneau d’informations' }).click();
+  await page.getByRole('button', { name: 'Parcourir les transactions Bitcoin' }).click();
+  await expect(browser(page).getByRole('combobox')).toBeDisabled();
   await expect(
-    bitcoin.locator('.chain-metrics').getByText('#900 003', { exact: false }),
-  ).toBeVisible();
-  await expect(handoff).toHaveCount(0);
-  await expect(observed.locator(`.street-person[data-tx-id="${waiting.id}"]`)).toHaveAttribute(
-    'data-source-status',
-    'confirmed',
-  );
-  const reducedPosition = await position(waitingPerson);
-  await page.clock.runFor(1_000);
-  expect(await position(waitingPerson)).toEqual(reducedPosition);
+    browser(page).getByRole('combobox').locator(`option[value="${waiting.id}"]`),
+  ).toHaveCount(0);
+  await closeBrowser(page);
+  await page.screenshot({
+    path: testInfo.outputPath('proved-only-departures.png'),
+    fullPage: true,
+  });
 });

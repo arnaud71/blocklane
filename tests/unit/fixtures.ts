@@ -19,6 +19,9 @@ export function liveSnapshot(chain: ChainId = 'bitcoin', observedAt = now): Snap
     transactions: demo.transactions.map((tx) => ({
       ...tx,
       id: `${chain === 'ethereum' ? '0x' : ''}${tx.id.slice(-64)}`,
+      ...(tx.blockHash
+        ? { blockHash: `${chain === 'ethereum' ? '0x' : ''}${tx.blockHash.slice(-64)}` }
+        : {}),
     })),
     blocks: demo.blocks.map((block) => ({
       ...block,

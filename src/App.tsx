@@ -12,6 +12,7 @@ import { useSnapshot } from './hooks/useSnapshot';
 import type { FeeDisplayUnit } from './lib/feeDisplay';
 import { useProviderMempool } from './hooks/useSourceFreshness';
 import { globalQueueGroupSize } from './lib/globalQueue';
+import { activeBitcoinBlockTemplate } from './lib/passengerMotion';
 
 const chains = {
   bitcoin: { name: 'Bitcoin', symbol: '₿', ticker: 'BTC' },
@@ -27,6 +28,23 @@ export function App() {
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [feeDisplayUnit, setFeeDisplayUnit] = useState<FeeDisplayUnit>('native');
+  const [browseTargets, setBrowseTargets] = useState<Record<ChainId, HTMLDivElement | null>>({
+    bitcoin: null,
+    ethereum: null,
+  });
+  const registerBrowseTarget = useCallback((id: ChainId, element: HTMLDivElement | null) => {
+    setBrowseTargets((current) =>
+      current[id] === element ? current : { ...current, [id]: element },
+    );
+  }, []);
+  const bitcoinBrowseTarget = useCallback(
+    (element: HTMLDivElement | null) => registerBrowseTarget('bitcoin', element),
+    [registerBrowseTarget],
+  );
+  const ethereumBrowseTarget = useCallback(
+    (element: HTMLDivElement | null) => registerBrowseTarget('ethereum', element),
+    [registerBrowseTarget],
+  );
   const [lastDepartures, setLastDepartures] = useState<Record<ChainId, number | null>>({
     bitcoin: null,
     ethereum: null,
@@ -60,6 +78,7 @@ export function App() {
   const [fullScreen, setFullScreen] = useState(false);
   const [screenMessage, setScreenMessage] = useState('');
   const contentClose = useRef<HTMLButtonElement>(null);
+  const informationToggle = useRef<HTMLButtonElement>(null);
   const navigationFocus = useRef<HTMLButtonElement | null>(null);
   const [reducedMotion, setReducedMotion] = useState(
     () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -71,17 +90,47 @@ export function App() {
   const queueGroupSize = globalQueueGroupSize([bitcoinPool.total, ethereumPool.total]);
   const feeds = { bitcoin, ethereum };
   const snapshot = feeds[chain].snapshot;
+  const activeTemplate = snapshot ? activeBitcoinBlockTemplate(snapshot) : null;
   const selected = selection
     ? (feeds[selection.chain].snapshot?.transactions.find((tx) => tx.id === selection.id) ??
-      (feeds[selection.chain].snapshot?.inclusions?.some(
-        (inclusion) =>
-          inclusion.block.hash === selection.transaction.blockHash &&
-          inclusion.transactionIds.includes(selection.id),
-      )
-        ? selection.transaction
-        : null))
+      selection.transaction)
     : null;
   const fairUrl = safeExternalUrl(brand.fairOnChainUrl);
+  const closeInformation = useCallback(() => {
+    setInfoOpen(false);
+    setSelection(null);
+    informationToggle.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    // Only the selected observation is retained when it leaves the bounded source sample.
+    setSelection((current) => {
+      if (!current) return current;
+      const latest = current.chain === 'bitcoin' ? bitcoin.snapshot : ethereum.snapshot;
+      const observed = latest?.transactions.find((tx) => tx.id === current.id);
+      if (observed) {
+        return observed === current.transaction ? current : { ...current, transaction: observed };
+      }
+      const inclusion = latest?.inclusions?.find((entry) =>
+        entry.transactionIds.some((id) => id.toLowerCase() === current.id.toLowerCase()),
+      );
+      if (
+        !inclusion ||
+        (current.transaction.status === 'confirmed' &&
+          current.transaction.blockHash === inclusion.block.hash)
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        transaction: {
+          ...current.transaction,
+          status: 'confirmed',
+          blockHash: inclusion.block.hash,
+        },
+      };
+    });
+  }, [bitcoin.snapshot, ethereum.snapshot]);
 
   useEffect(() => {
     if (view === 'visual') navigationFocus.current?.focus();
@@ -90,9 +139,16 @@ export function App() {
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setSelection(null);
-      setView('visual');
+      // A transaction browser consumes Escape first; close its containing panel
+      // only on a subsequent key press.
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (view !== 'visual') {
+        event.preventDefault();
+        setView('visual');
+      } else if (infoOpen) {
+        event.preventDefault();
+        closeInformation();
+      }
     };
     const screen = () => setFullScreen(document.fullscreenElement !== null);
     document.addEventListener('keydown', escape);
@@ -101,7 +157,7 @@ export function App() {
       document.removeEventListener('keydown', escape);
       document.removeEventListener('fullscreenchange', screen);
     };
-  }, []);
+  }, [view, infoOpen, closeInformation]);
 
   function changeChain(value: ChainId) {
     setChain(value);
@@ -218,6 +274,9 @@ export function App() {
           {chainIds.map((id) => {
             const feed = feeds[id];
             const current = feed.snapshot;
+            const nodeTemplate = current ? activeBitcoinBlockTemplate(current) : null;
+            const previousTemplate = current?.blockTemplate ?? feed.expiredBlockTemplate;
+            const displayedTemplate = nodeTemplate ?? previousTemplate;
             const network = chains[id];
             const label =
               mode === 'demo'
@@ -282,16 +341,29 @@ export function App() {
                   ) : (
                     <div className="billboard-loading">Connexion à la source…</div>
                   )}
-                  <p className="chain-departure-line">
-                    {mode === 'demo' ? 'Depuis le départ simulé' : 'Depuis le dernier départ'}{' '}
+                  <div className="chain-departure-line">
+                    <span className="chain-departure-label">
+                      <span className="chain-departure-label-full">
+                        {mode === 'demo' ? 'Depuis le départ simulé' : 'Depuis le dernier départ'}
+                      </span>
+                      <span className="chain-departure-label-compact" aria-hidden="true">
+                        Départ
+                      </span>
+                    </span>
                     <DepartureTimer departedAt={lastDepartures[id]} demo={mode === 'demo'} />
-                  </p>
+                    <div
+                      ref={id === 'bitcoin' ? bitcoinBrowseTarget : ethereumBrowseTarget}
+                      className="chain-transaction-controls"
+                      data-transaction-controls={id}
+                    />
+                  </div>
                 </header>
                 <div className="scene-stage">
                   {current && current.status !== 'unavailable' ? (
                     <StreetScene
                       key={`${id}:${mode}`}
                       snapshot={current}
+                      browseTarget={browseTargets[id]}
                       paused={paused}
                       speed={speed}
                       reducedMotion={reducedMotion}
@@ -300,9 +372,11 @@ export function App() {
                       onActivity={recordActivity}
                       onSelect={selectTransaction}
                       selectedId={selected?.chain === id ? selected.id : undefined}
+                      selectedFallback={selected?.chain === id ? selected : undefined}
                       theme={theme}
                       mirrored={id === 'bitcoin'}
                       onClearSelection={clearSelection}
+                      onCloseInfo={closeInformation}
                       immersive
                       showInfo={infoOpen && chain === id}
                     />
@@ -335,9 +409,12 @@ export function App() {
                     <InfoPanel
                       feeDisplayUnit={feeDisplayUnit}
                       snapshot={current}
-                      selectedTx={null}
+                      selectedTx={selected?.chain === id ? selected : null}
+                      selectedHistorical={selected?.chain === id}
                       paused={paused}
                       reducedMotion={reducedMotion}
+                      onClearSelection={clearSelection}
+                      onClose={closeInformation}
                     />
                   )}
                 </div>
@@ -353,12 +430,22 @@ export function App() {
                   mode={mode}
                   transactionsPerGroup={queueGroupSize}
                 />
-                <p className="chain-coverage" title={current?.coverage}>
+                <p
+                  className="chain-coverage"
+                  title={current?.coverage}
+                  data-template-count={nodeTemplate?.transactionCount}
+                >
                   {mode === 'demo'
                     ? 'Données fictives'
-                    : current?.sampling
-                      ? 'Top des pending · pool observé'
-                      : 'Sélection partielle'}{' '}
+                    : nodeTemplate
+                      ? `Candidat complet : ${nodeTemplate.transactionCount.toLocaleString('fr-CH')} tx proposées hors coinbase`
+                      : previousTemplate
+                        ? 'Ancien candidat du nœud · estimation'
+                        : current?.bitcoinArrivals
+                          ? 'Échantillon mixte · arrivées réelles'
+                          : current?.sampling
+                            ? 'Top des pending · pool observé'
+                            : 'Sélection partielle'}{' '}
                   ·{' '}
                   {current
                     ? Math.min(
@@ -366,11 +453,20 @@ export function App() {
                         current.transactions.filter((tx) => tx.status === 'pending').length,
                       )
                     : 0}{' '}
-                  en attente échantillonnées
-                  {current?.sampling ? ` · ${current.sampling.source}` : ''}
+                  {nodeTemplate
+                    ? `détails individuels reçus (maximum ${PENDING_SAMPLE_LIMIT})`
+                    : 'en attente échantillonnées'}
+                  {current?.bitcoinArrivals &&
+                    ` · dont ${current.bitcoinArrivals.transactionIds.length.toLocaleString('fr-CH')} arrivées récentes`}
+                  {displayedTemplate
+                    ? ` · #${displayedTemplate.height.toLocaleString('fr-CH')}${nodeTemplate ? '' : ` · ${displayedTemplate.transactionCount.toLocaleString('fr-CH')} transactions proposées hors coinbase`} · ${displayedTemplate.source}`
+                    : current?.sampling
+                      ? ` · ${current.sampling.source}`
+                      : ''}
                   {current?.observedAt
-                    ? ` · relevé ${new Date(current.sampling?.observedAt ?? current.observedAt).toLocaleTimeString('fr-CH')}`
+                    ? ` · relevé ${new Date(displayedTemplate?.observedAt ?? (current.bitcoinArrivals ? current.observedAt : current.sampling?.observedAt) ?? current.observedAt).toLocaleTimeString('fr-CH')}`
                     : ''}
+                  {nodeTemplate && ' · Aucune preuve qu’un pool le mine.'}
                 </p>
               </section>
             );
@@ -403,27 +499,36 @@ export function App() {
                     actuellement affichés sur cette blockchain, pas une moyenne mondiale. Sur le
                     quai, les places déjà attribuées restent dans l'ordre d'arrivée observé. Les
                     nouveaux voyageurs occupent les places libres par frais décroissants. Sa tête
-                    illustre ses besoins en espace ou en gas. La ville ne montre pas toutes les
-                    transactions.
+                    illustre ses besoins en espace ou en gas, avec une différence de taille
+                    accentuée. L’accessoire bleu cyan identifie une transaction classée comme
+                    interaction ou création de contrat dans les données reçues. La ville ne montre
+                    pas toutes les transactions.
                   </Lesson>
                   <Lesson
                     n="02"
                     title="Pourquoi deux wagons ?"
-                    detail="À l’arrivée d’un nouveau bloc, le premier wagon se prépare pendant au moins une seconde : les transactions dont l’inclusion est vérifiée embarquent rapidement, tandis que les autres retournent sur le quai. Il part ensuite avec les inclusions connues. Le second wagon monte à sa place, puis un nouveau second arrive du bas. Les anciennes observations regroupées gardent jusqu’à 512 identifiants pendant 30 minutes : si une inclusion est retrouvée, leur voyageur revient du groupe et rejoint le départ du bloc concerné. Les observations au-delà de ces limites restent représentées sans suivi individuel. Seule la source confirme une inclusion : l’animation ne change pas le statut."
+                    detail="À l’arrivée d’un nouveau bloc, le premier wagon se prépare pendant au moins trois secondes pour Bitcoin et 1,5 seconde pour Ethereum : les transactions dont l’inclusion est vérifiée embarquent, tandis que les autres retournent sur le quai. Les compléments identifiés pendant cette préparation rejoignent le même départ. Il part ensuite avec les inclusions connues, une fois leurs passages terminés. Le second wagon monte à sa place, puis un nouveau second arrive du bas. Les anciennes observations regroupées gardent jusqu’à 512 identifiants pendant 30 minutes : si une inclusion est retrouvée, leur voyageur revient du groupe et rejoint le départ du bloc concerné. Les observations au-delà de ces limites restent représentées sans suivi individuel. Seule la source confirme une inclusion : l’animation ne change pas le statut."
                   >
                     Le wagon du haut projette le prochain bloc ; celui du bas projette le bloc qui
-                    pourrait suivre. Leurs voyageurs viennent de notre échantillon de transactions
-                    en attente et leur sélection évolue selon les frais et la place disponible.
-                    Chaque wagon dispose de 12 unités pédagogiques : elles ne représentent pas la
-                    capacité réelle et ne garantissent ni l’ordre ni l’inclusion.
+                    pourrait suivre. Pour Bitcoin, « Candidat du nœud » indique une sélection
+                    proposée par le nœud observé ; sinon le premier wagon reste une estimation. Le
+                    second wagon reste une estimation. La place représentée utilise les vBytes pour
+                    Bitcoin et le gas pour Ethereum. Hors candidat fourni, les frais ordonnent les
+                    priorités lorsque la place manque. Un voyageur déjà embarqué peut conserver une
+                    réservation si le tarif recommandé Bitcoin augmente ou s’il disparaît simplement
+                    du nouvel échantillon. Dans ce dernier cas, l’horloge signale une observation
+                    conservée, sans certifier sa présence actuelle dans le mempool. Ces projections
+                    ne garantissent ni l’ordre ni l’inclusion. Un candidat du nœud ne prouve pas
+                    qu’un pool minier le mine.
                   </Lesson>
                   <Lesson n="03" title="Bitcoin : partager un espace limité">
                     Les frais s’expriment en satoshis par vByte. Les mineurs choisissent les
                     transactions selon plusieurs contraintes, dont les dépendances entre
                     transactions. Un tarif élevé ne garantit ni place ni délai. L’indicateur du haut
-                    affiche le coût médian estimé par transaction en attente de notre échantillon,
-                    en BTC ou en dollars. Cet échantillon privilégie les frais élevés et ne
-                    représente pas la médiane de tout le réseau.
+                    affiche en BTC ou en dollars la médiane des frais de toutes les transactions du
+                    candidat du nœud, hors coinbase, quand ce calcul complet est disponible. Sinon,
+                    il donne le coût médian estimé du seul échantillon reçu, en le signalant. Aucune
+                    de ces médianes ne représente tout le mempool ni des frais confirmés.
                   </Lesson>
                   <Lesson n="04" title="Ethereum : le gas et la priorité">
                     Le gas mesure le travail demandé. Avec EIP-1559, le prix effectif dépend
@@ -433,13 +538,21 @@ export function App() {
                     de chaque transaction de l’échantillon. Il ne mesure pas les frais réellement
                     payés.
                   </Lesson>
-                  <Lesson n="05" title="Un mempool est une vue locale">
+                  <Lesson
+                    n="05"
+                    title="Un mempool est une vue locale"
+                    detail="La rubrique Flux privilégie les événements envoyés par le fournisseur : ajouts Bitcoin et notifications pending Ethereum. Une notification Ethereum peut être une promotion depuis queued ou une réémission, sans être une première arrivée mondiale. Le relevé périodique de deux inventaires complets reste un secours distinct ; il compte les entrées séparément des disparitions. Le débit est une moyenne sur la durée indiquée, avec une courbe des observations récentes. Sur Bitcoin, les détails réels des ajouts du flux alimentent jusqu’à 384 places à l’intérieur de l’échantillon de 1 920 transactions ; leur présence dans ce fournisseur ne garantit ni sélection dans le candidat du nœud ni inclusion. Le complément reste issu du candidat ou du relevé disponible : cet échantillon mixte n’est pas un classement global des frais. Sur Ethereum, le groupe +X hors échantillon signale les notifications absentes de la sélection pending lors de la première publication du lot ; certains identifiants peuvent déjà être conservés dans les observations de la scène. Ce groupe n’est pas un effectif à additionner aux voyageurs et ne monte pas dans un wagon. La borne réseau haute garde un autre rôle : les inclusions découvertes dans un bloc reçu. Une coupure ne restitue pas les événements manqués, et une disparition ne prouve aucune confirmation."
+                  >
                     Chaque nœud voit sa propre file. Pour Ethereum, le bloc candidat du fournisseur
                     n’est pas un mempool global. Une absence à l’écran ne signifie pas qu’une
                     transaction n’existe pas. « Mempool source » affiche le comptage du fournisseur
                     observé, lorsqu’il le donne. Sur Ethereum, il réunit pending et queued ; les
                     transactions différées peuvent attendre un nonce précédent. L’échantillon
-                    visible ne remplace jamais un compteur indisponible.
+                    visible ne remplace jamais un compteur indisponible. La rubrique Flux donne
+                    aussi une idée des arrivées observées. Sur Bitcoin, les arrivées détaillées
+                    rejoignent l’échantillon et deviennent des bonshommes individuels. Sur Ethereum,
+                    un groupe « +X hors échantillon » complète les entrées latérales. Un premier
+                    relevé ou une panne ne sont jamais affichés comme un flux nul.
                   </Lesson>
                   <Lesson n="06" title="Un départ n’est pas une finalité">
                     Une inclusion récente peut être remise en cause par une réorganisation. Ethereum
@@ -463,9 +576,16 @@ export function App() {
                     <span className="coin bitcoin">₿</span>
                     <h3>Bitcoin</h3>
                     <p>
-                      Blocs et frais conseillés : mempool.space par défaut. Le classement des frais
-                      utilise le mempool complet d’un RPC distinct, Bitcoin PublicNode par défaut,
-                      lorsque sa collecte aboutit. Sinon, une sélection partielle est signalée.
+                      Blocs et frais conseillés : mempool.space par défaut. Le candidat du nœud
+                      obtenu par getblocktemplate est prioritaire, via Bitcoin PublicNode par
+                      défaut. Son nombre complet de transactions hors coinbase, son poids et sa
+                      médiane complète de frais sont calculés avant de limiter les détails
+                      individuels à {PENDING_SAMPLE_LIMIT}. Une représentation collective peut
+                      compléter ces détails, sans inventer de transactions individuelles. Cette
+                      proposition ne décrit pas tout le mempool et aucun pool minier n’est réputé la
+                      miner. En secours, le classement utilise le pool RPC complet, puis la
+                      projection mempool.space et enfin ses seules transactions récentes ; le
+                      périmètre estimé reste annoncé.
                     </p>
                     <a
                       className="text-link"
@@ -498,8 +618,32 @@ export function App() {
                 <dl className="source-details">
                   <div>
                     <dt>Source active</dt>
-                    <dd>{snapshot?.source ?? 'Connexion en cours'}</dd>
+                    <dd>
+                      {activeTemplate
+                        ? `Candidat du nœud · ${activeTemplate.source}`
+                        : (snapshot?.source ?? 'Connexion en cours')}
+                    </dd>
                   </div>
+                  {activeTemplate && (
+                    <>
+                      <div>
+                        <dt>Candidat proposé</dt>
+                        <dd>
+                          #{activeTemplate.height.toLocaleString('fr-CH')} ·{' '}
+                          {activeTemplate.transactionCount.toLocaleString('fr-CH')} transactions
+                          hors coinbase · {activeTemplate.weight.toLocaleString('fr-CH')} WU ·
+                          jusqu’à {PENDING_SAMPLE_LIMIT} détails individuels · relevé à{' '}
+                          <time dateTime={new Date(activeTemplate.observedAt).toISOString()}>
+                            {new Date(activeTemplate.observedAt).toLocaleTimeString('fr-CH')}
+                          </time>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Blocs et comptage du mempool</dt>
+                        <dd>{snapshot?.source}</dd>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <dt>Couverture</dt>
                     <dd>{snapshot?.coverage ?? 'Non disponible'}</dd>
@@ -562,11 +706,13 @@ export function App() {
             <select
               value={speed}
               onChange={(event) => setSpeed(Number(event.target.value))}
-              aria-label="Vitesse de simulation"
+              aria-label="Vitesse d’animation"
             >
               <option value={0.5}>0,5×</option>
               <option value={1}>1×</option>
               <option value={2}>2×</option>
+              <option value={5}>5×</option>
+              <option value={10}>10×</option>
             </select>
           </label>
           <button
@@ -583,16 +729,22 @@ export function App() {
           </button>
         </div>
         <p className="immersion-hint">
-          T-shirt : jaune faible → rouge fort · Tête = vBytes / gas · Embarquement ≠ confirmation
+          {paused ? 'Animation en pause · données actualisées · ' : ''}
+          T-shirt : frais relatifs à l’échantillon · Tête = vBytes / limite de gas · Embarquement ≠
+          confirmation
         </p>
         <div className="immersion-actions">
           <button
+            ref={informationToggle}
             className={infoOpen ? 'active' : ''}
             aria-label={
               infoOpen ? 'Masquer le panneau d’informations' : 'Afficher le panneau d’informations'
             }
             aria-expanded={infoOpen}
-            onClick={() => setInfoOpen(!infoOpen)}
+            onClick={() => {
+              if (infoOpen) closeInformation();
+              else setInfoOpen(true);
+            }}
           >
             <Icon name="signal" size={16} />
             <span className="control-label-full">Informations</span>

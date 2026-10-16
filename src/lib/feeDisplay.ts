@@ -6,12 +6,16 @@ import {
   type UsdQuote,
 } from '../../shared/model';
 import { number } from './format';
+import { activeBitcoinBlockTemplate } from './passengerMotion';
 
 export type FeeDisplayUnit = 'native' | 'usd';
 
 export type MedianTransactionFee = {
   nativeAmount: number | null;
   sampleSize: number;
+  scope?: 'template' | 'sample';
+  /** Exact integer or half-integer satoshis supplied for a complete Bitcoin candidate. */
+  medianFeeSats?: number | null;
 };
 
 export const QUOTE_MAX_AGE_MS = 5 * 60 * 1_000;
@@ -68,9 +72,23 @@ function estimatedNativeFee(transaction: Tx): number | null {
   return amount;
 }
 
-/** Median of individual estimated totals in the received pending sample, never the whole network. */
+/** Complete proposed fees when supplied by the node, otherwise only the received pending sample. */
 export function medianTransactionFee(snapshot: Snapshot | null): MedianTransactionFee {
-  if (!snapshot || snapshot.status === 'unavailable') return { nativeAmount: null, sampleSize: 0 };
+  if (!snapshot || snapshot.status === 'unavailable')
+    return { nativeAmount: null, sampleSize: 0, scope: 'sample' };
+  const template = activeBitcoinBlockTemplate(snapshot);
+  if (template && template.medianFeeSats !== undefined) {
+    const sats = template.medianFeeSats;
+    return {
+      nativeAmount:
+        template.transactionCount > 0 && validAmount(sats) && Number.isSafeInteger(sats * 2)
+          ? sats / 100_000_000
+          : null,
+      sampleSize: template.transactionCount,
+      scope: 'template',
+      medianFeeSats: sats,
+    };
+  }
   const seen = new Set<string>();
   const amounts: number[] = [];
   for (const transaction of snapshot.transactions.slice(0, MAX_TRANSACTIONS)) {
@@ -85,10 +103,41 @@ export function medianTransactionFee(snapshot: Snapshot | null): MedianTransacti
   amounts.sort((a, b) => a - b);
   const middle = Math.floor(amounts.length / 2);
   const upper = amounts[middle];
-  if (upper === undefined) return { nativeAmount: null, sampleSize: 0 };
+  if (upper === undefined) return { nativeAmount: null, sampleSize: 0, scope: 'sample' };
   const lower = amounts[middle - 1] ?? upper;
   const nativeAmount = amounts.length % 2 === 0 ? lower + (upper - lower) / 2 : upper;
-  return { nativeAmount, sampleSize: amounts.length };
+  return { nativeAmount, sampleSize: amounts.length, scope: 'sample' };
+}
+
+export function medianTransactionFeeScopeLabel(median: MedianTransactionFee): string {
+  return `${median.scope === 'template' ? 'Candidat complet' : 'Échantillon'} : ${number(median.sampleSize)} tx`;
+}
+
+/** Complete integer-satoshi fees can have a half-satoshi median for an even cohort. */
+export function formatMedianTransactionFee(
+  chain: ChainId,
+  median: MedianTransactionFee,
+  unit: FeeDisplayUnit,
+  quote?: UsdQuote | null,
+): string {
+  if (
+    chain === 'bitcoin' &&
+    median.scope === 'template' &&
+    unit === 'native' &&
+    median.medianFeeSats !== undefined &&
+    validAmount(median.medianFeeSats) &&
+    Number.isSafeInteger(median.medianFeeSats * 2)
+  ) {
+    const halfSatoshis = BigInt(median.medianFeeSats * 2);
+    const halvesPerCoin = 200_000_000n;
+    const whole = halfSatoshis / halvesPerCoin;
+    const decimals = ((halfSatoshis % halvesPerCoin) * 5n)
+      .toString()
+      .padStart(9, '0')
+      .replace(/0+$/, '');
+    return `${number(Number(whole))}${decimals ? `,${decimals}` : ''} BTC`;
+  }
+  return formatEstimatedFeeAmount(chain, median.nativeAmount, unit, quote);
 }
 
 export function formatEstimatedFeeAmount(
@@ -116,7 +165,16 @@ export function formatEstimatedFeeAmount(
   return `≈ ${number(nativeAmount, digits)} ${coin}`;
 }
 
-export function medianTransactionFeeNote(chain: ChainId, sampleSize: number, demo = false): string {
+export function medianTransactionFeeNote(
+  chain: ChainId,
+  sampleSize: number,
+  demo = false,
+  scope: MedianTransactionFee['scope'] = 'sample',
+): string {
+  if (scope === 'template')
+    return sampleSize === 0
+      ? 'Candidat complet du nœud vide, hors coinbase : médiane non mesurée. Une proposition ne prouve aucune inclusion.'
+      : `Médiane des frais proposés pour les ${number(sampleSize)} transactions du candidat complet du nœud, hors coinbase. Elle ne décrit ni la médiane du mempool ni des frais confirmés. Cette proposition ne prouve aucune inclusion ni qu’un pool minier la mine.`;
   if (sampleSize === 0) return 'Aucune transaction en attente exploitable dans l’échantillon reçu.';
   if (demo) return `Médiane simulée sur ${sampleSize} transactions en attente fictives.`;
   return `Médiane des coûts estimés de ${sampleSize} transactions en attente de l’échantillon reçu. L’échantillon privilégie les frais élevés et ne représente pas la médiane du réseau. ${

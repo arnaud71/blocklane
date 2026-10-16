@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { snapshotSchema } from '../../shared/model.js';
+import { MAX_TRANSACTIONS, PENDING_SAMPLE_LIMIT, snapshotSchema } from '../../shared/model.js';
 import { generateDemoSnapshot } from '../../server/demo.js';
 import { now } from './fixtures.js';
 
@@ -11,7 +11,10 @@ describe('shared snapshot contract and demo isolation', () => {
     expect(bitcoin.mode).toBe('demo');
     expect(bitcoin.source).toContain('fictives');
     expect(bitcoin.transactions.every((tx) => tx.id.startsWith('demo-btc-'))).toBe(true);
-    expect(bitcoin.transactions.length).toBeLessThanOrEqual(120);
+    expect(bitcoin.transactions.length).toBeLessThanOrEqual(MAX_TRANSACTIONS);
+    expect(bitcoin.transactions.filter((tx) => tx.status === 'pending')).toHaveLength(
+      PENDING_SAMPLE_LIMIT,
+    );
     expect(bitcoin.blocks).toHaveLength(3);
     expect(snapshotSchema.safeParse(bitcoin).success).toBe(true);
   });

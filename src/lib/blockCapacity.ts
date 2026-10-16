@@ -1,4 +1,4 @@
-import type { Block, Snapshot, Tx } from '../../shared/model';
+import type { BitcoinBlockTemplate, Block, Snapshot, Tx } from '../../shared/model';
 
 /** BIP-141's 4,000,000 weight units expressed in the same vB units as the provider. */
 export const BITCOIN_BLOCK_VBYTES = 1_000_000;
@@ -32,7 +32,30 @@ export interface WagonBlockOccupancy {
   used: number | null;
   capacity: number | null;
   percentage: number | null;
-  kind: 'sample' | 'block' | 'unavailable';
+  kind: 'sample' | 'template' | 'block' | 'unavailable';
+}
+
+// Snapshots are immutable: retain this normalized membership only while its
+// candidate is reachable, rather than rebuilding it at the animation cadence.
+const candidateMembers = new WeakMap<BitcoinBlockTemplate, ReadonlySet<string>>();
+
+/** Collective members have no invented identity; count existing individuals anywhere in the scene. */
+export function bitcoinCandidateRepresentation(
+  template: BitcoinBlockTemplate,
+  transactions: Iterable<Pick<Tx, 'id' | 'status'>>,
+): { individualCount: number; groupedCount: number } {
+  let members = candidateMembers.get(template);
+  if (!members) {
+    members = new Set(template.selectedTransactionIds.map((id) => id.toLowerCase()));
+    candidateMembers.set(template, members);
+  }
+  const individuals = new Set<string>();
+  for (const tx of transactions) {
+    const id = tx.id.toLowerCase();
+    if (tx.status === 'pending' && members.has(id)) individuals.add(id);
+  }
+  const individualCount = Math.min(template.transactionCount, individuals.size);
+  return { individualCount, groupedCount: template.transactionCount - individualCount };
 }
 
 /** An explicit null block means confirmed metadata is missing; never substitute gas limits. */
@@ -40,6 +63,7 @@ export function wagonBlockOccupancy(
   transactions: Iterable<Pick<Tx, 'id' | 'size'>>,
   capacity: number | null,
   confirmedBlock?: Block | null,
+  nodeTemplate?: BitcoinBlockTemplate | null,
 ): WagonBlockOccupancy {
   const ids = new Set<string>();
   let sampleSize = 0;
@@ -68,6 +92,19 @@ export function wagonBlockOccupancy(
       capacity: confirmedBlock.capacity,
       percentage,
       kind: 'block',
+    };
+  }
+  if (nodeTemplate) {
+    const used = nodeTemplate.weight / 4;
+    const templateCapacity = nodeTemplate.weightLimit / 4;
+    const percentage = blockUsagePercent(used, templateCapacity);
+    if (percentage === null || percentage > 100) return unavailable;
+    return {
+      transactionCount: nodeTemplate.transactionCount,
+      used,
+      capacity: templateCapacity,
+      percentage,
+      kind: 'template',
     };
   }
   const percentage = validSizes ? blockUsagePercent(sampleSize, capacity) : null;

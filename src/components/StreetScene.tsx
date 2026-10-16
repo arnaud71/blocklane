@@ -8,10 +8,14 @@ import {
   type CSSProperties,
   type SVGProps,
 } from 'react';
-import type { Block, ChainId, Snapshot, Tx } from '../../shared/model';
+import type { BitcoinBlockTemplate, Block, ChainId, Snapshot, Tx } from '../../shared/model';
 import { usePassengerMotion } from '../hooks/usePassengerMotion';
 import type { PassengerPose } from '../lib/passengerMotion';
-import { MAX_WAITING_ARCHIVE_COUNT, WAITING_ARCHIVE_POSITION } from '../lib/passengerMotion';
+import {
+  MAX_WAITING_ARCHIVE_COUNT,
+  WAITING_ARCHIVE_POSITION,
+  activeBitcoinBlockTemplate,
+} from '../lib/passengerMotion';
 import {
   SCENE_WIDTH,
   SCENE_HEIGHT,
@@ -23,13 +27,24 @@ import {
   ENTRY_DOOR_Y,
   EXIT_DOOR_Y,
   ARRIVAL_LANE_X,
+  HISTORICAL_QUEUE_AREA,
+  createQueueLayout,
   type WagonKind,
 } from '../lib/streetGeometry';
 import { number } from '../lib/format';
-import { blockUsagePercent, wagonBlockOccupancy } from '../lib/blockCapacity';
+import {
+  bitcoinCandidateRepresentation,
+  blockUsagePercent,
+  wagonBlockOccupancy,
+} from '../lib/blockCapacity';
 import { feeColorForRate } from '../lib/feeColors';
+import { passengerPlanningReason } from '../lib/passengerPresentation';
+import { isHistoricalPassenger } from '../lib/passengerStatus';
 import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib/feeDisplay';
 import { PassengerCanvas } from './PassengerCanvas';
+import { NetworkRemainder } from './NetworkRemainder';
+import { ProviderFlowArrivals } from './ProviderFlowArrivals';
+import { confirmedBlockRemainder } from '../lib/networkRemainder';
 import type { CanvasClip, CanvasPassengerFrame } from '../lib/passengerCanvas';
 import { InfoPanel, type SceneActivity } from './InfoPanel';
 import { useUsableUsdQuote } from '../hooks/useSourceFreshness';
@@ -87,13 +102,16 @@ function ReadableText({
 
 export interface StreetSceneProps {
   snapshot: Snapshot;
+  browseTarget?: HTMLElement | null;
   paused: boolean;
   speed: number;
   reducedMotion: boolean;
   onSelect: (tx: Tx) => void;
   selectedId?: string;
+  selectedFallback?: Tx;
   theme?: 'heg' | 'neutral';
   onClearSelection?: () => void;
+  onCloseInfo?: () => void;
   immersive?: boolean;
   showInfo?: boolean;
   feeDisplayUnit?: FeeDisplayUnit;
@@ -154,6 +172,9 @@ function Wagon({
   chain,
   capacity,
   confirmedBlock,
+  nodeTemplate,
+  templateRepresentation,
+  blockRepresentation,
   simulated = false,
   doors,
   moving = false,
@@ -172,6 +193,9 @@ function Wagon({
   chain: ChainId;
   capacity: number | null;
   confirmedBlock?: Block | null;
+  nodeTemplate?: BitcoinBlockTemplate | null;
+  templateRepresentation?: { individualCount: number; groupedCount: number } | null;
+  blockRepresentation?: NonNullable<ReturnType<typeof confirmedBlockRemainder>> | null;
   simulated?: boolean;
   doors: { entry: boolean; exit: boolean };
   moving?: boolean;
@@ -183,6 +207,7 @@ function Wagon({
   mirrored: boolean;
 }) {
   const headlightGradientId = useId().replace(/:/g, '') + '-headlight-beam';
+  const templatePatternId = headlightGradientId + '-collective';
   const entryOpen = !moving && doors.entry;
   const exitOpen = !moving && doors.exit;
   const headlightsOn = moving || preparationProgress !== undefined;
@@ -198,23 +223,34 @@ function Wagon({
         passengers.map((pose) => pose.tx),
         capacity,
         confirmedBlock,
+        nodeTemplate,
       ),
-    [passengers, capacity, confirmedBlock],
+    [passengers, capacity, confirmedBlock, nodeTemplate],
   );
+  const collectiveBlock =
+    confirmedBlock && blockRepresentation?.groupedCount ? blockRepresentation : null;
   const unit = chain === 'bitcoin' ? 'vB' : 'gas';
   const occupancyLabel = occupancyPercentLabel(occupancy.percentage, occupancy.kind === 'sample');
   const transactionCountLabel = `${number(occupancy.transactionCount)} TX · ${occupancyLabel}`;
-  const transactionCountDescription = `${simulated ? 'Données simulées. ' : ''}${number(occupancy.transactionCount)} transactions de l’échantillon représentées à bord. ${
-    occupancy.kind === 'block'
-      ? `Occupation ${simulated ? 'du bloc simulé' : 'réelle du bloc'} ${confirmedBlock?.hash} complet : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. Ce taux concerne tout le bloc, tandis que le compteur TX compte seulement les voyageurs représentés.`
-      : occupancy.kind === 'sample'
-        ? `Estimation de la place représentée à bord : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. ${chain === 'ethereum' ? 'Limites de gas déclarées divisées par la limite du dernier bloc observé ; elles ne mesurent pas le gas réellement consommé et la limite du prochain bloc peut évoluer.' : 'Somme des tailles virtuelles divisée par le budget de poids du bloc exprimé en vB ; les frais de structure du bloc ne sont pas inclus.'} Les places réservées hors du wagon sont exclues. Cet échantillon limité ne représente pas tout le futur bloc.`
-        : 'Occupation indisponible : capacité ou consommation nécessaire absente.'
-  }`;
+  const retainedObservationCount = passengers.filter(
+    (pose) => !pose.sourceObserved && pose.tx.status === 'pending',
+  ).length;
+  const transactionCountDescription = `${simulated ? 'Données simulées. ' : ''}${occupancy.kind === 'template' ? `${number(occupancy.transactionCount)} transactions proposées dans le candidat complet du nœud. ${number(templateRepresentation?.individualCount ?? 0)} membres ont un bonhomme individuel dans la scène, y compris ceux encore sur le quai ; ${number(templateRepresentation?.groupedCount ?? occupancy.transactionCount)} sont représentés collectivement. ` : `${number(occupancy.transactionCount)} transactions observées représentées à bord. `}${retainedObservationCount ? `Observations conservées hors de l’échantillon actuel : ${number(retainedObservationCount)}. L’horloge indique que leur présence actuelle dans le mempool est inconnue. ` : ''}${
+    occupancy.kind === 'template'
+      ? `Occupation proposée du candidat complet hors coinbase : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. Calcul sur toutes les transactions proposées ; en-tête et coinbase exclus.`
+      : occupancy.kind === 'block'
+        ? `Occupation ${simulated ? 'du bloc simulé' : 'réelle du bloc'} ${confirmedBlock?.hash} complet : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. Ce taux concerne tout le bloc, tandis que le compteur TX compte seulement les voyageurs individualisés à bord.`
+        : occupancy.kind === 'sample'
+          ? `Estimation de la place représentée à bord : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. ${chain === 'ethereum' ? 'Limites de gas déclarées divisées par la limite du dernier bloc observé ; elles ne mesurent pas le gas réellement consommé et la limite du prochain bloc peut évoluer.' : 'Somme des tailles virtuelles divisée par le budget de poids du bloc exprimé en vB ; les frais de structure du bloc ne sont pas inclus.'} Les places réservées hors du wagon sont exclues. Cet échantillon limité ne représente pas tout le futur bloc.`
+          : 'Occupation indisponible : capacité ou consommation nécessaire absente.'
+  }${collectiveBlock ? ` Bloc complet : ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' hors coinbase' : ''}, dont ${number(collectiveBlock.individualCount)} individualisées dans toute la scène et ${number(collectiveBlock.groupedCount)} représentées collectivement sans identifiants inventés.` : ''}${nodeTemplate ? ` Candidat du nœud ${nodeTemplate.source}, hauteur ${number(nodeTemplate.height)}, relevé à ${new Date(nodeTemplate.observedAt).toLocaleTimeString('fr-CH')}. Le compteur et le pourcentage concernent tout le candidat ; seuls les détails individuels sont limités. Cette proposition ne prouve aucune inclusion ni qu’un pool minier la mine.` : ''}`;
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
       data-projection={kind === 'handoff' ? 'next' : kind}
+      data-projection-source={
+        confirmedBlock ? 'confirmed-block' : nodeTemplate ? 'node-template' : 'estimate'
+      }
       data-moving={moving}
       data-handoff-progress={handoffProgress}
       data-preparation-progress={preparationProgress}
@@ -243,6 +279,12 @@ function Wagon({
           <stop offset="0" stopColor="#fff4bb" stopOpacity="0" />
           <stop offset="1" stopColor="#fff4bb" stopOpacity=".38" />
         </linearGradient>
+        {((nodeTemplate && (templateRepresentation?.groupedCount ?? 0) > 0) || collectiveBlock) && (
+          <pattern id={templatePatternId} width="10" height="13" patternUnits="userSpaceOnUse">
+            <circle cx="5" cy="4" r="2.8" fill="#c9bda1" />
+            <path d="M1 12v-2.5Q1 7 5 7t4 2.5V12Z" fill="#92b5a0" />
+          </pattern>
+        )}
       </defs>
       <g transform={`translate(${WAGON_X} ${y})`} aria-hidden="true">
         <g className="street-wagon-headlight-emission">
@@ -324,6 +366,73 @@ function Wagon({
           strokeWidth="1"
         />
       </g>
+      {nodeTemplate && (templateRepresentation?.groupedCount ?? 0) > 0 && (
+        <g
+          className="street-template-group"
+          role="group"
+          aria-label={`${number(templateRepresentation!.groupedCount)} transactions proposées représentées collectivement, sans identifiants ni frais individuels dessinés. Les ${number(templateRepresentation!.individualCount)} membres individualisés sont exclus de ce groupe, y compris ceux encore sur le quai. Aucune confirmation n’est déduite de ce groupe.`}
+          data-template-group-count={templateRepresentation!.groupedCount}
+          data-template-individual-count={templateRepresentation!.individualCount}
+          pointerEvents="none"
+        >
+          <rect
+            x={WAGON_X + 13}
+            y={y + 46}
+            width="58"
+            height="140"
+            rx="7"
+            fill={`url(#${templatePatternId})`}
+            opacity=".55"
+            aria-hidden="true"
+          />
+          <ReadableText
+            mirrored={mirrored}
+            x={WAGON_X + WAGON_WIDTH / 2}
+            y={y + 43}
+            fill="#e0e4c9"
+            fontSize="6.5"
+            fontWeight="700"
+            textAnchor="middle"
+            aria-hidden="true"
+          >
+            +{number(templateRepresentation!.groupedCount)} groupées
+          </ReadableText>
+        </g>
+      )}
+      {collectiveBlock && (
+        <g
+          className="street-block-group"
+          role="group"
+          aria-label={`${number(collectiveBlock.groupedCount)} transactions du bloc reçu représentées collectivement, sans identifiants ni détails individuels inventés. Le bloc compte ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' hors coinbase' : ''} ; ${number(collectiveBlock.individualCount)} sont individualisées dans toute la scène, quai et arrivées compris. Ce groupe n’ajoute aucune option au navigateur de transactions.`}
+          data-block-group-count={collectiveBlock.groupedCount}
+          data-block-individual-count={collectiveBlock.individualCount}
+          data-block-transaction-count={collectiveBlock.transactionCount}
+          pointerEvents="none"
+        >
+          <rect
+            x={WAGON_X + 13}
+            y={y + 46}
+            width="58"
+            height="140"
+            rx="7"
+            fill={`url(#${templatePatternId})`}
+            opacity=".55"
+            aria-hidden="true"
+          />
+          <ReadableText
+            mirrored={mirrored}
+            x={WAGON_X + WAGON_WIDTH / 2}
+            y={y + 43}
+            fill="#e0e4c9"
+            fontSize="6.5"
+            fontWeight="700"
+            textAnchor="middle"
+            aria-hidden="true"
+          >
+            +{number(collectiveBlock.groupedCount)} collectives
+          </ReadableText>
+        </g>
+      )}
       <g transform={`translate(${WAGON_X} ${y})`}>
         <SideDoor y={ENTRY_DOOR_Y} open={entryOpen} purpose="entry" mirrored={mirrored} />
         <SideDoor y={EXIT_DOOR_Y} open={exitOpen} purpose="exit" mirrored={mirrored} />
@@ -368,6 +477,70 @@ function Wagon({
     </g>
   );
 }
+
+const HistoricalQueueBackdrop = memo(function HistoricalQueueBackdrop({
+  count,
+  projectX,
+  mirrored,
+  narrow,
+}: {
+  count: number;
+  projectX: (x: number) => number;
+  mirrored: boolean;
+  narrow: boolean;
+}) {
+  const start = projectX(HISTORICAL_QUEUE_AREA.x - 8);
+  const end = projectX(HISTORICAL_QUEUE_AREA.x + HISTORICAL_QUEUE_AREA.width + 8);
+  const center = (start + end) / 2;
+  return (
+    <g
+      role="group"
+      aria-label={`Zone historique : ${number(count)} voyageurs sur le quai. Présence actuelle inconnue, absence du relevé ou candidature remplacée ; aucune confirmation implicite.`}
+      data-history-area="true"
+      data-history-count={count}
+    >
+      <title>
+        Observations conservées : ces voyageurs restent consultables. Une présence retrouvée les
+        ramène vers la file active ; seule une inclusion vérifiée les fait partir avec un bloc.
+      </title>
+      <rect
+        x={start}
+        y="528"
+        width={end - start}
+        height="124"
+        rx="8"
+        fill="#5b6650"
+        fillOpacity=".75"
+        stroke="#c5c5a0"
+        strokeOpacity=".65"
+        strokeDasharray="4 4"
+      />
+      <g aria-hidden="true">
+        <ReadableText
+          mirrored={mirrored}
+          x={center}
+          y="504"
+          textAnchor="middle"
+          fill="#eee3be"
+          fontSize={narrow ? 7.5 : 10}
+          letterSpacing=".4"
+        >
+          OBSERVATIONS
+        </ReadableText>
+        <ReadableText
+          mirrored={mirrored}
+          x={center}
+          y="518"
+          textAnchor="middle"
+          fill="#e3d8b4"
+          fontSize={narrow ? 7 : 9}
+        >
+          {number(count)} {count === 1 ? 'conservée' : 'conservées'}
+        </ReadableText>
+      </g>
+    </g>
+  );
+});
 
 function WaitingArchive({
   count,
@@ -479,7 +652,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
       <rect x={arrivalStart} width={viewEnd - arrivalStart} height={SCENE_HEIGHT} fill="#294d3d" />
       <path d="M298 77v634" stroke="#c7cba0" strokeWidth="2" strokeDasharray="4 8" opacity=".3" />
       <path
-        d={`M${projectX(ARRIVAL_LANE_X)} 120v512`}
+        d={`M${projectX(ARRIVAL_LANE_X)} 200v432`}
         stroke="#90ad8e"
         strokeWidth="2"
         strokeDasharray="4 11"
@@ -488,7 +661,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
       <ReadableText
         mirrored={mirrored}
         x={CORRIDOR_X}
-        y="92"
+        y="155"
         textAnchor="middle"
         fill="#c8d8b5"
         fontSize={narrow ? 8 : 10}
@@ -499,7 +672,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
       <ReadableText
         mirrored={mirrored}
         x={(fileStart + fileEnd) / 2}
-        y="92"
+        y="155"
         textAnchor="middle"
         fill="#e0e6c7"
         fontSize={narrow ? 11 : 13}
@@ -511,7 +684,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
         <ReadableText
           mirrored={mirrored}
           x={(fileStart + fileEnd) / 2}
-          y="110"
+          y="168"
           textAnchor="middle"
           fill="#a6bea0"
           fontSize="9"
@@ -522,7 +695,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
       <ReadableText
         mirrored={mirrored}
         x={(arrivalStart + viewEnd) / 2}
-        y="92"
+        y="172"
         textAnchor="middle"
         fill="#d3dec0"
         fontSize={narrow ? 7.5 : 11}
@@ -535,12 +708,15 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
 
 export const StreetScene = memo(function StreetScene({
   snapshot,
+  browseTarget,
   paused,
   speed,
   reducedMotion,
   onSelect,
   selectedId,
+  selectedFallback,
   onClearSelection,
+  onCloseInfo,
   showInfo = true,
   feeDisplayUnit = 'native',
   onDeparture,
@@ -548,6 +724,7 @@ export const StreetScene = memo(function StreetScene({
   mirrored = false,
 }: StreetSceneProps) {
   const id = useId().replace(/:/g, '');
+  const nodeTemplate = activeBitcoinBlockTemplate(snapshot);
   const viewport = useRef<HTMLDivElement>(null);
   const [viewWidth, setViewWidth] = useState(SCENE_WIDTH - VIEW_START_X);
   useEffect(() => {
@@ -570,6 +747,7 @@ export const StreetScene = memo(function StreetScene({
   }, []);
   const viewEnd = VIEW_START_X + viewWidth;
   const projectionScale = (viewEnd - CORRIDOR_X) / (SCENE_WIDTH - CORRIDOR_X);
+  const queueLayout = useMemo(() => createQueueLayout(projectionScale), [projectionScale]);
   const projectX = useMemo(
     () => (x: number) => (x <= CORRIDOR_X ? x : CORRIDOR_X + (x - CORRIDOR_X) * projectionScale),
     [projectionScale],
@@ -585,6 +763,7 @@ export const StreetScene = memo(function StreetScene({
         ...pose,
         x: projectX(pose.x),
         queueX: projectX(pose.queueX),
+        trail: pose.trail?.map((point) => ({ x: projectX(point.x), y: point.y })),
         movementAngle:
           radians === undefined
             ? undefined
@@ -604,7 +783,38 @@ export const StreetScene = memo(function StreetScene({
     paused: paused || snapshot.status !== 'ok',
     speed,
     reducedMotion,
+    queueLayout,
   });
+  const selectedSource = useMemo(() => {
+    if (!selectedId) return { current: undefined, inclusion: undefined };
+    const current = snapshot.transactions.find((tx) => tx.id === selectedId);
+    const inclusion = snapshot.inclusions?.find((entry) =>
+      entry.transactionIds.some((id) => id.toLowerCase() === selectedId.toLowerCase()),
+    );
+    return { current, inclusion };
+  }, [selectedId, snapshot.transactions, snapshot.inclusions]);
+  const selectedResident = selectedId
+    ? motion.passengers.find((pose) => pose.tx.id === selectedId)
+    : undefined;
+  const selectedKnown =
+    selectedResident?.tx ??
+    (selectedFallback &&
+    selectedFallback.id === selectedId &&
+    selectedFallback.chain === snapshot.chain
+      ? selectedFallback
+      : undefined);
+  const selectedTransaction = useMemo(
+    () =>
+      selectedSource.current ??
+      (selectedKnown && selectedSource.inclusion
+        ? {
+            ...selectedKnown,
+            status: 'confirmed' as const,
+            blockHash: selectedSource.inclusion.block.hash,
+          }
+        : (selectedKnown ?? null)),
+    [selectedKnown, selectedSource],
+  );
   useEffect(() => {
     if (motion.lastDepartureAt !== null) onDeparture?.(snapshot.chain, motion.lastDepartureAt);
   }, [motion.lastDepartureAt, onDeparture, snapshot.chain]);
@@ -635,6 +845,42 @@ export const StreetScene = memo(function StreetScene({
     ? `#${number(motion.departingBlock.height)}`
     : 'BLOC REÇU';
   const projectionUsed = motion.projectionUsed ?? { next: motion.candidateUsed ?? 0, later: 0 };
+  const completeCandidate = !moving && !preparing ? nodeTemplate : null;
+  const blockRepresentation = useMemo(
+    () =>
+      (moving || preparing) && !motion.departureRecovered && motion.departingBlock
+        ? confirmedBlockRemainder(
+            snapshot.chain,
+            motion.departingBlock,
+            [...motion.passengers, ...(motion.departingPassengers ?? [])].map((pose) => pose.tx),
+          )
+        : null,
+    [
+      moving,
+      preparing,
+      motion.departingBlock,
+      motion.departureRecovered,
+      motion.passengers,
+      motion.departingPassengers,
+      snapshot.chain,
+    ],
+  );
+  const candidateRepresentation = useMemo(
+    () =>
+      completeCandidate
+        ? bitcoinCandidateRepresentation(
+            completeCandidate,
+            motion.passengers.map((pose) => pose.tx),
+          )
+        : null,
+    [completeCandidate, motion.passengers],
+  );
+  const nextCapacity = nodeTemplate
+    ? Math.min(
+        motion.candidateCapacity ?? nodeTemplate.weightLimit / 4,
+        nodeTemplate.weightLimit / 4,
+      )
+    : motion.candidateCapacity;
   const averageFeeRate = useMemo(() => {
     const rates = motion.passengers
       .filter((pose) => pose.sourceObserved && pose.tx.status === 'pending')
@@ -730,8 +976,9 @@ export const StreetScene = memo(function StreetScene({
     viewWidth,
     mirrored,
   ]);
-  const boardedCount = motion.passengers.filter(
-    (pose) => pose.inWagon && pose.sourceObserved,
+  const boardedCount = motion.passengers.filter((pose) => pose.inWagon).length;
+  const historicalQuayCount = motion.passengers.filter(
+    (pose) => !pose.inWagon && isHistoricalPassenger(pose),
   ).length;
   const activity = useMemo(
     () => ({
@@ -744,6 +991,13 @@ export const StreetScene = memo(function StreetScene({
       boarded: boardedCount,
       returning: motion.counts.exiting + motion.counts.returning,
       waiting: motion.counts.queue,
+      observed: motion.passengers.filter(
+        (pose) => pose.tx.status === 'pending' && !isHistoricalPassenger(pose),
+      ).length,
+      historical:
+        motion.passengers.filter(
+          (pose) => pose.tx.status === 'pending' && isHistoricalPassenger(pose),
+        ).length + (motion.waitingArchiveCount ?? 0),
     }),
     [
       motion.counts.arriving,
@@ -755,6 +1009,8 @@ export const StreetScene = memo(function StreetScene({
       motion.counts.returning,
       motion.counts.queue,
       boardedCount,
+      motion.passengers,
+      motion.waitingArchiveCount,
     ],
   );
   const styles = useMemo(
@@ -786,6 +1042,9 @@ export const StreetScene = memo(function StreetScene({
           <svg
             className="street-scene-svg street-scene-svg--vertical"
             data-average-fee-rate={averageFeeRate ?? undefined}
+            data-queue-columns={queueLayout.columns}
+            data-queue-rows={queueLayout.rows}
+            data-queue-capacity={queueLayout.capacity}
             viewBox={`${VIEW_START_X} 0 ${viewWidth} ${SCENE_HEIGHT}`}
             preserveAspectRatio="xMidYMid meet"
             data-mirrored={mirrored}
@@ -796,11 +1055,18 @@ export const StreetScene = memo(function StreetScene({
               La rue de {snapshot.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}
             </title>
             <desc id={`${id}-desc`}>
-              Les deux wagons à l’arrêt projettent les prochains blocs. À réception d’un bloc réel,
-              le premier est ajusté aux inclusions connues avant son départ, le second prend sa
-              place. Les voyageurs arrivent depuis le bord {mirrored ? 'gauche' : 'droit'} et
-              circulent sur le quai extérieur. Les portes restent fermées pendant les déplacements.
-              Le déplacement ne confirme aucune transaction.{' '}
+              {nodeTemplate
+                ? 'Le premier wagon représente le candidat complet proposé par le nœud Bitcoin pour le compte et le poids, avec des détails individuels limités et les autres membres regroupés. Le second reste une estimation. Ce candidat ne prouve aucune inclusion ni qu’un pool minier le mine.'
+                : 'Les deux wagons à l’arrêt projettent les prochains blocs.'}{' '}
+              À réception d’un bloc réel, le premier est ajusté aux inclusions connues avant son
+              départ, le second prend sa place. Les voyageurs arrivent depuis le bord{' '}
+              {mirrored ? 'gauche' : 'droit'} et circulent sur le quai extérieur. Les portes restent
+              fermées pendant les déplacements. Le déplacement ne confirme aucune transaction. La
+              file active et les observations historiques conservées en bas du quai occupent des
+              zones distinctes. La boîte « Reste du réseau — hors échantillon » représente une
+              source collective sans total mondial ; seules des inclusions identifiées peuvent en
+              sortir comme voyageurs individuels. Une observation historique ne prouve aucune
+              confirmation.{' '}
               {demo ? 'Données simulées.' : 'Les inclusions sont fournies par la source.'} Cliquez
               sur un voyageur ou utilisez « Parcourir les transactions » au clavier.
             </desc>
@@ -810,6 +1076,26 @@ export const StreetScene = memo(function StreetScene({
               }
             >
               <PlatformBackdrop viewWidth={viewWidth} projectX={projectX} mirrored={mirrored} />
+              <NetworkRemainder
+                chain={snapshot.chain}
+                projectX={projectX}
+                mirrored={mirrored}
+                doorProgress={motion.networkDoorProgress}
+                active={motion.networkActive}
+              />
+              <ProviderFlowArrivals
+                snapshot={snapshot}
+                projectX={projectX}
+                mirrored={mirrored}
+                paused={paused || snapshot.status !== 'ok'}
+                reducedMotion={reducedMotion}
+              />
+              <HistoricalQueueBackdrop
+                count={historicalQuayCount}
+                projectX={projectX}
+                mirrored={mirrored}
+                narrow={viewWidth < 360}
+              />
               <g aria-hidden="true">
                 <ReadableText
                   mirrored={mirrored}
@@ -820,7 +1106,11 @@ export const StreetScene = memo(function StreetScene({
                   fontSize={viewWidth < 360 ? 9 : 11}
                   letterSpacing=".5"
                 >
-                  {demo ? 'SIMULATION' : 'ÉCHANTILLON OBSERVÉ'}
+                  {demo
+                    ? 'SIMULATION'
+                    : completeCandidate
+                      ? 'CANDIDAT COMPLET · DÉTAILS LIMITÉS'
+                      : 'ÉCHANTILLON OBSERVÉ'}
                 </ReadableText>
                 <rect
                   x={(282 + viewEnd) / 2 - Math.min(172, viewEnd - 298) / 2}
@@ -840,12 +1130,17 @@ export const StreetScene = memo(function StreetScene({
                 >
                   {preparing
                     ? `Embarquement · ${motion.preparationPassengerCount}`
-                    : `${snapshot.chain === 'bitcoin' ? 'vB' : 'gas'} · P ${occupancyPercentLabel(blockUsagePercent(projectionUsed.next, motion.candidateCapacity), true)} · S ${occupancyPercentLabel(blockUsagePercent(projectionUsed.later, motion.candidateCapacity), true)}`}
+                    : `${snapshot.chain === 'bitcoin' ? 'vB' : 'gas'} · P ${occupancyPercentLabel(blockUsagePercent(completeCandidate ? completeCandidate.weight / 4 : projectionUsed.next, nextCapacity), !completeCandidate)} · S ${occupancyPercentLabel(blockUsagePercent(projectionUsed.later, motion.candidateCapacity), true)}`}
                   <title>
-                    Réservations des projections dans l’échantillon : prochain{' '}
-                    {number(projectionUsed.next, 2)}
+                    {completeCandidate
+                      ? 'Candidat complet proposé hors coinbase : prochain '
+                      : 'Réservations des projections dans l’échantillon : prochain '}
+                    {number(
+                      completeCandidate ? completeCandidate.weight / 4 : projectionUsed.next,
+                      2,
+                    )}
                     {' / '}
-                    {number(motion.candidateCapacity)} {snapshot.chain === 'bitcoin' ? 'vB' : 'gas'}
+                    {number(nextCapacity)} {snapshot.chain === 'bitcoin' ? 'vB' : 'gas'}
                     {' ; suivant '}
                     {number(projectionUsed.later, 2)}
                     {' / '}
@@ -859,7 +1154,7 @@ export const StreetScene = memo(function StreetScene({
               <Wagon
                 kind="next"
                 y={NEXT_WAGON_Y}
-                label={moving || preparing ? blockLabel : 'PROCHAIN'}
+                label={moving || preparing ? blockLabel : nodeTemplate ? 'CANDIDAT' : 'PROCHAIN'}
                 caption={
                   moving
                     ? `${demo ? 'BLOC SIMULÉ' : motion.departureRecovered ? 'INCLUSIONS RETROUVÉES' : 'BLOC CONFIRMÉ'} · DÉPART`
@@ -867,12 +1162,17 @@ export const StreetScene = memo(function StreetScene({
                       ? motion.departureRecovered
                         ? 'INCLUSIONS RETROUVÉES · RATTRAPAGE'
                         : 'BLOC REÇU · AJUSTEMENT'
-                      : 'PROCHAIN BLOC · ESTIMATION'
+                      : nodeTemplate
+                        ? `CANDIDAT DU NŒUD · #${number(nodeTemplate.height)}`
+                        : 'PROCHAIN BLOC · ESTIMATION'
                 }
                 passengers={moving ? (motion.departingPassengers ?? []) : next}
                 chain={snapshot.chain}
-                capacity={motion.candidateCapacity}
+                capacity={nextCapacity}
                 confirmedBlock={moving || preparing ? motion.departingBlock : undefined}
+                nodeTemplate={completeCandidate}
+                templateRepresentation={candidateRepresentation}
+                blockRepresentation={blockRepresentation}
                 simulated={demo}
                 doors={moving ? CLOSED_DOORS : (motion.doors?.next ?? CLOSED_DOORS)}
                 moving={moving}
@@ -911,6 +1211,7 @@ export const StreetScene = memo(function StreetScene({
           </svg>
           <PassengerCanvas
             frame={canvasFrame}
+            browseTarget={browseTarget}
             selectedId={selectedId}
             onSelect={onSelect}
             chain={snapshot.chain}
@@ -921,23 +1222,26 @@ export const StreetScene = memo(function StreetScene({
         <DynamicInfoPanel
           snapshot={snapshot}
           feeDisplayUnit={feeDisplayUnit}
-          selectedTx={
-            snapshot.transactions.find((tx) => tx.id === selectedId) ??
-            motion.passengers.find(
-              (pose) =>
-                pose.tx.id === selectedId &&
-                snapshot.inclusions?.some(
-                  (inclusion) =>
-                    inclusion.block.hash === pose.tx.blockHash &&
-                    inclusion.transactionIds.includes(pose.tx.id),
-                ),
-            )?.tx ??
-            null
+          selectedTx={selectedTransaction}
+          selectedHistorical={
+            selectedTransaction !== null &&
+            selectedSource.current === undefined &&
+            selectedSource.inclusion === undefined
+          }
+          selectedInclusionOnly={
+            selectedSource.current === undefined && selectedSource.inclusion !== undefined
+          }
+          selectedObservedAt={selectedResident?.lastObservedAt}
+          selectedPoolState={selectedResident?.poolState}
+          selectedPoolObservedAt={selectedResident?.poolObservedAt}
+          selectedReasonLabel={
+            selectedResident ? passengerPlanningReason(selectedResident) : undefined
           }
           activity={activity}
           paused={paused || snapshot.status !== 'ok'}
           reducedMotion={reducedMotion}
           onClearSelection={onClearSelection}
+          onClose={onCloseInfo}
         />
       )}
     </div>

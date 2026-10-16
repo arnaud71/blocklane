@@ -2,10 +2,6 @@ name: Audit des dépendances runtime
 
 on:
   pull_request:
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/security.yml
   push:
     branches: [main]
   schedule:

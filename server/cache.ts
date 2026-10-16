@@ -1,13 +1,24 @@
-import { snapshotSchema, usdQuoteSchema, type ChainId, type Snapshot } from '../shared/model.js';
+import {
+  POOL_FLOW_MAX_AGE_MS,
+  EVENT_FLOW_MAX_AGE_MS,
+  EVENT_FLOW_SILENCE_MS,
+  eventFlowSchema,
+  snapshotSchema,
+  usdQuoteSchema,
+  type ChainId,
+  type Snapshot,
+} from '../shared/model.js';
 import { createBitcoinProvider } from './adapters/bitcoin.js';
 import { createEthereumProvider } from './adapters/ethereum.js';
 import { CACHE_TTL_MS, MAX_STALE_MS, loadConfig, type ServerConfig } from './config.js';
 import { generateDemoSnapshot } from './demo.js';
 import { MarketPrices, type UsdQuoteReader } from './marketPrices.js';
 import { UpstreamError, type Fetcher } from './network.js';
+import { createEventStreams, type EventFlowReader } from './eventStreams.js';
 
 export interface SnapshotReader {
   get(chain: ChainId, mode: 'demo' | 'live'): Promise<Snapshot>;
+  dispose?(): void;
 }
 type Provider = () => Promise<Snapshot>;
 interface CacheEntry {
@@ -23,6 +34,7 @@ export interface SnapshotServiceOptions {
   now?: () => number;
   providers?: Record<ChainId, Provider>;
   usdQuotes?: UsdQuoteReader;
+  eventFlows?: EventFlowReader;
 }
 
 /** Two bounded caches shared by all clients; at most one refresh per chain at a time. */
@@ -31,6 +43,8 @@ export class SnapshotService implements SnapshotReader {
   private readonly now: () => number;
   private readonly providers: Record<ChainId, Provider>;
   private readonly usdQuotes: UsdQuoteReader;
+  private readonly eventFlows: EventFlowReader | null;
+  private disposed = false;
   private readonly cache: Record<ChainId, CacheEntry> = {
     bitcoin: { nextRefreshAt: 0, attemptedAt: 0 },
     ethereum: { nextRefreshAt: 0, attemptedAt: 0 },
@@ -39,8 +53,22 @@ export class SnapshotService implements SnapshotReader {
   constructor(options: SnapshotServiceOptions = {}) {
     this.config = options.config ?? loadConfig();
     this.now = options.now ?? Date.now;
+    // Fixtures and custom transports must never accidentally start public sockets.
+    this.eventFlows =
+      options.eventFlows ??
+      (options.providers || options.fetcher
+        ? null
+        : createEventStreams({ config: this.config, now: this.now }));
     this.providers = options.providers ?? {
-      bitcoin: createBitcoinProvider(this.config, options.fetcher, this.now),
+      bitcoin: createBitcoinProvider(
+        this.config,
+        options.fetcher,
+        this.now,
+        undefined,
+        undefined,
+        undefined,
+        () => this.eventFlows?.readBitcoinArrivals?.() ?? null,
+      ),
       ethereum: createEthereumProvider(this.config, options.fetcher, this.now),
     };
     // Injected chain providers stay fully isolated unless a quote reader is also supplied.
@@ -65,7 +93,47 @@ export class SnapshotService implements SnapshotReader {
       entry.inFlight = Promise.resolve().then(() => this.refresh(chain, entry));
     }
     const [, usdQuote] = await Promise.all([entry.inFlight, quotePromise]);
-    return { ...this.current(chain, entry), usdQuote };
+    const snapshot = this.current(chain, entry);
+    if (!this.eventFlows || this.disposed || snapshot.status === 'unavailable')
+      return { ...snapshot, usdQuote };
+    try {
+      const observed = this.eventFlows.read(
+        chain,
+        new Set(
+          snapshot.transactions
+            .filter((tx) => tx.status === 'pending')
+            .map((tx) => tx.id.toLowerCase()),
+        ),
+      );
+      if (observed === null) return { ...snapshot, usdQuote, eventFlow: null };
+      const eventFlow = eventFlowSchema.parse(observed);
+      if (
+        (eventFlow.method !== 'newPendingTransactions') !== (chain === 'bitcoin') ||
+        eventFlow.observedAt > this.now() ||
+        (eventFlow.lastMessageAt !== null && eventFlow.lastMessageAt > this.now())
+      )
+        return { ...snapshot, usdQuote, eventFlow: null };
+      const active = eventFlow.state === 'live' || eventFlow.state === 'warming';
+      const expired =
+        active &&
+        (this.now() - eventFlow.observedAt > EVENT_FLOW_MAX_AGE_MS ||
+          eventFlow.lastMessageAt === null ||
+          this.now() - eventFlow.lastMessageAt > EVENT_FLOW_SILENCE_MS);
+      return {
+        ...snapshot,
+        usdQuote,
+        eventFlow: expired ? { ...eventFlow, state: 'interrupted', history: [] } : eventFlow,
+      };
+    } catch {
+      // Optional stream failure must not hide otherwise valid blocks or expose transport details.
+      return { ...snapshot, usdQuote, eventFlow: null };
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.eventFlows?.dispose();
   }
 
   private async refresh(chain: ChainId, entry: CacheEntry): Promise<void> {
@@ -89,9 +157,15 @@ export class SnapshotService implements SnapshotReader {
 
   private current(chain: ChainId, entry: CacheEntry): Snapshot {
     if (entry.snapshot && this.now() - entry.snapshot.observedAt <= MAX_STALE_MS) {
-      if (!entry.error) return entry.snapshot;
+      const snapshot =
+        entry.snapshot.poolFlow &&
+        (this.now() < entry.snapshot.poolFlow.observedAt ||
+          this.now() - entry.snapshot.poolFlow.observedAt > POOL_FLOW_MAX_AGE_MS)
+          ? { ...entry.snapshot, poolFlow: null }
+          : entry.snapshot;
+      if (!entry.error) return snapshot;
       return snapshotSchema.parse({
-        ...entry.snapshot,
+        ...snapshot,
         status: 'stale',
         message: `${entry.error} Dernier instantané valide conservé avec son horodatage d’origine.`,
       });

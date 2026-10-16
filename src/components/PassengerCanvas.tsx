@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { ChainId, Tx } from '../../shared/model';
 import {
   canvasPassengerAnchor,
@@ -18,10 +19,18 @@ import {
   type CanvasViewport,
 } from '../lib/passengerCanvas';
 import { passengerDescription } from '../lib/passengerPresentation';
+import { passengerStatus, type PassengerStatusGroup } from '../lib/passengerStatus';
+import {
+  filterTransactionOptions,
+  TRANSACTION_BROWSER_FILTERS,
+  type TransactionBrowserFilter,
+} from '../lib/transactionBrowser';
+import { number } from '../lib/format';
 import './PassengerCanvas.css';
 
 interface PassengerCanvasProps {
   frame: CanvasPassengerFrame;
+  browseTarget?: HTMLElement | null;
   selectedId?: string;
   onSelect: (transaction: Tx) => void;
   chain: ChainId;
@@ -30,6 +39,7 @@ interface PassengerCanvasProps {
 interface TransactionOption {
   id: string;
   label: string;
+  group: PassengerStatusGroup;
 }
 
 const MAX_BACKING_PIXELS = 4_000_000;
@@ -75,7 +85,13 @@ function viewportFor(element: HTMLElement): CanvasViewport {
   return { width, height, ratio };
 }
 
-export function PassengerCanvas({ frame, selectedId, onSelect, chain }: PassengerCanvasProps) {
+export function PassengerCanvas({
+  frame,
+  browseTarget,
+  selectedId,
+  onSelect,
+  chain,
+}: PassengerCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<ReturnType<typeof createPassengerCanvasRenderer> | null>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -89,8 +105,11 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
   const [highlightedId, setHighlightedId] = useState<string>();
   const [browserOpen, setBrowserOpen] = useState(false);
   const [browseId, setBrowseId] = useState('');
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<TransactionBrowserFilter>('all');
   const triggerRef = useRef<HTMLButtonElement>(null);
   const selectRef = useRef<HTMLSelectElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const optionCache = useRef<readonly TransactionOption[]>([]);
   const controlsId = useId();
   const chainName = chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum';
@@ -173,7 +192,7 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
     const click = (event: MouseEvent) => {
       if (event.button !== 0) return;
       const passenger = locate(event)?.passenger;
-      if (passenger?.interactive && passenger.pose.sourceObserved) {
+      if (passenger?.interactive) {
         latest.current.onSelect(passenger.pose.tx);
       }
     };
@@ -205,11 +224,11 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
     renderer.draw(context, frame, viewport, selectedId, id);
   }, [frame, viewport, selectedId, highlightedId]);
 
-  const options = useMemo(() => {
+  const allOptions = useMemo(() => {
     if (!browserOpen) return [];
     const observed = new Map<string, CanvasPassenger>();
     for (const passenger of frame.passengers) {
-      if (passenger.interactive && passenger.pose.sourceObserved) {
+      if (passenger.interactive) {
         observed.set(passenger.pose.tx.id, passenger);
       }
     }
@@ -217,9 +236,11 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
       .sort((left, right) => left.pose.tx.id.localeCompare(right.pose.tx.id))
       .map((passenger) => {
         const tx = passenger.pose.tx;
+        const status = passengerStatus(passenger.pose);
         return {
           id: tx.id,
-          label: `${tx.id.slice(0, 12)}…${tx.id.slice(-6)} · ${feeText(passenger)} · ${tx.status === 'confirmed' ? 'incluse dans un bloc observé' : 'en attente dans la source'}`,
+          label: `${tx.id.slice(0, 12)}…${tx.id.slice(-6)} · ${feeText(passenger)} · ${status.label}`,
+          group: status.group,
         };
       });
     const previous = optionCache.current;
@@ -227,7 +248,11 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
       previous.length === next.length &&
       previous.every((option, index) => {
         const replacement = next[index];
-        return replacement?.id === option.id && replacement.label === option.label;
+        return (
+          replacement?.id === option.id &&
+          replacement.label === option.label &&
+          replacement.group === option.group
+        );
       })
     ) {
       return previous;
@@ -235,15 +260,16 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
     optionCache.current = next;
     return next;
   }, [browserOpen, frame]);
+  const options = useMemo(
+    () => filterTransactionOptions(allOptions, query, filter),
+    [allOptions, query, filter],
+  );
   const activeBrowseId = options.some((option) => option.id === browseId)
     ? browseId
     : (options[0]?.id ?? '');
   const browsedPassenger = browserOpen
     ? frame.passengers.find(
-        (passenger) =>
-          passenger.pose.tx.id === activeBrowseId &&
-          passenger.interactive &&
-          passenger.pose.sourceObserved,
+        (passenger) => passenger.pose.tx.id === activeBrowseId && passenger.interactive,
       )
     : undefined;
 
@@ -252,15 +278,14 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
   }, [activeBrowseId, browseId, browserOpen]);
 
   useEffect(() => {
-    if (browserOpen) selectRef.current?.focus();
+    if (!browserOpen) return;
+    if (selectRef.current && !selectRef.current.disabled) selectRef.current.focus();
+    else searchRef.current?.focus();
   }, [browserOpen]);
 
   const highlightedPassenger = highlightedId
     ? frame.passengers.find(
-        (passenger) =>
-          passenger.pose.tx.id === highlightedId &&
-          passenger.interactive &&
-          passenger.pose.sourceObserved,
+        (passenger) => passenger.pose.tx.id === highlightedId && passenger.interactive,
       )
     : undefined;
   const anchor = highlightedPassenger
@@ -271,6 +296,26 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
     ? Math.max(tooltipWidth / 2 + 8, Math.min(viewport.width - tooltipWidth / 2 - 8, anchor.x))
     : 0;
   const tooltipBelow = (anchor?.y ?? 0) < 190;
+
+  const browseButton = (
+    <button
+      ref={triggerRef}
+      type="button"
+      className={`passenger-canvas-browse${browseTarget ? ' passenger-canvas-browse--docked' : ''}`}
+      aria-label={`Parcourir les transactions ${chainName}`}
+      aria-expanded={browserOpen}
+      aria-controls={browserOpen ? controlsId : undefined}
+      onClick={() => {
+        if (browserOpen) closeBrowser();
+        else setBrowserOpen(true);
+      }}
+    >
+      <span className="passenger-canvas-browse-full">Transactions</span>
+      <span className="passenger-canvas-browse-compact" aria-hidden="true">
+        Tx
+      </span>
+    </button>
+  );
 
   return (
     <>
@@ -319,20 +364,7 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
           }
         }}
       >
-        <button
-          ref={triggerRef}
-          type="button"
-          className="passenger-canvas-browse"
-          aria-label={`Parcourir les transactions ${chainName}`}
-          aria-expanded={browserOpen}
-          aria-controls={browserOpen ? controlsId : undefined}
-          onClick={() => {
-            if (browserOpen) closeBrowser();
-            else setBrowserOpen(true);
-          }}
-        >
-          Transactions
-        </button>
+        {browseTarget ? createPortal(browseButton, browseTarget) : browseButton}
         {browserOpen && (
           <section
             id={controlsId}
@@ -346,7 +378,44 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
                 Fermer
               </button>
             </div>
-            <label htmlFor={`${controlsId}-select`}>Transaction observée dans l’échantillon</label>
+            <label htmlFor={`${controlsId}-search`}>Rechercher une transaction</label>
+            <input
+              ref={searchRef}
+              id={`${controlsId}-search`}
+              type="search"
+              value={query}
+              maxLength={128}
+              placeholder="Hash complet ou fragment"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <fieldset className="passenger-canvas-filters">
+              <legend>Filtrer les transactions</legend>
+              <div>
+                {TRANSACTION_BROWSER_FILTERS.map((choice) => (
+                  <label key={choice.value}>
+                    <input
+                      type="radio"
+                      name={`${controlsId}-filter`}
+                      value={choice.value}
+                      checked={filter === choice.value}
+                      onChange={() => setFilter(choice.value)}
+                    />
+                    <span>{choice.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <p
+              className="passenger-canvas-result-count"
+              role="status"
+              aria-label="Résultats de recherche"
+            >
+              {number(options.length)} {options.length === 1 ? 'résultat' : 'résultats'} sur{' '}
+              {number(allOptions.length)} transactions représentées
+            </p>
+            <label htmlFor={`${controlsId}-select`}>Transaction représentée dans la scène</label>
             <select
               ref={selectRef}
               id={`${controlsId}-select`}
@@ -356,14 +425,31 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
               onChange={(event) => setBrowseId(event.target.value)}
             >
               {options.length === 0 ? (
-                <option value="">Aucune transaction observée disponible</option>
+                <option value="">
+                  {allOptions.length
+                    ? 'Aucune transaction ne correspond'
+                    : 'Aucune transaction observée disponible'}
+                </option>
               ) : (
                 <TransactionOptions options={options} />
               )}
             </select>
+            {options.length === 0 && allOptions.length > 0 && (
+              <button
+                type="button"
+                className="passenger-canvas-reset"
+                onClick={() => {
+                  setQuery('');
+                  setFilter('all');
+                }}
+              >
+                Réinitialiser la recherche et les filtres
+              </button>
+            )}
             <p id={`${controlsId}-help`}>
-              Liste limitée aux données actuellement observées par la source, classée par
-              identifiant. Un embarquement animé ne prouve aucune inclusion.
+              Liste des voyageurs représentés, classée par identifiant. Les détails anciens et la
+              présence dans le dernier inventaire sont distingués. Une absence d’inventaire ne
+              prouve aucune confirmation. Un embarquement animé ne prouve aucune inclusion.
             </p>
             {browsedPassenger && (
               <p id={`${controlsId}-description`} className="passenger-canvas-browser-description">
@@ -380,10 +466,7 @@ export function PassengerCanvas({ frame, selectedId, onSelect, chain }: Passenge
               disabled={!activeBrowseId}
               onClick={() => {
                 const current = latest.current.frame.passengers.find(
-                  (passenger) =>
-                    passenger.pose.tx.id === activeBrowseId &&
-                    passenger.interactive &&
-                    passenger.pose.sourceObserved,
+                  (passenger) => passenger.pose.tx.id === activeBrowseId && passenger.interactive,
                 );
                 if (current) latest.current.onSelect(current.pose.tx);
               }}

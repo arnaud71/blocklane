@@ -1,0 +1,87 @@
+.network-remainder {
+  --network-accent: #a6c6ae;
+  pointer-events: none;
+}
+.network-remainder--bitcoin {
+  --network-accent: #e8b078;
+}
+.network-remainder--ethereum {
+  --network-accent: #b5afe0;
+}
+.network-remainder-shadow {
+  fill: #112b23;
+  opacity: 0.45;
+}
+.network-remainder-halo {
+  fill: none;
+  stroke: var(--network-accent);
+  stroke-width: 6;
+  opacity: 0;
+}
+.network-remainder--active .network-remainder-halo {
+  opacity: 0.24;
+}
+.network-remainder--active .network-remainder-body {
+  fill: #2d6249;
+  stroke: var(--network-accent);
+  stroke-width: 2.5;
+}
+.network-remainder--active .network-remainder-heading {
+  fill: #fff8d4;
+}
+.network-remainder--active .network-remainder-graph path {
+  stroke: var(--network-accent);
+  stroke-width: 1.8;
+}
+.network-remainder--active .network-remainder-node {
+  fill: #fff5d3;
+  stroke: var(--network-accent);
+}
+.network-remainder--active .network-remainder-door-recess {
+  fill: #315b42;
+  stroke: #e7eccb;
+}
+.network-remainder-body {
+  fill: #163d32;
+  stroke: #a2b397;
+  stroke-width: 1.5;
+}
+.network-remainder-heading {
+  fill: #e2e7cc;
+  font-weight: 650;
+  letter-spacing: 0.35px;
+}
+.network-remainder-caption {
+  fill: #b6cdb4;
+  font-weight: 500;
+}
+.network-remainder-graph path {
+  fill: none;
+  stroke: #93afa0;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.network-remainder-node {
+  fill: var(--network-accent);
+  stroke: #15352c;
+  stroke-width: 1.4;
+}
+.network-remainder-node--hub {
+  fill: #e4e8ce;
+}
+.network-remainder-door-recess {
+  fill: #071e1b;
+  stroke: #a0b59c;
+  stroke-width: 1;
+}
+.network-remainder-door-leaf {
+  fill: #527861;
+  stroke: #172f28;
+  stroke-width: 1;
+}
+.network-remainder-door-threshold {
+  fill: none;
+  stroke: #d0d4b3;
+  stroke-width: 2;
+  stroke-linecap: round;
+}

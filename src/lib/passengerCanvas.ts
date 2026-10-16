@@ -1,4 +1,4 @@
-import type { PassengerPose } from './passengerMotion';
+import { MAX_HEAD_SCALE, MIN_HEAD_SCALE, type PassengerPose } from './passengerMotion';
 import { isPassengerMoving, stablePassengerHash } from './passengerPresentation';
 
 export interface CanvasClip {
@@ -105,6 +105,15 @@ function containsClip(clip: CanvasClip, x: number, y: number): boolean {
   return (x - centerX) ** 2 + (y - centerY) ** 2 <= radius ** 2;
 }
 
+const HEAD_CENTER_Y = -22;
+const HEAD_SPRITE_BOUNDS = { x: -7, y: -9, width: 15, height: 16 } as const;
+
+function passengerHeadScale(pose: PassengerPose): number {
+  return Number.isFinite(pose.headScale)
+    ? Math.max(MIN_HEAD_SCALE, Math.min(MAX_HEAD_SCALE, pose.headScale))
+    : MIN_HEAD_SCALE;
+}
+
 export function hitTestCanvasPassenger(
   frame: CanvasPassengerFrame,
   viewport: CanvasViewport,
@@ -123,19 +132,26 @@ export function hitTestCanvasPassenger(
     : frame.view.startX + viewX;
   for (let index = frame.passengers.length - 1; index >= 0; index -= 1) {
     const passenger = frame.passengers[index];
-    if (
-      !passenger ||
-      !passenger.interactive ||
-      !passenger.pose.sourceObserved ||
-      passenger.pose.opacity <= 0
-    ) {
+    if (!passenger || !passenger.interactive || passenger.pose.opacity <= 0) {
       continue;
     }
     const y = viewY - (passenger.offsetY ?? 0);
     if (passenger.clips && !passenger.clips.some((clip) => containsClip(clip, x, y))) continue;
+    const headScale = passengerHeadScale(passenger.pose);
     if (
       containsClip(
         { x: passenger.pose.x - 12, y: passenger.pose.y - 33, width: 25, height: 40, radius: 5 },
+        x,
+        y,
+      ) ||
+      containsClip(
+        {
+          x: passenger.pose.x - 6 * headScale,
+          y: passenger.pose.y + HEAD_CENTER_Y - 7 * headScale,
+          width: 12 * headScale,
+          height: 12 * headScale,
+          radius: 2 * headScale,
+        },
         x,
         y,
       )
@@ -160,11 +176,56 @@ type SpritePainter = (context: CanvasRenderingContext2D) => void;
 // Four pixels per scene unit stay crisp at desktop DPR without unbounded atlases.
 const SPRITE_DENSITY = 4;
 const MAX_SHIRT_SPRITES = 256;
-const MAX_HASHES = 2_048;
+const MAX_HASHES = 8_192;
 const MAX_DEPARTURE_PIXELS = 1_000_000;
 const MAX_DEPARTURE_DIMENSION = 2_048;
 const MAX_DEPARTURE_DENSITY = 4;
+const MIN_STATIC_RUN = 8;
+const MAX_STATIC_PIXELS = 1_000_000;
+const MAX_STATIC_SURFACES = 16;
+const MAX_STATIC_DIMENSION = 2_048;
+const MAX_TRAIL_LENGTH = 110;
+const MAX_TRAIL_POINTS = 8;
 const skinPalette = ['#ebcba6', '#bf8f65', '#966746', '#d2ad84'] as const;
+
+interface StaticPassengerRun {
+  passengers: readonly CanvasPassenger[];
+  clips?: readonly CanvasClip[];
+  selectedId?: string;
+  highlightedId?: string;
+  seen: boolean;
+  attempted: boolean;
+  sprite?: PassengerSprite;
+}
+
+function isStaticPassenger(passenger: CanvasPassenger): boolean {
+  const pose = passenger.pose;
+  return (
+    !pose.inHandoff &&
+    ['queue', 'parked', 'boarded', 'confirmed'].includes(pose.phase) &&
+    Number.isFinite(pose.x) &&
+    Number.isFinite(pose.y)
+  );
+}
+
+function sameClips(left?: readonly CanvasClip[], right?: readonly CanvasClip[]): boolean {
+  return (
+    left === right ||
+    (left !== undefined &&
+      right !== undefined &&
+      left.length === right.length &&
+      left.every((clip, index) => {
+        const other = right[index]!;
+        return (
+          clip.x === other.x &&
+          clip.y === other.y &&
+          clip.width === other.width &&
+          clip.height === other.height &&
+          clip.radius === other.radius
+        );
+      }))
+  );
+}
 
 function createSprite(
   x: number,
@@ -249,10 +310,20 @@ const iconPainters: Record<string, SpritePainter> = {
     context.fill();
   },
   contract(context) {
-    context.fillStyle = '#e4c780';
+    context.fillStyle = '#65d9f3';
+    context.strokeStyle = '#174c65';
+    context.lineWidth = 0.9;
     context.beginPath();
     roundedRectangle(context, { x: 5, y: -12, width: 5, height: 7, radius: 1 });
     context.fill();
+    context.stroke();
+    context.lineWidth = 0.75;
+    context.beginPath();
+    context.moveTo(6.3, -9.7);
+    context.lineTo(8.7, -9.7);
+    context.moveTo(6.3, -7.4);
+    context.lineTo(8.1, -7.4);
+    context.stroke();
   },
   confirmed(context) {
     context.fillStyle = '#9ad6a0';
@@ -275,17 +346,6 @@ const iconPainters: Record<string, SpritePainter> = {
     context.lineTo(11.5, -26);
     context.stroke();
   },
-  arrow(context) {
-    context.strokeStyle = '#f0bd7b';
-    context.lineWidth = 1.5;
-    context.beginPath();
-    context.moveTo(-6, 0);
-    context.lineTo(6, 0);
-    context.moveTo(2, -4);
-    context.lineTo(6, 0);
-    context.lineTo(2, 4);
-    context.stroke();
-  },
 };
 
 const iconBounds: Record<string, readonly [number, number, number, number]> = {
@@ -293,7 +353,6 @@ const iconBounds: Record<string, readonly [number, number, number, number]> = {
   contract: [4, -13, 7, 9],
   confirmed: [6, -31, 8, 8],
   clock: [5, -32, 10, 10],
-  arrow: [-8, -6, 16, 12],
 };
 
 export function createPassengerCanvasRenderer(): {
@@ -310,6 +369,9 @@ export function createPassengerCanvasRenderer(): {
   const shirts = new Map<string, PassengerSprite>();
   const icons = new Map<string, PassengerSprite>();
   const hashes = new Map<string, number>();
+  let staticRuns: StaticPassengerRun[] = [];
+  let staticPixels = 0;
+  let staticView = '';
   let departureImage:
     | {
         passengers: readonly CanvasPassenger[];
@@ -323,6 +385,18 @@ export function createPassengerCanvasRenderer(): {
   function clearDepartureImage(): void {
     if (departureImage?.sprite) releaseSprite(departureImage.sprite);
     departureImage = undefined;
+  }
+
+  function releaseStaticRun(run: StaticPassengerRun): void {
+    if (!run.sprite) return;
+    staticPixels -= run.sprite.canvas.width * run.sprite.canvas.height;
+    releaseSprite(run.sprite);
+    run.sprite = undefined;
+  }
+
+  function clearStaticRuns(): void {
+    for (const run of staticRuns) releaseStaticRun(run);
+    staticRuns = [];
   }
 
   function hashFor(id: string): number {
@@ -340,7 +414,8 @@ export function createPassengerCanvasRenderer(): {
   function headFor(variant: number): PassengerSprite | undefined {
     const previous = heads.get(variant);
     if (previous) return previous;
-    const sprite = createSprite(-7, -9, 15, 16, (context) => paintHead(context, variant));
+    const { x, y, width, height } = HEAD_SPRITE_BOUNDS;
+    const sprite = createSprite(x, y, width, height, (context) => paintHead(context, variant));
     if (sprite) heads.set(variant, sprite);
     return sprite;
   }
@@ -374,6 +449,60 @@ export function createPassengerCanvasRenderer(): {
     return sprite;
   }
 
+  /** Reuse the known path; trim after projection so a wide desktop cannot stretch the tail. */
+  function drawTrail(context: CanvasRenderingContext2D, pose: PassengerPose): void {
+    const points = pose.trail;
+    if (
+      !points ||
+      points.length < 2 ||
+      pose.arrivalKind !== 'late-inclusion' ||
+      pose.phase !== 'preparing' ||
+      pose.tx.status !== 'confirmed' ||
+      !isPassengerMoving(pose) ||
+      pose.progress <= 0 ||
+      pose.progress >= 1
+    )
+      return;
+    const last = points.length - 1;
+    const first = Math.max(0, points.length - MAX_TRAIL_POINTS);
+    for (let index = first; index <= last; index += 1) {
+      const point = points[index]!;
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    }
+    let start = points[first]!;
+    let next = first + 1;
+    let remaining = MAX_TRAIL_LENGTH;
+    for (let index = last; index > first; index -= 1) {
+      const recent = points[index]!;
+      const previous = points[index - 1]!;
+      const length = Math.hypot(recent.x - previous.x, recent.y - previous.y);
+      if (length >= remaining) {
+        const ratio = remaining / length;
+        start = {
+          x: recent.x + (previous.x - recent.x) * ratio,
+          y: recent.y + (previous.y - recent.y) * ratio,
+        };
+        next = index;
+        break;
+      }
+      remaining -= length;
+    }
+    context.save();
+    context.globalAlpha = Math.max(0, Math.min(1, pose.opacity));
+    context.strokeStyle = 'rgba(211, 229, 190, 0.32)';
+    context.lineWidth = 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    context.moveTo(start.x, start.y + 1);
+    for (let index = next; index <= last; index += 1) {
+      const point = points[index]!;
+      context.lineTo(point.x, point.y + 1);
+    }
+    context.stroke();
+    context.restore();
+  }
+
   function drawPassenger(
     context: CanvasRenderingContext2D,
     passenger: CanvasPassenger,
@@ -387,7 +516,8 @@ export function createPassengerCanvasRenderer(): {
     const skin = skinPalette[hash % skinPalette.length] ?? '#ebcba6';
     const step = isPassengerMoving(pose) ? Math.sin(pose.walkPhase) * 3.5 : 0;
     const facing = mirrored ? -pose.facing : pose.facing;
-    const headScale = Math.max(0.8, Math.min(1.85, pose.headScale));
+    const headScale = passengerHeadScale(pose);
+    drawTrail(context, pose);
     context.save();
     context.translate(pose.x, pose.y);
     context.globalAlpha = Math.max(0, Math.min(1, pose.opacity));
@@ -420,7 +550,7 @@ export function createPassengerCanvasRenderer(): {
     context.lineTo(7, -9 + step);
     context.stroke();
     context.save();
-    context.translate(0, -22);
+    context.translate(0, HEAD_CENTER_Y);
     context.scale(headScale, headScale);
     paintSprite(context, headFor(hash % 12));
     context.fillStyle = '#34504a';
@@ -433,15 +563,6 @@ export function createPassengerCanvasRenderer(): {
       paintSprite(context, iconFor('confirmed'));
     }
     if (interactive && !pose.sourceObserved) paintSprite(context, iconFor('clock'));
-    if (pose.phase === 'exiting' || pose.phase === 'returning') {
-      const canonicalAngle = pose.movementAngle ?? (pose.facing === -1 ? 180 : 0);
-      const movementAngle = mirrored ? 180 - canonicalAngle : canonicalAngle;
-      context.save();
-      context.translate(0, -36);
-      context.rotate((movementAngle * Math.PI) / 180);
-      paintSprite(context, iconFor('arrow'));
-      context.restore();
-    }
     context.restore();
   }
 
@@ -526,6 +647,127 @@ export function createPassengerCanvasRenderer(): {
     context.restore();
   }
 
+  function drawStaticRun(
+    context: CanvasRenderingContext2D,
+    frame: CanvasPassengerFrame,
+    start: number,
+    end: number,
+    density: number,
+    originX: number,
+    originY: number,
+    selectedId?: string,
+    highlightedId?: string,
+  ): boolean {
+    if (end - start < MIN_STATIC_RUN) return false;
+    const first = frame.passengers[start]!;
+    let selected: string | undefined;
+    let highlighted: string | undefined;
+    for (let index = start; index < end; index += 1) {
+      const passenger = frame.passengers[index]!;
+      if (!passenger.interactive) continue;
+      if (passenger.pose.tx.id === selectedId) selected = selectedId;
+      if (passenger.pose.tx.id === highlightedId) highlighted = highlightedId;
+    }
+    const run = staticRuns.find(
+      (cached) =>
+        !cached.seen &&
+        cached.passengers.length === end - start &&
+        cached.selectedId === selected &&
+        cached.highlightedId === highlighted &&
+        sameClips(cached.clips, first.clips) &&
+        cached.passengers.every((previous, index) => {
+          const current = frame.passengers[start + index]!;
+          return (
+            previous.pose === current.pose &&
+            previous.color === current.color &&
+            previous.interactive === current.interactive &&
+            (previous.offsetY ?? 0) === (current.offsetY ?? 0)
+          );
+        }),
+    );
+    if (!run) {
+      if (staticRuns.length < MAX_STATIC_SURFACES) {
+        staticRuns.push({
+          passengers: frame.passengers.slice(start, end),
+          clips: first.clips?.map((clip) => ({ ...clip })),
+          selectedId: selected,
+          highlightedId: highlighted,
+          seen: true,
+          attempted: false,
+        });
+      }
+      return false; // Rasterize only after two consecutive identical frames.
+    }
+    run.seen = true;
+    if (!run.attempted) {
+      let left = Infinity;
+      let top = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+      for (const passenger of run.passengers) {
+        const headScale = passengerHeadScale(passenger.pose);
+        left = Math.min(left, passenger.pose.x + Math.min(-16, HEAD_SPRITE_BOUNDS.x * headScale));
+        top = Math.min(
+          top,
+          passenger.pose.y + Math.min(-42, HEAD_CENTER_Y + HEAD_SPRITE_BOUNDS.y * headScale),
+        );
+        right = Math.max(
+          right,
+          passenger.pose.x +
+            Math.max(16, (HEAD_SPRITE_BOUNDS.x + HEAD_SPRITE_BOUNDS.width) * headScale),
+        );
+        bottom = Math.max(bottom, passenger.pose.y + 8);
+      }
+      // Preserve the output pixel grid, including fractional DPR, projection and mirroring.
+      left = (Math.floor(left * density + originX) - originX) / density;
+      top = (Math.floor(top * density + originY) - originY) / density;
+      const width = Math.ceil((right - left) * density);
+      const height = Math.ceil((bottom - top) * density);
+      if (
+        !Number.isFinite(width * height) ||
+        width <= 0 ||
+        height <= 0 ||
+        width > MAX_STATIC_DIMENSION ||
+        height > MAX_STATIC_DIMENSION ||
+        width * height > MAX_STATIC_PIXELS
+      ) {
+        run.attempted = true;
+      } else if (staticPixels + width * height <= MAX_STATIC_PIXELS) {
+        run.attempted = true;
+        let canvas: HTMLCanvasElement | undefined;
+        try {
+          canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const imageContext = canvas.getContext('2d');
+          if (imageContext) {
+            imageContext.scale(density, density);
+            imageContext.translate(-left, -top);
+            for (const passenger of run.passengers)
+              drawPassenger(imageContext, passenger, frame.view.mirrored, selected, highlighted);
+            run.sprite = {
+              canvas,
+              x: left,
+              y: top,
+              width: width / density,
+              height: height / density,
+            };
+            staticPixels += width * height;
+          }
+        } catch {
+          // A refused surface keeps the same individual drawing and is not retried every frame.
+        }
+        if (canvas && !run.sprite) {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
+      }
+    }
+    if (!run.sprite) return false;
+    paintSprite(context, run.sprite);
+    return true;
+  }
+
   return {
     draw(context, frame, viewport, selectedId, highlightedId) {
       if (!frame.departure) clearDepartureImage();
@@ -533,7 +775,19 @@ export function createPassengerCanvasRenderer(): {
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, viewport.width, viewport.height);
       const layout = projection(frame.view, viewport);
+      const viewKey = [
+        viewport.width,
+        viewport.height,
+        ratio,
+        frame.view.startX,
+        frame.view.width,
+        frame.view.height,
+        frame.view.mirrored,
+      ].join(':');
+      if (viewKey !== staticView || !layout) clearStaticRuns();
+      staticView = viewKey;
       if (!layout) return;
+      for (const run of staticRuns) run.seen = false;
       context.save();
       context.translate(layout.left, layout.top);
       context.scale(layout.scale, layout.scale);
@@ -566,17 +820,59 @@ export function createPassengerCanvasRenderer(): {
         do {
           const passenger = frame.passengers[index];
           if (!passenger) break;
-          drawPassenger(context, passenger, frame.view.mirrored, selectedId, highlightedId);
-          index += 1;
+          let end = index + 1;
+          if (isStaticPassenger(passenger)) {
+            while (end < frame.passengers.length) {
+              const next = frame.passengers[end]!;
+              if (
+                next.clips !== clips ||
+                (next.offsetY ?? 0) !== offsetY ||
+                !isStaticPassenger(next)
+              )
+                break;
+              end += 1;
+            }
+          }
+          const density = layout.scale * ratio;
+          const originX = frame.view.mirrored
+            ? -(layout.left + (frame.view.startX + frame.view.width) * layout.scale) * ratio
+            : (layout.left - frame.view.startX * layout.scale) * ratio;
+          if (
+            !drawStaticRun(
+              context,
+              frame,
+              index,
+              end,
+              density,
+              originX,
+              (layout.top + offsetY * layout.scale) * ratio,
+              selectedId,
+              highlightedId,
+            )
+          )
+            for (let actor = index; actor < end; actor += 1)
+              drawPassenger(
+                context,
+                frame.passengers[actor]!,
+                frame.view.mirrored,
+                selectedId,
+                highlightedId,
+              );
+          index = end;
           const next = frame.passengers[index];
           if (!next || next.clips !== clips || (next.offsetY ?? 0) !== offsetY) break;
         } while (index < frame.passengers.length);
         context.restore();
       }
       context.restore();
+      staticRuns = staticRuns.filter((run) => {
+        if (!run.seen) releaseStaticRun(run);
+        return run.seen;
+      });
     },
     dispose() {
       clearDepartureImage();
+      clearStaticRuns();
       for (const sprites of [heads, shirts, icons]) {
         for (const sprite of sprites.values()) releaseSprite(sprite);
         sprites.clear();

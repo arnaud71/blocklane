@@ -5,14 +5,17 @@ import {
   createPassengerMotion,
   passengerFrame,
   reconcilePassengerMotion,
+  reflowPassengerQueue,
   type PassengerFrame,
 } from '../lib/passengerMotion';
+import { DEFAULT_QUEUE_LAYOUT, type QueueLayout } from '../lib/streetGeometry';
 
 interface PassengerMotionOptions {
   snapshot: Snapshot;
   paused: boolean;
   speed: number;
   reducedMotion: boolean;
+  queueLayout?: QueueLayout;
 }
 
 const FRAME_INTERVAL_MS = 1_000 / 24;
@@ -37,6 +40,8 @@ function sameVisibleFrame(previous: PassengerFrame, next: PassengerFrame): boole
     previous.feeThreshold === next.feeThreshold &&
     previous.preparationProgress === next.preparationProgress &&
     previous.preparationPassengerCount === next.preparationPassengerCount &&
+    previous.networkDoorProgress === next.networkDoorProgress &&
+    previous.networkActive === next.networkActive &&
     previous.waitingArchiveCount === next.waitingArchiveCount &&
     previous.waitingArchiveTrackedCount === next.waitingArchiveTrackedCount &&
     previous.waitingArchiveUnknownCount === next.waitingArchiveUnknownCount &&
@@ -68,9 +73,10 @@ export function usePassengerMotion({
   paused,
   speed,
   reducedMotion,
+  queueLayout = DEFAULT_QUEUE_LAYOUT,
 }: PassengerMotionOptions) {
   const [initialMotion] = useState(() =>
-    advancePassengerMotion(createPassengerMotion(snapshot), 0, { reducedMotion }),
+    advancePassengerMotion(createPassengerMotion(snapshot, queueLayout), 0, { reducedMotion }),
   );
   const motion = useRef(initialMotion);
   const [frame, setFrame] = useState(() => passengerFrame(motion.current));
@@ -90,6 +96,12 @@ export function usePassengerMotion({
     recordedDepartureMarker.current = frame.lastDepartureStartedAt;
     setLastDepartureAt(frame.lastDepartureStartedAt === null ? null : Date.now());
   }, [frame.lastDepartureStartedAt]);
+
+  useEffect(() => {
+    motion.current = reflowPassengerQueue(motion.current, queueLayout);
+    motion.current = advancePassengerMotion(motion.current, 0, { reducedMotion });
+    publishFrame();
+  }, [queueLayout, reducedMotion, publishFrame]);
 
   useEffect(() => {
     motion.current = reconcilePassengerMotion(motion.current, snapshot);

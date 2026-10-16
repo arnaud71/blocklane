@@ -4,7 +4,141 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ## À venir
 
+### Préparation du dépôt GitHub — 16 octobre 2026
+
+- L’audit de dépendances s’exécute sur toutes les PR, afin de pouvoir devenir un contrôle obligatoire sans laisser les changements ordinaires en attente.
+- Le cache généré TypeScript `*.tsbuildinfo` est exclu de Git. Les journaux `.local` et ce cache sont aussi exclus du contexte Docker ; les secrets et artefacts locaux restent exclus.
+- Dépôt privé dédié créé sur arnaud71 ; la procédure de première publication documente le refus des protections privées par l’offre GitHub actuelle et le choix restant au propriétaire.
+
+### Vraies arrivées Bitcoin dans la scène — 16 octobre 2026
+
+- Bitcoin utilise les détails de `track-mempool` pour réserver jusqu’à **384 vraies arrivées** dans les **1 920 transactions pending existantes**, puis compléter avec le candidat du nœud ou les replis. Ce mélange favorise les arrivées observées ; il ne constitue pas un classement global ni une garantie d’inclusion GBT.
+- Frais propres et taille virtuelle validés ; aucun appel HTTP par identifiant, aucun input, script ou output conservé dans la réserve. Sources et dates du flux restent distinctes de celles de l’inventaire RPC. `bitcoinArrivals` identifie seulement les détails pending réellement transmis.
+- Réserve bornée à 384 détails, fraîche pendant soixante secondes depuis le dernier delta consécutif valide ; coupure, trou de séquence ou chargement du fournisseur la réinitialisent. Une arrivée peut remplacer un autre détail de l’échantillon, conservé comme observation historique selon les budgets existants.
+- Le groupe latéral Bitcoin « +X hors échantillon » est retiré ; les voyageurs Bitcoin identifiés entrent par le côté ordinaire. Le groupe collectif Ethereum et la borne des inclusions découvertes tardivement gardent leurs règles. Les retraits et remplacements ne deviennent jamais des confirmations.
+
+### Flux événementiels Bitcoin et Ethereum — 16 octobre 2026
+
+- Connexion événementielle partagée par réseau côté serveur pour alimenter plus régulièrement la rubrique Flux et les groupes collectifs aux entrées latérales. Le panneau distingue les événements suivis du relevé périodique utilisé en secours.
+- Sources et périodes datées indépendamment des blocs, initialisation et coupures explicites, déduplication et absence de rejeu lors des reconnexions. Une notification pending Ethereum ne vaut ni première arrivée mondiale ni confirmation.
+- Transports natifs sans dépendance, mémoire et débit bornés, arrêt après inactivité et fermeture avec le serveur. Dans cette première étape, les notifications alimentaient les compteurs collectifs sans ajouter de détails individuels. L’évolution Bitcoin ci-dessus les intègre ensuite à l’échantillon ; les preuves d’inclusion restent indépendantes.
+
+### Flux des entrées observées — 16 octobre 2026
+
+- Nouvelle rubrique **Flux** dans le panneau supérieur : entrées entre deux inventaires complets du fournisseur, durée du relevé, débit moyen et historique d’environ une minute. Les entrées et les disparitions sont comptées séparément ; une taille de pool stable peut donc cacher une activité importante.
+- Groupes collectifs « +X hors échantillon » aux entrées latérales ordinaires, distincts de la borne réseau et des voyageurs identifiés. Leur quantité est mesurée et figée lors de la première publication du relevé ; ils ne changent pas les places dans les wagons.
+- Premier relevé, panne, remise à zéro et données trop anciennes restent distincts d’un flux nul. Aucun appel fournisseur, abonnement, service ou dépendance supplémentaire ; les transactions apparues puis disparues entre deux relevés peuvent rester invisibles.
+
+### Arrivées nombreuses depuis le réseau — 16 octobre 2026
+
+- Voyageurs nouvellement découverts dans un même bloc répartis sur quatre trajectoires en éventail après la sortie de la borne, avec un court décalage entre leurs départs. Le groupe est plus visible sans empiler tous les personnages au même point.
+- Parcours maintenus au-dessus de la file et sur le quai, puis réunis à la porte du wagon. Les voyageurs déjà connus conservent leur chemin ; seules les transactions réellement identifiées sont individualisées.
+- Décalage compris dans la préparation de trois secondes pour Bitcoin et 1,5 seconde pour Ethereum, réduit pour les preuves tardives. Porte, lumière, traces réseau, pause et mouvements réduits suivent toujours la même horloge. Aucune collecte, capacité ou limite de représentation supplémentaire.
+
+### Contrats et taille des têtes — 16 octobre 2026
+
+- Accessoire des transactions classées comme contrat en bleu cyan, avec contour et deux traits foncés, pour le distinguer des t-shirts jaunes liés aux faibles frais.
+- Différences de taille des têtes accentuées : échelle logarithmique absolue de 0,8 à 2,5, sans dépendre des transactions voisines. Les tailles restent des vBytes pour Bitcoin et des limites de gas déclarées pour Ethereum ; elles ne modifient ni les frais, ni les places, ni la capacité des wagons.
+- Sélection au pointeur et enveloppe du cache adaptées aux grandes têtes, avec les mêmes découpes et limites de surfaces.
+
+### Préparation des départs — 16 octobre 2026
+
+- Après réception d’un bloc et de ses preuves d’inclusion, le wagon Bitcoin attend au moins **trois secondes d’animation** avant de rouler. Les compléments identifiés pendant cette fenêtre rejoignent le même départ ; le wagon attend encore si un passage connu doit se terminer.
+- Ethereum attend au moins **1,5 seconde d’animation** avant de rouler. La durée du trajet des wagons, les collectes et le cache API restent identiques ; pause, vitesse et mouvements réduits gardent leurs règles. Ce délai visuel ne prédit aucun bloc et n’atteste pas sa finalité.
+
+### Éclairage et traces du réseau — 16 octobre 2026
+
+- Borne réseau éclairée pendant l’utilisation de son passage : corps, contour et nœuds deviennent lumineux, avec un halo fixe. L’éclairage reste visible après la fermeture de la porte jusqu’à la fin du passage ; il n’ajoute ni pulsation ni minuterie.
+- Séquence anticipée à l’intérieur de la préparation : lumière, ouverture de la porte, puis apparition des nouveaux voyageurs réseau. La porte reste ouverte un court instant avant leur sortie et après leur dégagement. Les personnes déjà connues gardent leur visibilité ; aucune arrivée n’anticipe une preuve reçue.
+- Traînée plus longue uniquement derrière les voyageurs sortant actuellement de la borne réseau, suivant les virages de leur chemin plutôt qu’une ligne qui couperait la chaussée. Le dessin reste en Canvas, sans nouvel élément par personne, limité à huit points et 110 unités après projection.
+- Aucune trace pour les arrivées ordinaires ou les autres transactions, même si elles ont anciennement utilisé la borne. Pas de trace à l’arrêt, à bord ou avant l’ouverture de la porte. Pause, onglet masqué, mouvements réduits, capacités et preuves d’inclusion conservent leurs règles.
+
+### Portail réseau compact — 16 octobre 2026
+
+- Repère réseau compact placé tout en haut du bord extérieur : à gauche pour Bitcoin, à droite pour Ethereum. Des nœuds reliés remplacent le grand bandeau et une porte s’ouvre avant le passage des voyageurs.
+- Voie de sortie propre au réseau, au-dessus de la file active abaissée : ces inclusions identifiées ne traversent plus les places d’attente et ne se confondent pas avec les arrivées ordinaires par les côtés.
+- Ouverture, passage et fermeture suivent l’horloge existante, avec pause, onglet masqué et mouvements réduits. La préparation conserve sa seconde à vitesse normale ; aucune collecte, dépendance ou capacité supplémentaire.
+
+### Reste du réseau — 16 octobre 2026
+
+- Boîte « Reste du réseau — hors échantillon » en haut du quai de chaque chaîne, en miroir. Une transaction identifiée seulement lors de son inclusion peut en sortir, traverser le quai et rejoindre la porte haute pendant la préparation existante d’une seconde. Ce mouvement illustre une découverte tardive, pas son heure réelle d’arrivée dans le réseau.
+- Les voyageurs déjà connus, les admissions différées et les archives conservent leur provenance. Un identifiant sans détails ne crée aucun personnage. Le complément du bloc reçu est représenté collectivement dans le wagon, hors coinbase Bitcoin et sans compter deux fois les individus déjà représentés.
+- Un rattrapage d’inclusions transporte ses seuls individus prouvés, sans rejouer le complément collectif complet du bloc.
+- Bouton Transactions déplacé dans la ligne du temps depuis le dernier départ, avec libellé compact « Tx » sur mobile : il ne recouvre plus les boîtes et ne retire aucune hauteur à la scène.
+- Aucun compteur mondial, appel fournisseur, champ API, timer, dépendance ou budget individuel supplémentaire. Pause, mouvements réduits et preuves exactes d’inclusion restent applicables.
+
+### Fermeture des informations
+
+- Croix de fermeture disponible en permanence dans le panneau du quai, distincte de la commande qui libère une sélection pour revenir aux statistiques. La fermeture efface la sélection et rend le focus au bouton Informations ; un rafraîchissement ne rouvre pas le panneau.
+- Échap ferme le panneau, après le navigateur de transactions si celui-ci est ouvert. L’en-tête reste visible pendant le défilement, avec des boutons de 44 pixels utilisables au toucher. La fermeture fonctionne aussi sans données disponibles.
+
+### Échantillon courant élargi — 16 octobre 2026
+
+- Plafond courant doublé de **960 à 1 920 transactions en attente par blockchain**, avec 24 confirmations réservées séparément : réponse limitée à **1 944 objets**. Les adaptateurs classent les transactions réellement disponibles ; un fournisseur qui en expose moins reste affiché avec son effectif réel. La démonstration produit 1 920 candidates et 12 confirmations fictives par réseau.
+- Réserve historique individuelle fixée indépendamment à **1 920**, soit **3 840 résidents ordinaires** par réseau. Admissions différées bornées à 1 920, départ à 6 272 et préparation à 10 112 ; suivi serveur maintenu à 4 096 identifiants, avec au plus 6 016 avant vérification et éviction. Archive de 512 identifiants et expiration de 30 minutes conservées.
+- Réserve Bitcoin hors candidat portée à 384 lorsque l’inventaire complet est disponible. Le repli REST des transactions récentes conserve sa borne amont de 1 000 objets. Capacités natives des blocs, surfaces Canvas, caches réseau et cadences de collecte conservés ; aucun appel fournisseur supplémentaire ni complément fictif en direct.
+- Tests de limites, rétention, médianes, sélection et dépendances adaptés à la nouvelle charge ; cohortes de test disjointes et regroupement historique vérifiés. Le banc de mesure accepte désormais `--sample-size 960` ou `1920` avec une réserve historique indépendante.
+
+### Performances mesurées
+
+- Banc de mesure local reproductible sur build de production, avec données interceptées : 960 transactions courantes puis 1 920 historiques par chaîne, départ vérifié et ouverture de la liste. Trois répétitions desktop et mobile émulé, relevés de charge du thread, longues tâches et réactivité ; aucun appel fournisseur pendant ces mesures.
+- Réutilisation du dessin des groupes contigus immobiles, sans réordonner les marcheurs ni modifier les clics individuels. Cache limité à un million de pixels et seize surfaces par rue, libéré au retrait ou au redimensionnement ; dessin individuel conservé en cas d’allocation refusée ou de limite atteinte.
+- Réutilisation des alignements stables de file et de l’appartenance au candidat Bitcoin. Les réorganisations dépendantes du temps, changements de source, nouveaux candidats et dispositions restent réévalués. Données, effectifs, durées, preuves d’inclusion et pause gardent leurs règles.
+
+### Prédécesseurs Ethereum
+
+- Suivi des nonces précédents issus du pool complet, y compris lorsque leurs frais les placent hors des 960 transactions affichées. Un parent connu non admis retient sa descendante ; les nonces non consécutifs ne sont plus reliés comme s’ils se suivaient.
+- Distinction entre parent pending, queued, nonce manquant, ancien parent devenu inconnu et prédécesseur jamais observé. Un remplacement met à jour la dépendance ; seule une preuve d’inclusion exacte résout un parent confirmé. Une disparition, une panne ou une expiration ne fournit aucune confirmation.
+- Motif consultable dans la liste, l’infobulle et les détails, avec incertitude annoncée même à bord lorsque le prédécesseur n’a jamais été observé. Suivi volatile borné, sans nouvel appel RPC ni ajout de personnages ; Ethereum reste une estimation de sélection locale.
+
+### Bilan du candidat Bitcoin
+
+- Comparaison complète du dernier candidat Bitcoin observé avec le bloc reçu correspondant : transactions communes, prévues mais non incluses dans ce bloc, et incluses hors de ce candidat. Calcul hors coinbase côté serveur sur les listes complètes, distinct des détails limités de la scène.
+- Candidat figé avant la détection du bloc, associé à sa hauteur et son parent ; bilan retiré lorsqu’un autre bloc ne dispose pas de candidat comparable. Sources et dates conservées, aucune absence transformée en attente actuelle ou en confirmation.
+- Rubrique « Comparaison » du grand panneau Bitcoin et bilan détaillé dans la rubrique Bloc. Aucun zéro fictif au démarrage, aucune comparaison réelle inventée en démonstration, aucun appel fournisseur supplémentaire.
+
+### Statuts et consultation du quai
+
+- Statut de présence et d’inclusion commun à la liste, à l’infobulle et au panneau. Des détails individuels anciens restent distincts d’une présence pending ou queued vérifiée récemment ; une absence ou un remplacement ne vaut jamais confirmation.
+- Zone « Observations » délimitée en bas du quai pour les personnages au statut inconnu, absents du relevé ou remplacés. Neuf rangées actives et trois historiques, avec places libres indépendantes et retours animés lors d’une réobservation. Les voyageurs restent consultables et les déplacements des wagons gardent leur protection.
+- Recherche locale par hash complet ou fragment, sans distinction de casse, et filtres Toutes / Présentes / Différées / Historiques / Incluses dans « Transactions ». Compte des résultats, remise à zéro et sélection cohérente après actualisation. Les filtres portent sur la liste ; tous les personnages restent représentés dans les limites de rétention existantes.
+
+### Fidélité du mempool observé
+
+- Récupération Bitcoin après erreur RPC ou budget incrémental dépassé : base complète au prochain cycle de 30 s, sans nouvelle tentative dans le cycle courant. Suspension incrémentale de cinq minutes uniquement pour les codes -32601/-32602 exacts ; aucune erreur brute ou URL journalisée.
+
+- Inventaire Bitcoin maintenu en parallèle du candidat GBT ; échantillon mixte borné à 960, incluant jusqu’à 192 transactions hors candidat lorsque le pool RPC complet est disponible. Dates et sources indépendantes conservées.
+- Preuves de présence pending, queued ou d’absence dans l’inventaire, bornées à 4 096 IDs ; aucune absence transformée en confirmation. Normalisation des hashes et rejet des identités dupliquées.
+- Réembarquement d’un membre GBT récent malgré l’âge de ses détails, distinction visuelle et accessible de la présence et des anciennes observations. Stock initial déjà sur le quai, décalage des nouvelles arrivées plafonné à 1,5 seconde.
+- Projection Ethereum liée au prochain parent avec base fee exacte EIP-1559 ; compte, nonce et plafonds conservés pour réévaluer les attentes. Gas déclaré toujours distinct du gas consommé.
+- Expiration autonome des preuves de pool (60 s) et de la projection Ethereum (30 s). Motifs d’attente dans le panneau, légende des frais relatifs et libellé « Vitesse d’animation ».
+
 ### Interface
+
+- Option de vitesse 10× ajoutée aux choix 0,5×, 1×, 2× et 5×. Plafond de l'horloge commune aux voyageurs et wagons porté à 10, avec pas brut toujours limité à 100 ms avant multiplication. Pause, onglet masqué et mouvements réduits conservés ; cadence des collectes, cache API, fraîcheur et temps réel depuis le dernier départ inchangés. L'entrée 5× ci-dessous conserve l'étape antérieure.
+
+- Bitcoin privilégie désormais le candidat proposé par le nœud via `getblocktemplate`. Le premier wagon est annoncé « Candidat du nœud » et réservé à ses membres connus ; le second reste une estimation, accueillant les autres observations encore éligibles. L'échantillon courant reste limité à 960 transactions et 24 confirmations séparées ; les membres historiques connus peuvent viser le candidat sans rafraîchir leur dernière observation ni leur statut. Source, date, périmètre des détails individuels et absence de garantie de minage sont annoncés dans les détails et libellés accessibles.
+- Premier wagon Bitcoin stationnaire représentant le **candidat complet** : nombre total de transactions hors coinbase, poids complet exprimé en vB et pourcentage `weight / weightLimit`. Un groupe SVG statique, sans identifiants ni frais individuels inventés, complète les bonshommes connus. Il soustrait les membres uniques réellement présents dans la scène, quai et arrivées compris, pour éviter tout double comptage. Exemple : 5 000 transactions, 3 992 000 WU sur 4 000 000 et 960 membres individualisés donnent **5 000 TX · 99,8 %**, dont **4 040 groupées**. Groupe non interactif, absent dès la préparation, pendant le déplacement, au repli et à l'expiration ; aucun départ confirmé d'un groupe anonyme. Les projections estimées et les départs réels gardent leurs périmètres distincts. Bornes API, résidents et surfaces Canvas conservées.
+- Frais médians du candidat Bitcoin complet calculés avant la sélection des détails, avec effectif, source et date propres. Moyenne paire à la demi-satoshi, zéro valide et candidat vide sans médiane ; montants natifs proposés distingués des estimations et conversions USD approximatives. En l'absence du nouveau champ facultatif, repli annoncé sur la médiane estimée de l'échantillon. Ni médiane du mempool ni frais confirmés ; aucun appel fournisseur supplémentaire.
+- Candidat Bitcoin actif pendant au plus 30 secondes, lié au hash parent et à la hauteur suivante. Expiration en temps réel aussi pendant une requête lente ou une pause, sans redater les transactions ni ajouter de collecte ; changement de parent, erreur ou repli retire la sélection. Secours annoncé dans l'ordre pool RPC complet, premier bloc projeté mempool.space, puis transactions récentes ; l'algorithme estimé habituel reprend sans candidat. Un candidat valide vide reste distinct d'une indisponibilité. Les portes, trajets sur le quai, arrêt avant sortie, poids natifs, bornes historiques et préférence de mouvements réduits restent applicables. Un candidat ne confirme rien et ne déclenche aucun départ : les inclusions vérifiées restent indépendantes et peuvent différer de la proposition précédente.
+
+- Réserve d'anciennes observations doublée à 1 920 par chaîne, pour 2 880 résidents ordinaires avec les 960 transactions courantes. Cohorte de départ bornée à 4 352 et préparation à 7 232 résidents transitoires, sans augmenter l'échantillon API, le suivi serveur ou les surfaces Canvas. Expiration de 30 minutes, frais, ressources natives et provenance historique conservés ; aucun gain de fluidité mesuré.
+
+- Option de vitesse 5× dans les contrôles de lecture, avec plafond de l'horloge d'animation porté à 5 ; cadence des collectes et cache API inchangés.
+
+- Réembarquement des observations ayant déjà atteint l'intérieur d'une projection : une descente avant départ ou sous pression de capacité ne perd plus leur candidature au rafraîchissement suivant. Retour par le quai et la porte après l'arrêt, sous les mêmes budgets natifs, base fee Ethereum, plafond de 960 historiques et expiration de 30 minutes. Dernière date, statut connu et horloge conservés ; aucune présence actuelle ou confirmation inventée. Les observations perdues avant leur premier embarquement restent en attente sur le quai.
+
+- Retrait des petites flèches au-dessus des voyageurs lors des sorties et retours en file.
+
+- Correction des voyageurs restant après inclusion : les preuves exactes sont consommées aussi en mouvements réduits, sans remettre ces transactions dans la file. Les anciens instantanés `pending` ne peuvent pas réintroduire un identifiant déjà parti tant que son reçu reste conservé ; cohortes actives et réorganisations sont traitées séparément. Côté Ethereum, rapprochement des nouveaux candidats avec les transactions des blocs récents et rattrapage borné en arrière-plan par reçus vérifiés contre le bloc canonique. Une réponse nulle, une erreur ou une absence d'échantillon ne fournit toujours aucune confirmation.
+
+- Sélection rétablie au pointeur et au clavier pour les voyageurs historiques individualisés. Infobulle et détails indiquent « dernière observation connue », dernier état et date réellement disponibles, avec présence actuelle dans la mempool inconnue. Une couleur rouge peut refléter des frais anciens et ne déclenche aucun réembarquement sans observation actuelle ; les causes d'attente Ethereum sous base fee ou faute de capacité sont explicitées. Une seule sélection reste mémorisée si le personnage rejoint le groupe ; une réobservation ou une inclusion exacte reprend la priorité. Cohortes en départ et groupes collectifs restent non interactifs ; aucun nouvel appel réseau ni statut inventé.
+
+- File d'attente utilisant les places libres du quai avant toute superposition : grille à treize rangées espacées, sur toute la hauteur utile sous les légendes, nombre de colonnes adapté à la largeur affichée, places libérées à l'embarquement et partagées avec les observations anciennes. Conservation des places déjà occupées et allocation des emplacements restants par frais pour les nouveaux arrivants ; nouvelle réservation au retour du wagon si l'ancienne place a été reprise. Redistribution des seules superpositions lorsqu'une place se libère, repli des trajets au redimensionnement, géométrie `v18`. Échantillon de 960, wagons, capacités natives, provenance, preuves et limites réseau conservés.
+
+- Nouvelle extension du 15 octobre 2026 : maximum courant doublé de **480 à 960 transactions en attente par chaîne**, sélection top frais et médiane sur les candidates réellement reçues, avec 24 confirmations réservées séparément et réponse limitée à 984 objets. File de 32 colonnes par 30 rangées, indices historiques à partir de 1 920 et géométrie `v17` ; places par arrivée observée et stabilité des voyageurs déjà embarqués conservées. Démonstration : 960 candidates et 12 confirmations fictives, soit 972 objets, avec compte de pool simulé distinct. Capacités natives et grille visuelle de 96 emplacements des wagons conservées. Cache d'apparence porté à 8 192 hashes ; textures, surfaces et cadence Canvas inchangées. Aucun appel fournisseur, pagination, dépendance ou complément fictif en direct ; un relevé plus petit reste plus petit. Aucun gain de fluidité mesuré. Les entrées suivantes conservent les plafonds des étapes antérieures.
+
+- Conservation des voyageurs déjà embarqués lorsqu'ils disparaissent seulement du nouvel échantillon ou que la recommandation Bitcoin augmente. Places et wagons stables tant que les candidats rentrent ; réaffectation par frais seulement sous pression de capacité native, avec base fee Ethereum conservée. Jusqu'à 480 observations historiques à bord pendant moins de 30 minutes, horloge et provenance ancienne maintenues, sans actualisation fictive de statut. Elles comptent dans les réservations et compteurs à bord ; les inclusions vérifiées seules partent. Promotion et mouvement réduit adaptés, explications corrigées et scénarios ciblés de non-régression ajoutés.
 
 - Essai local du 15 octobre 2026 d'un top frais sur lecture complète facultative du mempool du fournisseur : Bitcoin `getrawmempool(true)` via nouveau `BITCOIN_RPC_URL` PublicNode, Ethereum `txpool_content` via RPC existant. Top 480 uniquement transmis après classement exact. Bitcoin conserve une table compacte, réconcilie les identifiants et lit `getmempoolentry` uniquement pour les nouveaux ; recalage complet après dix minutes, invalidité ou mauvais réseau. Un échec incrémental retire le top public ; l'index privé reste conservé pour réessayer jusqu'au recalage, sans métadonnées partielles. Ethereum conserve des lectures complètes, car un filtre d'arrivées ne fournit pas le journal fiable des retraits, évictions et `queued` ; ses candidates `pending` compactées restent gardées au plus 30 secondes pour actualiser les prix effectifs. Les `queued` sont comptées séparément et exclues du wagon, comme les candidates sous la base fee. Provenance et date du relevé visibles ; sources Bitcoin combinées annoncées et compte lié au même pool. Replis projection/récentes Bitcoin et candidat Ethereum conservés, sans top complet inventé lorsque lecture absente, expirée, refusée, invalide ou trop grande.
 
@@ -70,6 +204,10 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ### Contrat et suivi
 
+- Champ facultatif nullable `Snapshot.blockTemplate` : source, date de réception, hauteur prévue, hash parent, compte complet hors coinbase, poids, limite de poids, médiane facultative `medianFeeSats` et au plus 4 096 identifiants membres sélectionnés. La médiane complète est calculée en `BigInt` avant troncature, bornée à 2 100 000 000 000 000 sat par pas de 0,5, nulle seulement pour un candidat vide lorsqu'elle est fournie ; omission compatible avec les anciens producteurs. Réservé à Bitcoin en direct, cohérent avec la tête, les transactions courantes et les bornes ; aucune preuve d'inclusion implicite. Lecteur `getblocktemplate` utilisant le même `BITCOIN_RPC_URL` que le pool de secours, avec contrôle préalable du réseau et de la synchronisation, règles SegWit, une tentative en cours, délai minimal de 15 secondes après sa fin et budget global de huit secondes. Réponse limitée à 16 Mio, 30 000 transactions et quatre millions d'unités de poids ; contrôles des identifiants, octets, dépendances et poids sans validation de consensus complète. Octets bruts et URL RPC conservés hors de l'API publique ; pas de dépendance ni stockage supplémentaire. Une valeur vide de `BITCOIN_RPC_URL` désactive candidat et pool facultatifs ; blocs et preuves mempool.space, cache HTTP de trois secondes et plafonds de réponse courants sont conservés.
+
+- Extension à 960 candidates : plafond de réponse **984**, suivi durable **4 096 identifiants** pendant 30 minutes et maximum transitoire **5 056** avant vérification et éviction ; journal de 16 blocs avec **4 096 preuves** au total. Bornes de représentation coordonnées à 1 920 résidents ordinaires, 960 admissions différées, 960 anciennes observations individualisées, 3 392 inclusions en départ et 5 312 résidents pendant la préparation ; archive conservée à 512 identifiants. Huit blocs de rattrapage, limites des fournisseurs, délais, caches et capacités natives inchangés. Les valeurs des entrées antérieures ci-dessous restent historiques.
+
 - Champ facultatif nullable `Snapshot.sampling` : `{ method: 'getrawmempool' | 'txpool_content', source, observedAt, pendingCount, queuedCount?, update? }`, avec `update: 'full' | 'incremental'` requis sur Bitcoin, validé par chaîne et réservé au relevé complet exploitable en direct. Le comptage `Snapshot.mempool` Ethereum reste séparé, issu de `txpool_status` à sa propre date. Nouvelle destination Bitcoin configurable et désactivable par valeur vide ; aucun service, dépendance ou stockage supplémentaire. Collectes partagées en arrière-plan, une par chaîne, délai minimal de 30 secondes après succès et relevé complet utilisable 30 secondes ; transport réservé à 32 Mio et huit secondes, maximum 100 000 transactions Bitcoin ou 50 000 Ethereum `pending + queued`. Bitcoin : inventaire des identifiants et séquence sous huit Mio puis métadonnées des nouveaux seulement, 500 ajouts maximum par cycle, lots de 25 sous 128 Kio, deux lots simultanés et budget total de huit secondes pour le cycle entier ; recalage complet après dix minutes ; erreur ou course incohérente retire le top public et abandonne les nouvelles métadonnées partielles. L'index privé reste conservé après panne réseau, HTTP, RPC, timeout ou dépassement, jusqu'au recalage de dix minutes ; invalidité, mauvais réseau, erreur initiale, horloge incohérente ou expiration l'effacent et imposent une base complète. Diagnostic expurgé limité aux catégories d'échec et éventuel nombre d'ajouts, sans charge brute ni secret. Dernier inventaire réconcilié daté séparément, sans photographie atomique. Réessais après échec espacés de 30 secondes Bitcoin, 60 secondes Ethereum ou cinq minutes après refus RPC Ethereum. Limite HTTP ordinaire deux Mio, cache blockchain trois secondes et réponse 504 transactions conservés ; coût réseau et désérialisation supplémentaire côté serveur.
 
 - Extension du 15 octobre 2026 : réponse maximale relevée de 264 à 504 transactions, dont 480 candidates et 24 confirmations réservées. Bornes coordonnées à 960 résidents ordinaires, 480 admissions différées, 480 anciennes observations individualisées, 1 952 inclusions en départ et 2 912 résidents en préparation ; archive conservée à 512 identifiants. Suivi durable de 2 048 identifiants sur 30 minutes conservé, avec maximum transitoire de 2 528 avant vérification et éviction ; journal de 16 blocs et 2 048 preuves, rattrapage de huit blocs, délais, limites réseau et cache de trois secondes inchangés. Aucun appel ou complément fictif en direct : un fournisseur exposant moins de candidates donne toujours un échantillon plus petit.
@@ -86,6 +224,8 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 - Limites de représentation : 240 voyageurs en attente, normalement 480 résidents et 240 admissions différées ; une préparation peut conserver temporairement 1 712 résidents et jusqu'à 1 232 inclusions superposables.
 
 ### Validation
+
+- Reprise des contrôles autorisée le 15 octobre 2026 ; scénarios ciblés de conservation des voyageurs réussis, avec échecs historiques et diagnostics TypeScript consignés dans `docs/validation.md`. Extension 960/984 : 16 tests Vitest ciblés et six parcours navigateur desktop/mobile réussis, build et ESLint réussis ; les dix diagnostics TypeScript préexistants restent, sans nouveau diagnostic. Les suites complètes n'ont pas été relancées après cette extension ; aucun gain de performance ni succès global annoncé. Les mentions de suspension ci-dessous décrivent les campagnes historiques.
 
 - Essai manuel réel du nouveau classement et de l'application locale autorisé le 15 octobre 2026, sans reprise des tests, lint, TypeScript, compilation, audit, profilage, benchmark ou QA responsive. Le contrat, les bornes, le coût et les replis restent non validés ; observations ponctuelles et cas à reprendre consignés dans `docs/validation.md`. Aucun déploiement ni publication.
 

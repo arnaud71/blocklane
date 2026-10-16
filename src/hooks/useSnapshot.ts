@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { snapshotSchema, type ChainId, type Snapshot } from '../../shared/model';
-import { assessFreshness } from '../lib/freshness';
+import { assessFreshness, nextSnapshotFreshnessDeadline } from '../lib/freshness';
 
 export function useSnapshot(chain: ChainId, mode: 'live' | 'demo') {
   const [data, setData] = useState<Snapshot | null>(null);
@@ -66,19 +66,28 @@ export function useSnapshot(chain: ChainId, mode: 'live' | 'demo') {
   }, [chain, mode, refresh]);
 
   useEffect(() => {
-    if (!data || data.mode !== 'live' || data.status === 'unavailable') return;
-    const expiry = setTimeout(
-      () => setClock(Date.now()),
-      Math.max(0, data.observedAt + 120_001 - Date.now()),
-    );
+    if (!data) return;
+    const deadline = nextSnapshotFreshnessDeadline(data, clock);
+    if (deadline === null) return;
+    const expiry = setTimeout(() => setClock(Date.now()), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(expiry);
-  }, [data]);
+  }, [data, clock]);
 
   const error = failure?.chain === chain && failure.mode === mode ? failure.message : null;
   const current = data?.chain === chain && data.mode === mode ? data : null;
-  const snapshot = current ? assessFreshness(current, !!error, clock) : null;
+  const snapshot = useMemo(
+    () => (current ? assessFreshness(current, !!error, clock) : null),
+    [current, error, clock],
+  );
   return {
     snapshot,
+    expiredBlockTemplate:
+      current?.blockTemplate &&
+      snapshot &&
+      !snapshot.blockTemplate &&
+      snapshot.status !== 'unavailable'
+        ? current.blockTemplate
+        : null,
     error: snapshot ? error : null,
     loading: !snapshot && !error,
     connectionError: error,

@@ -235,5 +235,6 @@ export function createApp(options: AppOptions = {}): Server {
   server.keepAliveTimeout = 5_000;
   server.maxHeadersCount = 50;
   server.maxRequestsPerSocket = 1_000;
+  server.once('close', () => service.dispose?.());
   return server;
 }

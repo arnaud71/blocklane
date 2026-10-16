@@ -586,12 +586,25 @@ main.immersion-main {
   position: relative;
 }
 .chain-departure-line {
+  position: relative;
+  padding-right: 88px;
   display: flex;
   align-items: baseline;
   gap: 7px;
   margin: 7px 0 0;
   color: #adc9b6;
   font-size: 11px;
+}
+.chain-departure-label {
+  white-space: nowrap;
+}
+.chain-departure-label-compact {
+  display: none;
+}
+.chain-transaction-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 .chain-departure-line .departure-timer {
   font-size: 13px;
@@ -921,7 +934,22 @@ main.immersion-main {
     --campus-width: 76px;
   }
   .chain-heading {
-    padding: 7px;
+    padding: 4px;
+  }
+  .chain-departure-line {
+    margin-top: 0;
+    padding-right: 34px;
+  }
+  .chain-departure-label-full {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .chain-departure-label-compact {
+    display: inline;
   }
   .chain-title {
     flex-wrap: wrap;
@@ -970,6 +998,10 @@ main.immersion-main {
   .chain-coverage {
     font-size: 9px;
     padding: 3px 7px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .immersion-controls {
     padding: 4px 7px;
@@ -993,7 +1025,7 @@ main.immersion-main {
   .chain-pane .scene-stage > .info-panel {
     position: fixed;
     top: max(12px, 12dvh);
-    bottom: max(60px, 8dvh);
+    bottom: max(112px, calc(96px + env(safe-area-inset-bottom)));
     left: 12px;
     right: 12px;
     width: auto;

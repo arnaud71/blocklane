@@ -10,6 +10,10 @@ Le propriétaire conserve la décision de fusion et de publication. Un hébergem
 
 ## À configurer après création du dépôt distant
 
+Le dépôt privé [arnaud71/blocklane](https://github.com/arnaud71/blocklane) a été créé le 16 octobre 2026 sur le compte personnel arnaud71, séparément d’onchainfinity. Aucun code n’y a encore été poussé. GitHub a refusé l’activation des règles de branche avec HTTP 403 : les protections d’un dépôt privé nécessitent GitHub Pro avec l’offre actuelle. Avant le premier envoi, activer une offre compatible ou obtenir du propriétaire un choix explicite sur la visibilité ou une exception aux protections requises par `AGENTS.md`. La fusion automatique reste désactivée.
+
+Les contrôles obligatoires préparés sont `Lint, types, tests, build et navigateur` et `audit`. L’audit s’exécute pour toutes les PR : un filtrage par chemins le laisserait en attente pour les autres changements. Prévoir une PR obligatoire, des checks à jour, les conversations résolues, aucun contournement administrateur, aucun force-push et aucune suppression de `main`. Un compte personnel seul utilise zéro approbation formelle obligatoire pour permettre la revue sans exiger sa propre approbation ; les contrôles et la PR restent requis.
+
 1. Publier le dépôt et protéger `main` : PR obligatoire, contrôles CI obligatoires, historique sans force-push, suppression de branche protégée interdite.
 2. Activer Dependabot et ses alertes, ainsi que la détection et le signalement privé de secrets/vulnérabilités lorsque l'offre du dépôt le permet.
 3. Conserver les permissions Actions minimales ; ne pas donner de secrets de déploiement aux PR ni aux forks.
@@ -21,7 +25,7 @@ Le propriétaire conserve la décision de fusion et de publication. Un hébergem
 
 Les workflows du dépôt sont préparés ; ils ne configurent pas automatiquement ces paramètres GitHub ni l'hébergement.
 
-La suspension des tests et contrôles demandée par le propriétaire reste applicable aux changements locaux actuels : les procédures de vérification ci-dessous décrivent une reprise autorisée ou une future livraison, pas des contrôles effectués pour la conversion USD. L'état précis figure dans [validation.md](validation.md).
+Les tests ont repris à la demande du propriétaire après leur suspension ponctuelle. Les résultats propres à chaque changement, ainsi que leurs limites, figurent dans [validation.md](validation.md).
 
 ## Chaque semaine
 
@@ -51,6 +55,20 @@ Pour une version majeure, lire le guide officiel de migration, proposer les adap
 7. Si un fournisseur doit être remplacé, vérifier le contrat du nouvel endpoint et les tests, puis redémarrer avec la nouvelle configuration. La source affichée doit correspondre à la provenance réelle.
 
 Une panne upstream peut afficher le dernier instantané pendant 120 secondes avec le statut ancien. Au-delà, la source doit être indisponible. Il n'y a aucune bascule automatique vers une simulation.
+
+## Diagnostiquer un flux non mesuré
+
+Le panneau Flux privilégie `eventFlow` quand une période de notifications est valide. Vérifier son état, sa source, son epoch et ses dates propres : un début de connexion n’est pas un zéro reçu. Les notifications Ethereum ne couvrent pas les transactions queued et peuvent être des promotions ou réémissions. Une coupure ne restitue aucun historique manqué. Les URL `BITCOIN_EVENTS_WS_URL` et `ETHEREUM_EVENTS_WS_URL` sont privées, configurées côté serveur ; une valeur vide désactive le flux. Les valeurs publiques par défaut sont proposées uniquement si le fournisseur HTTP associé reste celui d’origine. Un fournisseur personnalisé exige sa configuration événementielle explicite. Ne jamais publier ces URL ou leurs paramètres.
+
+Le secours `poolFlow` exige deux inventaires complets successifs : `getrawmempool` réconcilié pour Bitcoin, union pending/queued de `txpool_content` pour Ethereum. Un premier relevé est en initialisation. Un compteur `txpool_status`, un candidat GBT, un bloc pending ou un échantillon de transactions récentes ne suffisent pas à mesurer les entrées de tout l’inventaire observé. Garder « non mesuré » si le flux et les inventaires sont inexploitables ; ne pas déduire le débit de la variation nette d’un compteur.
+
+Vérifier `poolFlow.source`, sa méthode, sa date propre et les deux dates du dernier intervalle dans la réponse publique, sans afficher de configuration privée. Les relevés gardent leur cadence existante d’environ trente secondes après collecte ; le cache HTTP de trois secondes ne les rend pas plus fréquents. Une panne, un recul d’horloge, une réinitialisation de branche ou un intervalle supérieur à 90 secondes impose une nouvelle référence. Le contexte expire après 90 secondes, même si les blocs continuent d’arriver. Une vue répartie entre plusieurs nœuds peut changer de contenu : annoncer cette limite plutôt que présenter un flux mondial.
+
+Une connexion événementielle dispose de huit secondes pour aboutir ; trente secondes sans message reconnu la coupent. Les reconnexions suivent un délai exponentiel borné à trente secondes, avec budgets conservés entre les tentatives. Une minute sans lecture du direct ferme le flux ; le mode démo n’entretient pas ces lectures. Le contexte actif expire indépendamment après quinze secondes sans publication. Un gros message, un débit excessif ou plus de 20 000 identifiants privés interrompt la mesure avec une limite annoncée ; ne pas relever ces bornes pour masquer un problème fournisseur. Le schéma et les plafonds complets figurent dans [architecture.md](architecture.md).
+
+Bitcoin ne montre plus de groupe collectif latéral : vérifier `bitcoinArrivals` et ses jusqu’à 384 IDs pending réellement présents dans la réponse. Ils occupent des places dans le plafond de 1 920, sans l’augmenter. La réserve provient de `track-mempool`/`mempool-transactions`, sans HTTP par hash ; seuls frais propres et taille virtuelle sont retenus, jamais les inputs/outputs. Sa date est celle du dernier delta consécutif validé et expire après soixante secondes ; un simple HTTP lu, un nouveau bloc ou une statistique générale ne la renouvelle pas. Vérifier aussi cette échéance sans nouvelle réponse HTTP : les IDs exclusivement justifiés par le flux doivent quitter la sélection active, en gardant leurs avatars/détails historiques sous les budgets existants. Les confirmations et les preuves RPC/GBT indépendantes encore fraîches restent exploitables. Coupure, chargement ou discontinuité de séquence doivent la vider. Comparer sa source/date à l’inventaire RPC sans les fusionner : une arrivée observée ailleurs n’y est pas déclarée présente. Le mélange final n’est pas un top global ni une preuve d’inclusion GBT.
+
+Le groupe collectif latéral Ethereum reste un signal hors sélection pending lors du premier affichage du lot ; il ne compte pas les avatars historiques et ne rejoint aucun wagon. Ne pas le confondre avec les découvertes d’inclusions de la borne réseau haute. Le maintien d’un échantillon individuel stable n’établit pas une absence de nouvelles transactions. Un voyageur Bitcoin déplacé hors sélection peut rester parmi les anciennes observations selon les bornes existantes ; ne pas modifier son statut en confirmation à cause d’un retrait ou d’un remplacement.
 
 ## Diagnostiquer une conversion USD indisponible
 

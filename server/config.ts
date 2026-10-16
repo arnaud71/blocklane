@@ -8,6 +8,8 @@ export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const BITCOIN_DEFAULT_URL = 'https://mempool.space/api';
 export const ETHEREUM_DEFAULT_URL = 'https://ethereum-rpc.publicnode.com';
 export const BITCOIN_RPC_DEFAULT_URL = 'https://bitcoin-rpc.publicnode.com';
+export const BITCOIN_EVENTS_DEFAULT_URL = 'wss://mempool.space/api/v1/ws';
+export const ETHEREUM_EVENTS_DEFAULT_URL = 'wss://ethereum-rpc.publicnode.com';
 
 export interface ServerConfig {
   host: string;
@@ -18,6 +20,10 @@ export interface ServerConfig {
   ethereumSource: string;
   bitcoinRpcUrl?: string;
   bitcoinPoolSource?: string;
+  bitcoinEventsWsUrl?: string;
+  ethereumEventsWsUrl?: string;
+  bitcoinEventsSource?: string;
+  ethereumEventsSource?: string;
   trustedProxyIps: string[];
   apiRateLimitPerMinute: number;
 }
@@ -47,6 +53,27 @@ export function validateUpstreamUrl(value: string): string {
   return url.toString().replace(/\/$/, '');
 }
 
+/** Event endpoints remain operator-owned server configuration, never public API arguments. */
+export function validateEventStreamUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Invalid event stream URL in server configuration.');
+  }
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (
+    (url.protocol !== 'wss:' && !(url.protocol === 'ws:' && loopback)) ||
+    url.username ||
+    url.password ||
+    url.hash
+  )
+    throw new Error(
+      'Event streams require WSS; WS is allowed only for loopback nodes, without credentials or fragments.',
+    );
+  return url.toString().replace(/\/$/, '');
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): ServerConfig {
   const port = z.coerce
     .number()
@@ -65,6 +92,18 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const configuredBitcoinRpc = env.BITCOIN_RPC_URL ?? BITCOIN_RPC_DEFAULT_URL;
   const bitcoinRpcUrl = configuredBitcoinRpc.trim()
     ? validateUpstreamUrl(configuredBitcoinRpc)
+    : undefined;
+  const bitcoinEvents =
+    env.BITCOIN_EVENTS_WS_URL ??
+    (bitcoinApiUrl === BITCOIN_DEFAULT_URL ? BITCOIN_EVENTS_DEFAULT_URL : '');
+  const ethereumEvents =
+    env.ETHEREUM_EVENTS_WS_URL ??
+    (ethereumRpcUrl === ETHEREUM_DEFAULT_URL ? ETHEREUM_EVENTS_DEFAULT_URL : '');
+  const bitcoinEventsWsUrl = bitcoinEvents.trim()
+    ? validateEventStreamUrl(bitcoinEvents)
+    : undefined;
+  const ethereumEventsWsUrl = ethereumEvents.trim()
+    ? validateEventStreamUrl(ethereumEvents)
     : undefined;
   if (new URL(bitcoinApiUrl).search)
     throw new Error('Bitcoin API base URL cannot contain query parameters.');
@@ -90,6 +129,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     bitcoinApiUrl,
     ethereumRpcUrl,
     bitcoinRpcUrl,
+    bitcoinEventsWsUrl,
+    ethereumEventsWsUrl,
+    bitcoinEventsSource:
+      bitcoinEventsWsUrl === BITCOIN_EVENTS_DEFAULT_URL
+        ? 'mempool.space'
+        : 'Flux Bitcoin configuré',
+    ethereumEventsSource:
+      ethereumEventsWsUrl === ETHEREUM_EVENTS_DEFAULT_URL
+        ? 'Ethereum PublicNode'
+        : 'Flux Ethereum configuré',
     bitcoinPoolSource:
       bitcoinRpcUrl === BITCOIN_RPC_DEFAULT_URL ? 'Bitcoin PublicNode' : 'RPC Bitcoin configuré',
     bitcoinSource:

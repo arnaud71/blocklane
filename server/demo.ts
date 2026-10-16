@@ -51,7 +51,7 @@ export function generateDemoSnapshot(chain: ChainId, now = Date.now(), seed = 20
     observedAt: Math.max(0, Math.floor(now)),
     coverage:
       'Simulation déterministe : transactions, montants, frais, blocs et comptages fictifs. Aucune donnée de réseau réel et aucune transaction envoyée.',
-    pendingCount: bitcoin ? 4_320 : 780,
+    pendingCount: bitcoin ? 4_320 : Math.max(780, PENDING_SAMPLE_LIMIT * 2),
     feeRate: bitcoin ? 8 : 1.6,
     feeUnit: bitcoin ? 'sat/vB' : 'Gwei',
     transactions: transactions.map((transaction) => ({

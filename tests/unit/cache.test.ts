@@ -26,7 +26,8 @@ describe('shared snapshot cache and honest failures', () => {
     expect(bitcoin).toHaveBeenCalledTimes(1);
     release();
     const snapshots = await Promise.all(requests);
-    expect(snapshots.every((snapshot) => snapshot === snapshots[0])).toBe(true);
+    // Per-client quote decoration creates envelopes around the shared chain snapshot.
+    for (const snapshot of snapshots) expect(snapshot).toEqual(snapshots[0]);
     await service.get('bitcoin', 'demo');
     expect(bitcoin).toHaveBeenCalledTimes(1);
     await service.get('ethereum', 'live');

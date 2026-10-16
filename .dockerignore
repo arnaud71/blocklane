@@ -9,6 +9,8 @@ coverage
 playwright-report
 test-results
 *.log
+*.tsbuildinfo
+.local
 .DS_Store
 .codex
 .agents

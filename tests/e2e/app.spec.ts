@@ -1,6 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { generateDemoSnapshot } from '../../server/demo';
-import type { ChainId, Snapshot } from '../../shared/model';
+import {
+  PENDING_SAMPLE_LIMIT,
+  snapshotSchema,
+  type ChainId,
+  type Snapshot,
+} from '../../shared/model';
 
 const chains = ['bitcoin', 'ethereum'] as const;
 const pane = (page: Page, chain: ChainId) =>
@@ -8,21 +13,25 @@ const pane = (page: Page, chain: ChainId) =>
 
 function liveSnapshot(chain: ChainId, observedAt = Date.now()): Snapshot {
   const demo = generateDemoSnapshot(chain, observedAt);
-  return {
+  return snapshotSchema.parse({
     ...demo,
     mode: 'live',
     source: 'Fournisseur de test',
+    message: 'Données de test en lecture seule.',
     pendingCount: chain === 'ethereum' ? null : 4_320,
     coverage: 'Échantillon de test, couverture partielle.',
-    transactions: demo.transactions.map((tx, index) => ({
-      ...tx,
-      id: `${chain === 'ethereum' ? '0x' : ''}${(index + 1).toString(16).padStart(64, '0')}`,
-    })),
+    transactions: demo.transactions
+      .filter((tx) => tx.status === 'pending')
+      .map((tx, index) => ({
+        ...tx,
+        id: `${chain === 'ethereum' ? '0x' : ''}${(index + 1).toString(16).padStart(64, '0')}`,
+        blockHash: undefined,
+      })),
     blocks: demo.blocks.map((block, index) => ({
       ...block,
       hash: `${chain === 'ethereum' ? '0x' : ''}${(index + 100).toString(16).padStart(64, '0')}`,
     })),
-  };
+  });
 }
 
 async function routeSnapshots(
@@ -38,8 +47,22 @@ async function routeSnapshots(
 }
 
 async function inspectFirstTraveler(page: Page, chain: ChainId = 'bitcoin') {
-  await pane(page, chain).locator('.street-person').first().focus();
+  await page
+    .getByRole('button', {
+      name: `Parcourir les transactions ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+      exact: true,
+    })
+    .focus();
   await page.keyboard.press('Enter');
+  const browser = page.getByRole('dialog', {
+    name: `Transactions observées ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+  });
+  await expect(browser.getByRole('combobox')).toBeFocused();
+  await browser.getByRole('button', { name: 'Afficher les détails', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await browser.getByRole('button', { name: 'Fermer les transactions', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(browser).toHaveCount(0);
   await expect(page.getByTestId('info-panel')).toHaveAttribute('data-page', 'transaction');
 }
 
@@ -51,27 +74,44 @@ test.beforeEach(async ({ page }) => {
 
 test('both bounded live scenes share the viewport and chain focus never hides a scene', async ({
   page,
-}) => {
+}, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   for (const chain of chains) {
-    await expect(pane(page, chain).getByRole('status')).toHaveText('Données en direct');
+    await expect(pane(page, chain).getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Données en direct',
+    );
     await expect(
       pane(page, chain).getByRole('heading', {
-        name: chain === 'bitcoin' ? 'Bitcoin Avenue' : 'Ethereum Avenue',
+        name: chain === 'bitcoin' ? /^Bitcoin(?: Avenue)?$/ : /^Ethereum(?: Avenue)?$/,
       }),
     ).toBeVisible();
-    await expect(pane(page, chain).locator('.street-person')).toHaveCount(80);
+    await expect(pane(page, chain).locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(1);
+    await page
+      .getByRole('button', {
+        name: `Parcourir les transactions ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+        exact: true,
+      })
+      .click();
+    const browser = page.getByRole('dialog', {
+      name: `Transactions observées ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+    });
+    await expect(browser.getByRole('combobox').locator('option')).toHaveCount(PENDING_SAMPLE_LIMIT);
+    await browser.getByRole('button', { name: 'Fermer les transactions', exact: true }).click();
   }
   await expect(page.getByTestId('info-panel')).toHaveCount(0);
   const ethereumFocus = page.locator('.chain-tabs').getByRole('button', { name: /Ethereum/ });
   await ethereumFocus.click();
   await expect(ethereumFocus).toHaveAttribute('aria-pressed', 'true');
   await expect(pane(page, 'bitcoin').locator('.street-scene')).toBeVisible();
+  await pane(page, 'ethereum')
+    .getByRole('button', { name: 'Afficher mempool · Ethereum', exact: true })
+    .click();
   await expect(
-    pane(page, 'ethereum').locator('.chain-metrics div').filter({ hasText: 'Mempool global' }),
-  ).toContainText('Non mesuré');
+    pane(page, 'ethereum').locator('.info-billboard[data-page="Mempool"]'),
+  ).toContainText('Compteur non fourni');
   const viewport = page.viewportSize();
   if (!viewport) throw new Error('Viewport nécessaire pour vérifier le mode immersif.');
   const boxes = await Promise.all(
@@ -87,9 +127,21 @@ test('both bounded live scenes share the viewport and chain focus never hides a 
     expect(box.height).toBeGreaterThanOrEqual(100);
     animatedArea += box.width * box.height;
   }
-  if (viewport.width > 700) {
-    expect(animatedArea).toBeGreaterThan(viewport.width * viewport.height * 0.5);
+  // The requested shared city and aggregate queue now occupy their own visual
+  // columns/rows rather than being repeated inside the individual passenger streets.
+  for (const illustrated of await page
+    .locator('.shared-campus-city, .global-queue-crowd svg')
+    .all()) {
+    const box = await illustrated.boundingBox();
+    if (!box) throw new Error('La ville commune et les files illustrées doivent rester visibles.');
+    expect(box.x).toBeGreaterThanOrEqual(-1);
+    expect(box.y).toBeGreaterThanOrEqual(-1);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+    animatedArea += box.width * box.height;
   }
+  if (viewport.width > 700)
+    expect(animatedArea).toBeGreaterThan(viewport.width * viewport.height * 0.5);
   const appBox = await page.locator('.immersive-app').boundingBox();
   const streetsBox = await page.locator('.twin-streets').boundingBox();
   if (!appBox || !streetsBox) throw new Error('La vue immersive doit être attachée au viewport.');
@@ -118,6 +170,7 @@ test('both bounded live scenes share the viewport and chain focus never hides a 
   }));
   expect(overflow).toEqual({ horizontal: false, vertical: false });
   expect(errors).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('scene-full-viewport.png') });
 });
 
 test('keyboard traveler inspection opens the shared panel with real-mode explorer links', async ({
@@ -131,10 +184,17 @@ test('keyboard traveler inspection opens the shared panel with real-mode explore
     /^https:\/\/mempool.space\/tx\/[0-9a-f]{64}$/,
   );
   await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Afficher le panneau d’informations', exact: true })
+    .click();
   await expect(panel).toHaveAttribute('data-page', 'network');
   await page.getByRole('button', { name: 'Simulation', exact: true }).click();
   for (const chain of chains)
-    await expect(pane(page, chain).getByRole('status')).toHaveText('Simulation pédagogique');
+    await expect(pane(page, chain).getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Simulation pédagogique',
+    );
   await inspectFirstTraveler(page);
   await expect(panel.getByText('Données fictives : aucun lien réseau.')).toBeVisible();
   await expect(panel.getByRole('link', { name: /Explorer cette transaction/ })).toHaveCount(0);
@@ -148,16 +208,16 @@ test('pause, reduced motion, speed, learning and branding apply to both scenes',
   await page.getByRole('button', { name: 'Simulation', exact: true }).click();
   for (const chain of chains)
     await expect(pane(page, chain).locator('.street-scene')).toHaveClass(/reduced-motion/);
-  await page.getByRole('button', { name: 'Mouvements réduits' }).click();
+  await page.getByRole('button', { name: 'Activer les mouvements', exact: true }).click();
   await page.getByRole('button', { name: 'Mettre l’animation en pause' }).click();
-  await page.getByRole('combobox', { name: 'Vitesse de simulation' }).selectOption('2');
+  await page.getByRole('combobox', { name: 'Vitesse d’animation' }).selectOption('2');
   for (const chain of chains) {
     const scene = pane(page, chain).locator('.street-scene');
     await expect(scene).not.toHaveClass(/reduced-motion/);
     await expect(scene).toHaveClass(/paused/);
     await expect(scene).toHaveAttribute('style', /9s/);
   }
-  await page.getByRole('button', { name: 'Identité : HEG' }).click();
+  await page.getByRole('button', { name: 'Changer l’identité visuelle, actuellement HEG' }).click();
   await expect(page.locator('.app')).toHaveClass(/theme-neutral/);
   if (await page.evaluate(() => document.fullscreenEnabled)) {
     await page.getByRole('button', { name: 'Plein écran', exact: true }).focus();
@@ -180,8 +240,8 @@ test('pause, reduced motion, speed, learning and branding apply to both scenes',
     .getByRole('button', { name: /Retourner dans la ville/ })
     .first()
     .click();
-  await expect(page.getByRole('heading', { name: 'Bitcoin Avenue' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Ethereum Avenue' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Bitcoin(?: Avenue)?$/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Ethereum(?: Avenue)?$/ })).toBeVisible();
   await page.getByRole('button', { name: 'Les données', exact: true }).click();
   await expect(page.getByText('Fournisseur de test', { exact: true })).toHaveCount(0);
   await expect(
@@ -197,7 +257,7 @@ test('invalid upstream payload never silently becomes simulated data', async ({ 
     await expect(
       pane(page, chain).getByRole('heading', { name: 'Le réseau se fait attendre.' }),
     ).toBeVisible();
-    await expect(pane(page, chain).locator('.street-person')).toHaveCount(0);
+    await expect(pane(page, chain).locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(0);
   }
   await expect(page.getByRole('button', { name: 'Direct', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -226,17 +286,26 @@ test('one unavailable chain leaves the other live and offers an explicit demo ch
       : snapshot;
   });
   await page.goto('/');
-  await expect(pane(page, 'ethereum').getByRole('status')).toHaveText('Source indisponible');
-  await expect(pane(page, 'ethereum').locator('.street-person')).toHaveCount(0);
-  await expect(pane(page, 'bitcoin').getByRole('status')).toHaveText('Données en direct');
-  await expect(pane(page, 'bitcoin').locator('.street-person')).toHaveCount(80);
+  await expect(pane(page, 'ethereum').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Source indisponible',
+  );
+  await expect(pane(page, 'ethereum').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(0);
+  await expect(pane(page, 'bitcoin').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Données en direct',
+  );
+  await expect(pane(page, 'bitcoin').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Direct', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
   await pane(page, 'ethereum').getByRole('button', { name: 'Explorer la simulation' }).click();
   for (const chain of chains) {
-    await expect(pane(page, chain).getByRole('status')).toHaveText('Simulation pédagogique');
+    await expect(pane(page, chain).getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Simulation pédagogique',
+    );
     await expect(pane(page, chain).locator('.street-scene')).toBeVisible();
   }
 });
@@ -250,8 +319,11 @@ test('old offline data is retired separately in each network pane', async ({ pag
   }));
   await page.goto('/');
   for (const chain of chains) {
-    await expect(pane(page, chain).getByRole('status')).toHaveText('Source indisponible');
-    await expect(pane(page, chain).locator('.street-person')).toHaveCount(0);
+    await expect(pane(page, chain).getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Source indisponible',
+    );
+    await expect(pane(page, chain).locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(0);
     await expect(
       pane(page, chain).getByText(
         'Dernières données trop anciennes. Affichage suspendu en attendant la source.',
@@ -260,7 +332,7 @@ test('old offline data is retired separately in each network pane', async ({ pag
   }
 });
 
-test('selected transaction follows observations and disappears when its source expires', async ({
+test('selected transaction follows exact proof and remains explicitly historical when its source expires', async ({
   page,
 }) => {
   await page.unroute('**/api/snapshot?*');
@@ -268,17 +340,32 @@ test('selected transaction follows observations and disappears when its source e
   await routeSnapshots(page, (chain) => {
     const snapshot = liveSnapshot(chain);
     if (chain === 'ethereum') return snapshot;
-    return {
+    const confirmedBlock = {
+      ...snapshot.blocks[0]!,
+      hash: 'f'.repeat(64),
+      height: snapshot.blocks[0]!.height + 1,
+    };
+    return snapshotSchema.parse({
       ...snapshot,
       status: phase === 'unavailable' ? 'unavailable' : 'ok',
-      blocks: [],
+      blocks:
+        phase === 'unavailable' ? [] : phase === 'confirmed' ? [confirmedBlock] : snapshot.blocks,
       transactions:
         phase === 'unavailable'
           ? []
-          : [{ ...snapshot.transactions[0], id: 'a'.repeat(64), status: phase }],
+          : [
+              {
+                ...snapshot.transactions[0],
+                id: 'a'.repeat(64),
+                status: phase,
+                blockHash: phase === 'confirmed' ? confirmedBlock.hash : undefined,
+              },
+            ],
+      inclusions:
+        phase === 'confirmed' ? [{ block: confirmedBlock, transactionIds: ['a'.repeat(64)] }] : [],
       pendingCount: phase === 'unavailable' ? null : 100,
       feeRate: phase === 'unavailable' ? null : 4,
-    };
+    });
   });
   await page.clock.install();
   await page.goto('/');
@@ -290,44 +377,100 @@ test('selected transaction follows observations and disappears when its source e
   await expect(panel.getByText('Incluse dans un bloc observé', { exact: true })).toBeVisible();
   phase = 'unavailable';
   await page.clock.fastForward(11_000);
-  await expect(pane(page, 'bitcoin').getByRole('status')).toHaveText('Source indisponible');
-  await expect(page.getByRole('link', { name: /Explorer cette transaction/ })).toHaveCount(0);
-  await expect(pane(page, 'ethereum').getByRole('status')).toHaveText('Données en direct');
+  await expect(pane(page, 'bitcoin').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Source indisponible',
+  );
+  await expect(panel).toHaveAttribute('data-selection-historical', 'true');
+  await expect(panel.getByText('Inclusion observée antérieurement', { exact: true })).toBeVisible();
+  await expect(panel).toHaveAttribute('data-selection-status', 'confirmed');
+  await expect(panel).toHaveAttribute('data-selection-group', 'confirmed');
+  await expect(panel.getByTestId('transaction-presence-status')).toHaveText(
+    'incluse dans un bloc observé',
+  );
+  await expect(
+    panel.getByText('Présence actuelle dans le mempool inconnue.', { exact: true }),
+  ).toHaveCount(0);
+  await expect(panel.getByRole('link', { name: /Explorer cette transaction/ })).toHaveAttribute(
+    'href',
+    `https://mempool.space/tx/${'a'.repeat(64)}`,
+  );
+  await expect(pane(page, 'bitcoin').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(0);
+  await expect(pane(page, 'ethereum').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Données en direct',
+  );
 });
 
-test('live departure requires a newly observed block independently on each chain', async ({
+test('live departure requires exact inclusion evidence independently on each chain', async ({
   page,
 }) => {
   await page.unroute('**/api/snapshot?*');
-  let blockIndex = 1;
+  let stage = 0;
+  const fetched = new Set<number>();
   await routeSnapshots(page, (chain) => {
     const snapshot = liveSnapshot(chain);
-    return {
+    const changed = chain === 'bitcoin' && stage > 0;
+    const included = snapshot.transactions[0]!;
+    const head = {
+      ...snapshot.blocks[0]!,
+      height: snapshot.blocks[0]!.height + (changed ? 1 : 0),
+      hash: `${chain === 'ethereum' ? '0x' : ''}${(changed ? 500 : 100).toString(16).padStart(64, '0')}`,
+    };
+    if (chain === 'bitcoin') fetched.add(stage);
+    return snapshotSchema.parse({
       ...snapshot,
-      transactions: [],
-      blocks: [
+      transactions: [
         {
-          ...snapshot.blocks[0],
-          hash: `${chain === 'ethereum' ? '0x' : ''}${(chain === 'bitcoin' ? blockIndex : 1).toString(16).padStart(64, '0')}`,
+          ...included,
+          status: changed && stage >= 2 ? 'confirmed' : 'pending',
+          blockHash: changed && stage >= 2 ? head.hash : undefined,
         },
       ],
-    };
+      blocks: [head],
+      inclusions: changed && stage >= 2 ? [{ block: head, transactionIds: [included.id] }] : [],
+      coverage: `Départ contrôlé étape ${stage}. Seules les inclusions exactes confirment.`,
+    });
   });
   await page.clock.install();
   await page.goto('/');
   for (const chain of chains)
-    await expect(pane(page, chain).getByRole('status')).toHaveText('Données en direct');
-  await expect(page.locator('.street-tram--observed-departure')).toHaveCount(0);
-  await page.clock.fastForward(11_000);
-  await expect(page.locator('.street-tram--observed-departure')).toHaveCount(0);
-  blockIndex = 2;
-  await page.clock.fastForward(11_000);
-  const departing = pane(page, 'bitcoin').locator('.street-tram--observed-departure');
-  await expect(departing).toHaveCount(1);
-  await expect(pane(page, 'ethereum').locator('.street-tram--observed-departure')).toHaveCount(0);
-  expect(await departing.evaluate((el) => getComputedStyle(el).animationIterationCount)).toBe('1');
-  await page.getByRole('button', { name: 'Mouvements actifs' }).click();
-  await expect(departing).toHaveCount(0);
+    await expect(pane(page, chain).getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Données en direct',
+    );
+  const firstWagon = (chain: ChainId) => pane(page, chain).locator('.street-first-wagon');
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-moving', 'false');
+  const advanceStage = async (next: number) => {
+    stage = next;
+    for (let attempt = 0; attempt < 20 && !fetched.has(stage); attempt += 1)
+      await page.clock.runFor(200);
+    expect(fetched.has(stage)).toBe(true);
+    await expect(pane(page, 'bitcoin').locator('.chain-coverage')).toHaveAttribute(
+      'title',
+      new RegExp(`étape ${stage}\\.`),
+    );
+  };
+  await page.clock.runFor(3_500);
+  await advanceStage(1);
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-moving', 'false');
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-projection-source', 'estimate');
+  await expect(pane(page, 'bitcoin').locator('.departure-timer')).toHaveText('—');
+  await advanceStage(2);
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-projection-source', 'confirmed-block');
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-moving', 'false');
+  await page.clock.runFor(1_150);
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-moving', 'false');
+  await page.clock.runFor(2_000);
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-moving', 'true');
+  await expect(firstWagon('bitcoin').locator('.street-wagon-transaction-count')).toHaveAttribute(
+    'data-transaction-count',
+    '1',
+  );
+  await expect(firstWagon('ethereum')).toHaveAttribute('data-moving', 'false');
+  await expect(pane(page, 'ethereum').locator('.departure-timer')).toHaveText('—');
+  await page.getByRole('button', { name: 'Réduire les mouvements', exact: true }).click();
+  await expect(firstWagon('bitcoin')).toHaveAttribute('data-moving', 'false');
 });
 
 test('the browser retires old data while both refresh requests are still pending', async ({
@@ -346,23 +489,34 @@ test('the browser retires old data while both refresh requests are still pending
       json: {
         ...snapshot,
         blocks: [],
-        transactions: [{ ...snapshot.transactions[0], id: 'a'.repeat(64) }],
+        transactions: [
+          {
+            ...snapshot.transactions[0],
+            id: `${chain === 'ethereum' ? '0x' : ''}${'a'.repeat(64)}`,
+          },
+        ],
       },
     });
   });
   await page.clock.install();
   await page.goto('/');
   for (const chain of chains)
-    await expect(pane(page, chain).getByRole('status')).toHaveText('Données en direct');
+    await expect(pane(page, chain).getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Données en direct',
+    );
   holdRequests = true;
   await page.clock.fastForward(11_000);
   for (const chain of chains) {
-    await expect(pane(page, chain).getByRole('status')).toHaveText('Source indisponible');
-    await expect(pane(page, chain).locator('.street-person')).toHaveCount(0);
+    await expect(pane(page, chain).getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Source indisponible',
+    );
+    await expect(pane(page, chain).locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(0);
   }
 });
 
-test('equal transaction identifiers on two chains cannot leak the selected traveler', async ({
+test('matching transaction hash bodies on two chains cannot leak the selected traveler', async ({
   page,
 }) => {
   await page.unroute('**/api/snapshot?*');
@@ -374,7 +528,7 @@ test('equal transaction identifiers on two chains cannot leak the selected trave
       transactions: [
         {
           ...snapshot.transactions[0],
-          id: sharedId,
+          id: `${chain === 'ethereum' ? '0x' : ''}${sharedId}`,
           status: 'pending',
           feeRate: chain === 'bitcoin' ? 20 : 3,
           size: chain === 'bitcoin' ? 200 : 21_000,
@@ -387,16 +541,24 @@ test('equal transaction identifiers on two chains cannot leak the selected trave
   await inspectFirstTraveler(page, 'bitcoin');
   const panel = page.getByTestId('info-panel');
   await expect(panel.getByText('Voyageur Bitcoin', { exact: true })).toBeVisible();
-  await expect(pane(page, 'ethereum').locator('.street-person--selected')).toHaveCount(0);
+  await expect(panel).toHaveClass(/info-bitcoin/);
+  await expect(panel.getByRole('link', { name: /Explorer cette transaction/ })).toHaveAttribute(
+    'href',
+    `https://mempool.space/tx/${sharedId}`,
+  );
   await page
     .locator('.chain-tabs')
     .getByRole('button', { name: /Ethereum/ })
     .click();
   await expect(panel).toHaveAttribute('data-page', 'network');
   await expect(panel.getByText('Voyageur Bitcoin', { exact: true })).toHaveCount(0);
-  await expect(page.locator('.street-person--selected')).toHaveCount(0);
+  await expect(panel).toHaveClass(/info-ethereum/);
   await inspectFirstTraveler(page, 'ethereum');
   await expect(panel.getByText('Voyageur Ethereum', { exact: true })).toBeVisible();
   await expect(panel.getByText('3 Gwei', { exact: true })).toBeVisible();
-  await expect(pane(page, 'bitcoin').locator('.street-person--selected')).toHaveCount(0);
+  await expect(panel.getByText('Voyageur Bitcoin', { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('link', { name: /Explorer cette transaction/ })).toHaveAttribute(
+    'href',
+    `https://etherscan.io/tx/0x${sharedId}`,
+  );
 });

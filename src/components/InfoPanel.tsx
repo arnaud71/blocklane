@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Snapshot, Tx } from '../../shared/model';
+import { PENDING_SAMPLE_LIMIT, type Snapshot, type Tx } from '../../shared/model';
 import { explorerUrl, number, shortHash } from '../lib/format';
 import { useProviderMempool, useUsableUsdQuote } from '../hooks/useSourceFreshness';
 import { latestBlockValueDisplay } from '../lib/blockValueDisplay';
+import { candidateComparisonDisplay } from '../lib/candidateComparisonDisplay';
 import {
   formatFeeRate,
-  formatEstimatedFeeAmount,
+  formatMedianTransactionFee,
   formatTransactionFee,
   medianTransactionFee,
   medianTransactionFeeNote,
+  medianTransactionFeeScopeLabel,
   usdQuoteNote,
   type FeeDisplayUnit,
 } from '../lib/feeDisplay';
+import { activeBitcoinBlockTemplate } from '../lib/passengerMotion';
+import { bitcoinArrivalObservation, passengerStatus } from '../lib/passengerStatus';
 import { Icon } from './Icon';
 import './InfoPanel.css';
 
@@ -20,16 +24,25 @@ export type SceneActivity = {
   boarded: number;
   returning: number;
   waiting: number;
+  observed?: number;
+  historical?: number;
 };
 
 type InfoPanelProps = {
   snapshot: Snapshot | null;
   selectedTx: Tx | null;
+  selectedHistorical?: boolean;
+  selectedInclusionOnly?: boolean;
+  selectedObservedAt?: number;
+  selectedPoolState?: 'pending' | 'queued' | 'absent' | 'replaced' | 'unknown';
+  selectedPoolObservedAt?: number;
+  selectedReasonLabel?: string;
   activity?: SceneActivity;
   paused: boolean;
   reducedMotion?: boolean;
   feeDisplayUnit?: FeeDisplayUnit;
   onClearSelection?: () => void;
+  onClose?: () => void;
 };
 
 const pages = [
@@ -47,14 +60,115 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
+/** The comparison uses complete server inventories, never the displayed traveller count. */
+export function CandidateComparisonDetails({ snapshot }: { snapshot: Snapshot | null }) {
+  const display = candidateComparisonDisplay(snapshot);
+  const comparedBlockLink = display.available
+    ? explorerUrl('bitcoin', display.comparison.blockHash, 'block')
+    : null;
+  if (snapshot?.chain === 'ethereum') return null;
+  return (
+    <section
+      className="info-candidate-comparison"
+      data-testid="candidate-comparison-details"
+      data-comparison-available={display.available}
+      data-comparison-scope={display.available ? 'complete' : undefined}
+      aria-label="Comparaison candidat / bloc"
+    >
+      <h4>Comparaison candidat / bloc</h4>
+      {display.available ? (
+        <>
+          <p className="info-comparison-summary">
+            {display.candidateShare === null
+              ? 'Part du candidat non définie : candidat vide.'
+              : `${display.value} % du candidat retrouvé dans ce bloc.`}
+          </p>
+          {display.stale && (
+            <p className="info-caution">Ancien bilan conservé, avec ses dates d’origine.</p>
+          )}
+          <p className="info-explanation">
+            Comparaison complète hors coinbase · bloc #{number(display.comparison.blockHeight)}.
+          </p>
+          <dl className="info-details info-comparison-categories">
+            {display.categories.map((category) => (
+              <div
+                className="info-detail"
+                key={category.key}
+                data-comparison-category={category.key}
+                data-count={category.count}
+              >
+                <dt>{category.label}</dt>
+                <dd>{number(category.count)}</dd>
+              </div>
+            ))}
+          </dl>
+          <dl className="info-details">
+            <Detail label="Total du candidat">
+              {number(display.comparison.candidateTransactionCount)} transactions
+            </Detail>
+            <Detail label="Total du bloc hors coinbase">
+              {number(display.comparison.blockTransactionCount)} transactions
+            </Detail>
+            <Detail label="Source du candidat">{display.comparison.candidateSource}</Detail>
+            <Detail label="Source du bloc">{display.comparison.blockSource}</Detail>
+            <Detail label="Relevé du candidat">
+              <time dateTime={new Date(display.comparison.candidateObservedAt).toISOString()}>
+                {new Date(display.comparison.candidateObservedAt).toLocaleString('fr-CH')}
+              </time>
+            </Detail>
+            <Detail label="Première détection du bloc">
+              <time dateTime={new Date(display.comparison.blockObservedAt).toISOString()}>
+                {new Date(display.comparison.blockObservedAt).toLocaleString('fr-CH')}
+              </time>
+            </Detail>
+            <Detail label="Identifiant du bloc">
+              <span title={display.comparison.blockHash}>
+                {shortHash(display.comparison.blockHash)}
+              </span>
+            </Detail>
+            <Detail label="Parent du candidat">
+              <span title={display.comparison.parentBlockHash}>
+                {shortHash(display.comparison.parentBlockHash)}
+              </span>
+            </Detail>
+          </dl>
+          {comparedBlockLink && (
+            <a
+              className="info-explorer"
+              href={comparedBlockLink}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Explorer le bloc comparé <Icon name="external" size={13} />
+            </a>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="info-comparison-summary">En attente d’un bilan</p>
+          <p className="info-comparison-empty">—</p>
+        </>
+      )}
+      <p className="info-explanation">{display.note}</p>
+    </section>
+  );
+}
+
 export function InfoPanel({
   snapshot,
   selectedTx,
+  selectedHistorical = false,
+  selectedInclusionOnly = false,
+  selectedObservedAt,
+  selectedPoolState = 'unknown',
+  selectedPoolObservedAt,
+  selectedReasonLabel,
   activity,
   paused,
   reducedMotion = false,
   feeDisplayUnit = 'native',
   onClearSelection,
+  onClose,
 }: InfoPanelProps) {
   const [page, setPage] = useState(0);
   const [rotationEnabled, setRotationEnabled] = useState(true);
@@ -93,17 +207,31 @@ export function InfoPanel({
   const displayUsd = feeDisplayUnit === 'usd';
   const medianFee = useMemo(() => medianTransactionFee(snapshot), [snapshot]);
   const mempool = useProviderMempool(snapshot);
-  const medianAmount = formatEstimatedFeeAmount(
-    chain,
-    medianFee.nativeAmount,
-    feeDisplayUnit,
-    quote,
-  );
+  const medianAmount = formatMedianTransactionFee(chain, medianFee, feeDisplayUnit, quote);
   const medianAmountParts = medianAmount.match(/^(.+) (BTC|ETH|\$ US)$/);
   const latest = snapshot?.blocks[0];
+  const nodeTemplate = snapshot ? activeBitcoinBlockTemplate(snapshot) : null;
+  const completeFees = medianFee.scope === 'template';
+  const feeObservedAt = completeFees
+    ? nodeTemplate?.observedAt
+    : snapshot?.bitcoinArrivals
+      ? snapshot.observedAt
+      : (snapshot?.sampling?.observedAt ??
+        snapshot?.blockTemplate?.observedAt ??
+        snapshot?.observedAt);
+  const pendingDetails = snapshot?.transactions.filter((tx) => tx.status === 'pending').length ?? 0;
   const blockValue = latestBlockValueDisplay(snapshot);
   const blockLink = latest && !demo ? explorerUrl(chain, latest.hash, 'block') : null;
   const txLink = selectedTx && !demo ? explorerUrl(chain, selectedTx.id, 'tx') : null;
+  const selectionStatus = selectedTx
+    ? passengerStatus({
+        bitcoinArrival: bitcoinArrivalObservation(snapshot, selectedTx),
+        tx: selectedTx,
+        sourceObserved: !selectedHistorical,
+        poolState: selectedPoolState,
+        poolObservedAt: selectedPoolObservedAt,
+      })
+    : null;
   const sourceState = !snapshot
     ? 'Connexion en cours'
     : demo
@@ -122,6 +250,12 @@ export function InfoPanel({
       data-page={selectedTx ? 'transaction' : (pages[page] ?? pages[0]).id}
       data-auto-rotating={rotating}
       data-fee-display={feeDisplayUnit}
+      data-fee-scope={medianFee.scope ?? 'sample'}
+      data-selection-historical={selectedTx ? selectedHistorical : undefined}
+      data-selection-inclusion-only={selectedTx ? selectedInclusionOnly : undefined}
+      data-selection-pool-state={selectedTx ? selectedPoolState : undefined}
+      data-selection-status={selectionStatus?.kind}
+      data-selection-group={selectionStatus?.group}
       onFocusCapture={() => setInteracting(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setInteracting(false);
@@ -131,22 +265,41 @@ export function InfoPanel({
         <span className="info-panel-caption">
           <i /> LE PANNEAU DU QUAI
         </span>
-        {selectedTx && onClearSelection ? (
-          <button
-            className="info-icon-button"
-            onClick={onClearSelection}
-            aria-label="Libérer le panneau d’informations"
-          >
-            <Icon name="close" size={16} />
-          </button>
-        ) : (
-          <Icon name="signal" size={16} />
-        )}
+        <div className="info-panel-actions">
+          {selectedTx && onClearSelection && (
+            <button
+              type="button"
+              className="info-icon-button"
+              onClick={onClearSelection}
+              aria-label="Libérer le panneau d’informations"
+              title="Revenir aux informations du réseau"
+            >
+              <Icon name="signal" size={16} />
+            </button>
+          )}
+          {onClose ? (
+            <button
+              type="button"
+              className="info-icon-button info-panel-close"
+              onClick={onClose}
+              aria-label="Fermer le panneau d’informations"
+              title="Fermer le panneau d’informations · Échap"
+            >
+              <Icon name="close" size={18} />
+            </button>
+          ) : (
+            !selectedTx && <Icon name="signal" size={16} />
+          )}
+        </div>
       </div>
 
       {selectedTx ? (
         <div className="info-panel-content info-selected" key={selectedTx.id}>
-          <p className="info-kicker">VOYAGEUR SÉLECTIONNÉ · PANNEAU FIXÉ</p>
+          <p className="info-kicker">
+            {selectedHistorical
+              ? 'Dernière observation connue'
+              : 'VOYAGEUR SÉLECTIONNÉ · PANNEAU FIXÉ'}
+          </p>
           <h3>
             Une transaction,
             <br />
@@ -155,10 +308,66 @@ export function InfoPanel({
           <span className="info-transaction-hash" title={selectedTx.id}>
             {shortHash(selectedTx.id)}
           </span>
+          {selectedHistorical && (
+            <p className="info-caution">
+              {selectedTx.status === 'confirmed'
+                ? selectionStatus?.description
+                : selectedPoolState === 'pending'
+                  ? 'Présence vérifiée dans le dernier inventaire du fournisseur. Les détails de frais restent ceux de la dernière observation.'
+                  : selectedPoolState === 'queued'
+                    ? 'Toujours présente, mais classée queued par le fournisseur Ethereum.'
+                    : selectedPoolState === 'absent'
+                      ? 'Absente du dernier inventaire complet. Cela ne prouve ni une confirmation ni un remplacement.'
+                      : selectedPoolState === 'replaced'
+                        ? 'Une autre transaction plus récemment observée utilise le même compte et le même nonce.'
+                        : 'Présence actuelle dans le mempool inconnue.'}
+            </p>
+          )}
           <dl className="info-details">
-            <Detail label={demo ? 'État simulé' : 'État dans la source'}>
-              {selectedTx.status === 'pending' ? 'En attente' : 'Incluse dans un bloc observé'}
+            <Detail label={demo ? 'Présence simulée' : 'Présence / inclusion'}>
+              <span data-testid="transaction-presence-status">{selectionStatus?.label}</span>
             </Detail>
+            {selectedReasonLabel && <Detail label="Dans la scène">{selectedReasonLabel}</Detail>}
+            {selectedPoolState !== 'unknown' && selectedPoolObservedAt !== undefined && (
+              <Detail
+                label={
+                  selectedPoolState === 'replaced'
+                    ? 'Observation du remplacement'
+                    : 'Inventaire vérifié'
+                }
+              >
+                <time dateTime={new Date(selectedPoolObservedAt).toISOString()}>
+                  {new Date(selectedPoolObservedAt).toLocaleString('fr-CH')}
+                </time>
+              </Detail>
+            )}
+            <Detail
+              label={
+                selectedHistorical
+                  ? 'État des derniers détails reçus'
+                  : demo
+                    ? 'État simulé'
+                    : 'État des détails reçus'
+              }
+            >
+              {selectedHistorical
+                ? selectedTx.status === 'pending'
+                  ? 'En attente lors de cette observation'
+                  : 'Inclusion observée antérieurement'
+                : selectedTx.status === 'pending'
+                  ? 'En attente'
+                  : 'Incluse dans un bloc observé'}
+            </Detail>
+            {selectedHistorical && selectedObservedAt !== undefined && (
+              <Detail label="Dernière observation">
+                <time
+                  dateTime={new Date(selectedObservedAt).toISOString()}
+                  title={new Date(selectedObservedAt).toLocaleString('fr-CH')}
+                >
+                  {new Date(selectedObservedAt).toLocaleString('fr-CH')}
+                </time>
+              </Detail>
+            )}
             <Detail
               label={
                 displayUsd
@@ -180,6 +389,24 @@ export function InfoPanel({
               {selectedTx.kind === 'contract' ? 'Données ou création de contrat' : 'Transfert'}
             </Detail>
           </dl>
+          {selectedInclusionOnly && (
+            <p className="info-caution">
+              Inclusion vérifiée dans le bloc {shortHash(selectedTx.blockHash ?? '')}. Les frais, la
+              taille et la valeur proviennent de la dernière observation conservée ; les frais
+              affichés ne sont pas un reçu des frais effectivement payés.
+            </p>
+          )}
+          {selectedHistorical && (
+            <p className="info-explanation">
+              {selectedTx.status === 'pending'
+                ? selectedPoolState === 'pending' || selectedPoolState === 'queued'
+                  ? 'La présence vient du relevé daté du fournisseur ; les frais individuels peuvent être plus anciens.'
+                  : 'La position de ce voyageur ne prouve pas sa présence actuelle dans le mempool.'
+                : 'L’inclusion affichée provient d’une observation conservée.'}{' '}
+              Sa couleur compare les derniers frais connus à l’échantillon actuel ; le rouge ne
+              garantit ni priorité ni place dans un bloc.
+            </p>
+          )}
           {displayUsd && (
             <>
               <p className="info-explanation">
@@ -231,15 +458,22 @@ export function InfoPanel({
                   )}
                 </p>
                 <p className="info-hero-caption">
-                  Frais médians estimés / transaction · {medianFee.sampleSize} en attente
+                  Frais médians{completeFees ? '' : ' estimés'} / transaction ·{' '}
+                  {medianTransactionFeeScopeLabel(medianFee)}
                 </p>
                 <p className="info-explanation">
-                  {medianTransactionFeeNote(chain, medianFee.sampleSize, demo)}
+                  {medianTransactionFeeNote(chain, medianFee.sampleSize, demo, medianFee.scope)}
                 </p>
+                {nodeTemplate && !completeFees && (
+                  <p className="info-explanation">
+                    Cet instantané ne fournit pas la médiane complète du candidat : cette valeur
+                    porte seulement sur les détails reçus.
+                  </p>
+                )}
                 {displayUsd && (
                   <p className="info-explanation">
                     Médiane en {bitcoin ? 'BTC' : 'ETH'} :{' '}
-                    {formatEstimatedFeeAmount(chain, medianFee.nativeAmount, 'native')}.{' '}
+                    {formatMedianTransactionFee(chain, medianFee, 'native')}.{' '}
                     {usdQuoteNote(quote, demo)}
                   </p>
                 )}
@@ -257,6 +491,16 @@ export function InfoPanel({
                   <Detail label="Échantillon reçu">
                     {snapshot ? `${number(snapshot.transactions.length)} transactions` : '—'}
                   </Detail>
+                  <Detail label="Source des frais">
+                    {completeFees ? nodeTemplate?.source : (snapshot?.source ?? 'En attente')}
+                  </Detail>
+                  {feeObservedAt !== undefined && (
+                    <Detail label="Relevé des frais">
+                      <time dateTime={new Date(feeObservedAt).toISOString()}>
+                        {new Date(feeObservedAt).toLocaleTimeString('fr-CH')}
+                      </time>
+                    </Detail>
+                  )}
                   <Detail
                     label={bitcoin ? 'Taux conseillé · ~30 min' : 'Frais de base · sans pourboire'}
                   >
@@ -318,17 +562,50 @@ export function InfoPanel({
                 )}
                 <p className="info-explanation">
                   À réception de ce bloc, le premier wagon part avec les inclusions connues de notre
-                  échantillon. Les deux wagons à l’arrêt projettent les blocs suivants.{' '}
+                  échantillon.{' '}
+                  {nodeTemplate
+                    ? 'À l’arrêt, le premier représente un échantillon du candidat proposé par le nœud ; le second reste une estimation.'
+                    : 'Les deux wagons à l’arrêt projettent les blocs suivants.'}{' '}
                   {demo
                     ? 'Ce départ est une illustration pédagogique.'
                     : 'Observé ne signifie pas finalisé. Le prochain départ n’a pas d’échéance garantie.'}
                 </p>
+                {bitcoin && <CandidateComparisonDetails snapshot={snapshot} />}
               </>
             )}
             {page === 2 && (
               <>
                 <h3>À chacun sa place.</h3>
-                <span className="info-projection-label">Deux projections pédagogiques</span>
+                <span className="info-projection-label">
+                  {nodeTemplate
+                    ? 'Candidat du nœud et estimation'
+                    : 'Deux projections pédagogiques'}
+                </span>
+                {nodeTemplate && (
+                  <dl className="info-details">
+                    <Detail label="Candidat du nœud">#{number(nodeTemplate.height)}</Detail>
+                    <Detail label="Candidat complet hors coinbase">
+                      {number(nodeTemplate.transactionCount)} transactions
+                    </Detail>
+                    <Detail label="Poids hors coinbase / limite">
+                      {number(nodeTemplate.weight)} / {number(nodeTemplate.weightLimit)} WU
+                    </Detail>
+                    <Detail label="Détails individuels reçus">
+                      {number(pendingDetails)} / {number(PENDING_SAMPLE_LIMIT)} maximum
+                    </Detail>
+                    {completeFees && (
+                      <Detail label="Frais médians du candidat complet">
+                        {formatMedianTransactionFee(chain, medianFee, feeDisplayUnit, quote)} / tx
+                      </Detail>
+                    )}
+                    <Detail label="Source du candidat">{nodeTemplate.source}</Detail>
+                    <Detail label="Relevé du candidat">
+                      <time dateTime={new Date(nodeTemplate.observedAt).toISOString()}>
+                        {new Date(nodeTemplate.observedAt).toLocaleTimeString('fr-CH')}
+                      </time>
+                    </Detail>
+                  </dl>
+                )}
                 <div className="info-flow">
                   {(
                     [
@@ -345,10 +622,19 @@ export function InfoPanel({
                     </div>
                   ))}
                 </div>
+                {activity && (
+                  <p className="info-explanation">
+                    Dans la scène : {number(activity.observed ?? 0)} transactions encore observées,{' '}
+                    {number(activity.historical ?? 0)} observations historiques conservées. Ces
+                    effectifs ne sont pas le total du mempool.
+                  </p>
+                )}
                 <p className="info-explanation">
-                  Le premier wagon projette le prochain bloc, le second projette le suivant. Les
-                  voyageurs avancent selon leurs frais et la place disponible ; leur sélection peut
-                  changer tant que les wagons sont à l’arrêt.
+                  {nodeTemplate
+                    ? `Le candidat complet proposé par le nœud réunit ${number(nodeTemplate.transactionCount)} transactions hors coinbase et ${number(nodeTemplate.weight)} WU. Jusqu’à ${number(PENDING_SAMPLE_LIMIT)} détails individuels sont transmis ; les autres membres peuvent être représentés collectivement, sans inventer leurs données individuelles. La médiane complète est calculée à partir des frais de toutes ses transactions lorsqu’ils sont disponibles. Le second wagon reste une estimation. Rien ne prouve qu’un pool minier travaille sur ce candidat.`
+                    : 'Le premier wagon projette le prochain bloc, le second projette le suivant. Les voyageurs avancent selon leurs frais et la place disponible. Une hausse du tarif recommandé Bitcoin ou une absence du nouvel échantillon ne retire pas à elle seule la réservation d’un voyageur déjà embarqué.'}{' '}
+                  L’horloge signale des détails individuels anciens. Leur présence actuelle est
+                  indiquée séparément lorsqu’un inventaire complet permet de la vérifier.
                 </p>
                 <p className="info-caution">
                   Ces places sont une illustration, pas des inclusions ou des rejets annoncés par le
@@ -424,6 +710,12 @@ export function InfoPanel({
               <time dateTime={new Date(snapshot.sampling.observedAt).toISOString()}>
                 {' · Pool à '}
                 {new Date(snapshot.sampling.observedAt).toLocaleTimeString('fr-CH')}
+              </time>
+            )}
+            {snapshot.blockTemplate && (
+              <time dateTime={new Date(snapshot.blockTemplate.observedAt).toISOString()}>
+                {nodeTemplate ? ' · Candidat à ' : ' · Candidat conservé à '}
+                {new Date(snapshot.blockTemplate.observedAt).toLocaleTimeString('fr-CH')}
               </time>
             )}
           </span>

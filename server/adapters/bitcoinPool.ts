@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { PENDING_SAMPLE_LIMIT, type Tx } from '../../shared/model.js';
+import { PENDING_SAMPLE_LIMIT, type PoolFlow, type Tx } from '../../shared/model.js';
+import { createPoolFlowTracker } from './poolFlow.js';
 import { UPSTREAM_TIMEOUT_MS, type ServerConfig } from '../config.js';
 import {
   parsePayload,
@@ -14,6 +15,7 @@ export const BITCOIN_POOL_REFRESH_MS = 30_000;
 export const BITCOIN_POOL_MAX_TRANSACTIONS = 100_000;
 export const BITCOIN_POOL_RESYNC_MS = 10 * 60 * 1_000;
 export const BITCOIN_POOL_MAX_ADDITIONS = 500;
+export const BITCOIN_POOL_INCREMENTAL_COOLDOWN_MS = 5 * 60 * 1_000;
 const ENTRY_BATCH_SIZE = 25;
 const ENTRY_BATCH_CONCURRENCY = 2;
 const hashPattern = /^[a-fA-F0-9]{64}$/;
@@ -54,10 +56,14 @@ export interface BitcoinPoolSample {
   observedAt: number;
   source: string;
   update: 'full' | 'incremental';
+  /** Private lookup over the reconciled inventory; never serialized into the public snapshot. */
+  hasTransaction?: (id: string) => boolean;
+  /** A sample-bound aggregate; individual inventory IDs never leave this callback. */
+  flowForSample?: (selectedIds: ReadonlySet<string>) => PoolFlow | null;
 }
 
 /** A synchronous view of an optional background collection; never stalls live block polling. */
-export type BitcoinPoolReader = () => BitcoinPoolSample | null;
+export type BitcoinPoolReader = (excludedIds?: ReadonlySet<string>) => BitcoinPoolSample | null;
 
 interface RankedTransaction {
   id: string;
@@ -78,6 +84,16 @@ interface PoolIndex {
 class AdditionBudgetError extends UpstreamError {
   constructor(public readonly newEntries: number) {
     super('too-large');
+  }
+}
+
+class PoolRpcError extends UpstreamError {
+  readonly unsupportedIncremental: boolean;
+  constructor(error: unknown) {
+    super('rpc');
+    const parsed = z.object({ code: z.number().int().safe() }).safeParse(error);
+    this.unsupportedIncremental =
+      parsed.success && (parsed.data.code === -32601 || parsed.data.code === -32602);
   }
 }
 
@@ -174,9 +190,9 @@ async function readPoolResponse(
   const responses = parsePayload(responseSchema, raw);
   const chainResponse = responses.find((response) => response.id === 'chain');
   const poolResponse = responses.find((response) => response.id === 'pool');
-  if (!chainResponse || !poolResponse || responses.some((response) => response.error != null)) {
-    throw new UpstreamError('rpc');
-  }
+  if (!chainResponse || !poolResponse) throw new UpstreamError('rpc');
+  const failed = responses.find((response) => response.error != null);
+  if (failed) throw new PoolRpcError(failed.error);
   const chain = parsePayload(chainSchema, chainResponse.result);
   if (chain.chain !== 'main') throw new UpstreamError('wrong-chain');
   if (chain.initialblockdownload) throw new UpstreamError('invalid');
@@ -230,7 +246,7 @@ async function collectNewEntries(
     if (!requested.has(id) || entries.has(id)) throw new UpstreamError('invalid');
     // An ID may have been mined or evicted since inventory. Do not publish an
     // incomplete reconciliation, and never interpret this error as confirmation.
-    if (response.error != null) throw new UpstreamError('rpc');
+    if (response.error != null) throw new PoolRpcError(response.error);
     entries.set(id, readCompactEntry(response.result));
   }
   remainingTimeout(deadline);
@@ -290,14 +306,27 @@ async function reconcilePool(
   return { entries, observedAt, baselineAt: previous.baselineAt, update: 'incremental' };
 }
 
-function samplePool(config: ServerConfig, pool: PoolIndex): BitcoinPoolSample {
+function samplePool(
+  config: ServerConfig,
+  pool: PoolIndex,
+  excludedIds?: ReadonlySet<string>,
+  flow?: ReturnType<typeof createPoolFlowTracker>,
+): BitcoinPoolSample {
   const candidates: RankedTransaction[] = [];
-  for (const [id, entry] of pool.entries) offerCandidate(candidates, { id, ...entry });
+  for (const [id, entry] of pool.entries)
+    if (!excludedIds?.has(id)) offerCandidate(candidates, { id, ...entry });
   return {
     count: pool.entries.size,
     observedAt: pool.observedAt,
     source: config.bitcoinPoolSource ?? 'RPC Bitcoin configuré',
     update: pool.update,
+    hasTransaction: (id) => pool.entries.has(id.toLowerCase()),
+    ...(flow
+      ? {
+          flowForSample: (selectedIds: ReadonlySet<string>) =>
+            flow.forSample(selectedIds, pool.observedAt),
+        }
+      : {}),
     transactions: candidates.sort(compareFees).map((transaction) => ({
       id: transaction.id,
       chain: 'bitcoin',
@@ -317,13 +346,27 @@ export function createBitcoinPoolReader(
   fetcher?: Fetcher,
   now: () => number = Date.now,
 ): BitcoinPoolReader {
+  const flow = createPoolFlowTracker({
+    source: config.bitcoinPoolSource ?? 'RPC Bitcoin configuré',
+    method: 'getrawmempool',
+    maxTransactions: BITCOIN_POOL_MAX_TRANSACTIONS,
+  });
   let sample: BitcoinPoolSample | null = null;
   let index: PoolIndex | null = null;
   let pending = false;
   let nextAttemptAt = 0;
+  let incrementalDisabledUntil = 0;
   let lastFailure: string | null = null;
-  return () => {
+  let excludedSample:
+    { index: PoolIndex; excludedIds: ReadonlySet<string>; sample: BitcoinPoolSample } | undefined;
+  return (excludedIds) => {
     const currentTime = now();
+    if (index && currentTime < index.observedAt) {
+      flow.invalidate();
+      sample = null;
+      index = null;
+      excludedSample = undefined;
+    }
     if (
       sample &&
       (currentTime < sample.observedAt || currentTime - sample.observedAt > BITCOIN_POOL_REFRESH_MS)
@@ -335,6 +378,7 @@ export function createBitcoinPoolReader(
       const deadline = Date.now() + UPSTREAM_TIMEOUT_MS;
       const phase =
         index &&
+        currentTime >= incrementalDisabledUntil &&
         currentTime >= index.baselineAt &&
         currentTime - index.baselineAt < BITCOIN_POOL_RESYNC_MS
           ? 'incremental'
@@ -345,34 +389,45 @@ export function createBitcoinPoolReader(
           : collectBaseline(config, fetcher, now, deadline);
       void refresh
         .then((value) => {
-          const nextSample = samplePool(config, value);
+          const nextSample = samplePool(config, value, undefined, flow);
           remainingTimeout(deadline);
           // A slow attempt cannot make an already expired inventory current.
           if (now() < value.observedAt || now() - value.observedAt > BITCOIN_POOL_REFRESH_MS) {
             throw new UpstreamError('timeout');
           }
+          flow.observe(value.entries.keys(), value.observedAt);
           index = value;
           sample = nextSample;
           lastFailure = null;
         })
         .catch((error: unknown) => {
+          flow.invalidate();
           sample = null;
           const kind = error instanceof UpstreamError ? error.kind : 'invalid';
-          // Transport failures, races and budget limits do not corrupt the
-          // immutable metadata already validated. Retain it privately until the
-          // scheduled full resync; it is never a complete public sample until a
-          // subsequent inventory has been reconciled successfully.
+          const exceededAdditions = error instanceof AdditionBudgetError;
+          if (
+            phase === 'incremental' &&
+            error instanceof PoolRpcError &&
+            error.unsupportedIncremental
+          )
+            incrementalDisabledUntil = now() + BITCOIN_POOL_INCREMENTAL_COOLDOWN_MS;
+          // An RPC refusal/race or excessive additions must not trap a broken incremental
+          // path until the ten-minute resync. Recover with a full baseline at the
+          // next scheduled attempt; unsupported methods pause incrementals for five minutes.
+          // Transport/response-size failures can still reuse immutable metadata privately.
           if (
             phase !== 'incremental' ||
             !index ||
             now() < index.baselineAt ||
             now() - index.baselineAt >= BITCOIN_POOL_RESYNC_MS ||
+            kind === 'rpc' ||
+            exceededAdditions ||
             kind === 'invalid' ||
             kind === 'wrong-chain'
           ) {
             index = null;
+            excludedSample = undefined;
           }
-          const exceededAdditions = error instanceof AdditionBudgetError;
           const failure = `${phase}:${kind}:${exceededAdditions ? 'addition-budget' : 'request'}`;
           if (failure !== lastFailure) {
             // Only fixed categories are logged: never a URL, RPC body, message or stack.
@@ -387,6 +442,10 @@ export function createBitcoinPoolReader(
           nextAttemptAt = now() + BITCOIN_POOL_REFRESH_MS;
         });
     }
-    return sample;
+    if (!sample || !index || !excludedIds) return sample;
+    if (excludedSample?.index === index && excludedSample.excludedIds === excludedIds)
+      return excludedSample.sample;
+    excludedSample = { index, excludedIds, sample: samplePool(config, index, excludedIds, flow) };
+    return excludedSample.sample;
   };
 }

@@ -1,17 +1,21 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { Snapshot } from '../../shared/model';
 import {
-  formatEstimatedFeeAmount,
+  formatMedianTransactionFee,
   medianTransactionFee,
   medianTransactionFeeNote,
+  medianTransactionFeeScopeLabel,
   usdQuoteNote,
   type FeeDisplayUnit,
 } from '../lib/feeDisplay';
 import { number } from '../lib/format';
 import { useProviderMempool, useUsableUsdQuote } from '../hooks/useSourceFreshness';
 import { latestBlockValueDisplay } from '../lib/blockValueDisplay';
+import { candidateComparisonDisplay } from '../lib/candidateComparisonDisplay';
+import { activeBitcoinBlockTemplate } from '../lib/passengerMotion';
 import type { SceneActivity } from './InfoPanel';
 import { Icon } from './Icon';
+import { providerFlowDisplay } from '../lib/poolFlowDisplay';
 import './InfoBillboard.css';
 
 type InfoBillboardProps = {
@@ -26,6 +30,8 @@ type InfoBillboardProps = {
 };
 
 const pages = ['Mempool', 'Frais', 'Bloc', 'Valeur', 'Voyageurs'] as const;
+const bitcoinPages = [...pages, 'Comparaison', 'Flux'] as const;
+const ethereumPages = [...pages, 'Flux'] as const;
 
 type BillboardPage = {
   value: string;
@@ -47,7 +53,11 @@ export const InfoBillboard = memo(function InfoBillboard({
   theme,
   top = true,
 }: InfoBillboardProps) {
+  const bitcoin = snapshot.chain === 'bitcoin';
+  const pageLabels = bitcoin ? bitcoinPages : ethereumPages;
+  const pageCount = pageLabels.length;
   const [page, setPage] = useState(0);
+  const pageIndex = page < pageCount ? page : 0;
   const [rotationEnabled, setRotationEnabled] = useState(true);
   const [visible, setVisible] = useState(
     () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
@@ -68,30 +78,45 @@ export const InfoBillboard = memo(function InfoBillboard({
 
   useEffect(() => {
     if (!rotating) return;
-    const timer = window.setInterval(
-      () => setPage((current) => (current + 1) % pages.length),
-      4_000,
-    );
+    const timer = window.setInterval(() => setPage((current) => (current + 1) % pageCount), 4_000);
     return () => window.clearInterval(timer);
-  }, [rotating]);
+  }, [rotating, pageCount]);
 
-  const bitcoin = snapshot.chain === 'bitcoin';
   const chainName = bitcoin ? 'Bitcoin' : 'Ethereum';
   const demo = snapshot.mode === 'demo';
   const mempool = useProviderMempool(snapshot);
   const sampleSize = snapshot.transactions.filter((tx) => tx.status === 'pending').length;
   const median = useMemo(() => medianTransactionFee(snapshot), [snapshot]);
+  const nodeTemplate = activeBitcoinBlockTemplate(snapshot);
+  const completeFees = median.scope === 'template';
+  const feeObservedAt = completeFees
+    ? nodeTemplate?.observedAt
+    : snapshot.bitcoinArrivals
+      ? snapshot.observedAt
+      : (snapshot.sampling?.observedAt ??
+        snapshot.blockTemplate?.observedAt ??
+        snapshot.observedAt);
   const quote = demo ? undefined : snapshot.usdQuote;
   const usableQuote = useUsableUsdQuote(quote);
-  const feeAmount = formatEstimatedFeeAmount(
-    snapshot.chain,
-    median.nativeAmount,
-    feeDisplayUnit,
-    quote,
-  );
+  const feeAmount = formatMedianTransactionFee(snapshot.chain, median, feeDisplayUnit, quote);
   const feeParts = feeAmount.match(/^(≈\s*)?(.+?)\s(BTC|ETH|\$ US)$/);
   const latest = snapshot.status === 'unavailable' ? undefined : snapshot.blocks[0];
   const blockValue = latestBlockValueDisplay(snapshot);
+  const comparison = useMemo(() => candidateComparisonDisplay(snapshot), [snapshot]);
+  const comparisonPage = pageLabels[pageIndex] === 'Comparaison';
+  const flowPage = pageLabels[pageIndex] === 'Flux';
+  const flow = providerFlowDisplay(snapshot);
+  const flowRates = flow.history.map(
+    (point) => (point.enteredCount * 1_000) / (point.observedAt - point.fromObservedAt),
+  );
+  const maxFlowRate = Math.max(1, ...flowRates);
+  const flowEnd = flow.history.at(-1)?.observedAt ?? 0;
+  const flowPath = flow.history
+    .map(
+      (point, index) =>
+        `${index === 0 ? 'M' : 'L'}${5 + ((point.observedAt - flowEnd + 60_000) * 150) / 60_000},${26 - (flowRates[index]! * 22) / maxFlowRate}`,
+    )
+    .join(' ');
   const sourceLabel = demo
     ? 'Simulation'
     : snapshot.status === 'ok'
@@ -100,7 +125,7 @@ export const InfoBillboard = memo(function InfoBillboard({
         ? 'Ancien relevé'
         : 'Indisponible';
 
-  const information: BillboardPage[] = [
+  const information: [BillboardPage, ...BillboardPage[]] = [
     {
       value: number(mempool.total),
       unit: mempool.total === null ? '' : 'transactions',
@@ -116,16 +141,24 @@ export const InfoBillboard = memo(function InfoBillboard({
       unit: feeParts?.[3] ?? '',
       label: 'Frais médians / tx',
       lines: [
-        `Échantillon : ${number(median.sampleSize)} tx`,
+        medianTransactionFeeScopeLabel(median),
         feeDisplayUnit === 'usd' && !usableQuote
           ? 'Cours indisponible'
-          : bitcoin
-            ? 'Coût estimé'
-            : 'Limite de gas déclarée',
+          : completeFees
+            ? 'Proposition hors coinbase'
+            : bitcoin
+              ? 'Coût estimé'
+              : 'Limite de gas déclarée',
       ],
-      note: `${medianTransactionFeeNote(snapshot.chain, median.sampleSize, demo)}${
-        feeDisplayUnit === 'usd' ? ` ${usdQuoteNote(quote, demo)}` : ''
-      }`,
+      note: `${medianTransactionFeeNote(snapshot.chain, median.sampleSize, demo, median.scope)}${
+        feeObservedAt === undefined
+          ? ''
+          : ` Relevé à ${new Date(feeObservedAt).toLocaleTimeString('fr-CH')}.`
+      }${completeFees && nodeTemplate ? ` Source : ${nodeTemplate.source}.` : ''}${
+        nodeTemplate && !completeFees
+          ? ' Médiane complète non fournie : calcul sur les seuls détails reçus.'
+          : ''
+      }${feeDisplayUnit === 'usd' ? ` ${usdQuoteNote(quote, demo)}` : ''}`,
       estimated: feeParts?.[1] !== undefined,
       smallValue: feeDisplayUnit === 'native',
     },
@@ -164,10 +197,38 @@ export const InfoBillboard = memo(function InfoBillboard({
         `${number(activity.walking)} vers le wagon`,
         `${number(activity.waiting)} sur le quai`,
       ],
-      note: 'Comptage des voyageurs de la scène uniquement. Les deux wagons projettent les prochains blocs ; une place à bord ne prouve aucune inclusion.',
+      note: nodeTemplate
+        ? `Comptage des voyageurs individuels de la scène uniquement, avec jusqu’à ${number(sampleSize)} détails reçus. Le candidat complet propose ${number(nodeTemplate.transactionCount)} transactions hors coinbase ; le second wagon reste une estimation. Une place à bord ne prouve aucune inclusion.`
+        : 'Comptage des voyageurs de la scène uniquement. Les deux wagons projettent les prochains blocs ; une place à bord ne prouve aucune inclusion.',
     },
   ];
-  const current = information[page] ?? information[0];
+  if (bitcoin)
+    information.push({
+      value: comparison.value,
+      unit: comparison.available
+        ? `${comparison.candidateShare === null ? 'part indéfinie' : '% du candidat'} · #${number(comparison.comparison.blockHeight)}`
+        : '',
+      label: comparison.available ? 'Candidat retrouvé' : 'En attente d’un bilan',
+      lines: ['Candidat préalable', 'et bloc vérifié nécessaires'],
+      note: comparison.note,
+    });
+  information.push({
+    value: flow.value,
+    unit: flow.interval,
+    label: flow.label,
+    lines:
+      flow.state === 'ready'
+        ? [flow.average]
+        : [
+            snapshot.eventFlow
+              ? 'En attente de données mesurées'
+              : flow.state === 'warming'
+                ? 'Second relevé nécessaire'
+                : 'Inventaires complets requis',
+          ],
+    note: flow.note,
+  });
+  const current = information[pageIndex] ?? information[0];
   const valueSize = current.smallValue
     ? 'tiny'
     : current.value.length > 10
@@ -180,36 +241,92 @@ export const InfoBillboard = memo(function InfoBillboard({
     <section
       className={`info-billboard info-billboard--${snapshot.chain}${top ? ' info-billboard--top' : ''}${!rotating || reducedMotion ? ' info-billboard--still' : ''}`}
       aria-label={`Panneau d’informations ${chainName}`}
-      data-page={pages[page]}
+      data-page={pageLabels[pageIndex]}
       data-auto-rotating={rotating}
       data-status={snapshot.status}
+      data-fee-scope={median.scope ?? 'sample'}
+      data-comparison-available={comparison.available}
+      data-comparison-scope={comparison.available ? 'complete' : undefined}
+      data-flow-state={flow.state}
+      data-flow-kind={flow.kind}
     >
       <header className="info-billboard-header">
         <span>{theme === 'heg' ? 'HEG' : 'INFO'}</span>
         <span>{bitcoin ? 'BTC' : 'ETH'}</span>
       </header>
-      <div className="info-billboard-screen" key={page} title={current.note}>
-        <p className="info-billboard-page">{pages[page]}</p>
+      <div className="info-billboard-screen" key={pageIndex} title={current.note}>
+        <p className="info-billboard-page">{pageLabels[pageIndex]}</p>
+        {flowPage && <p className="info-billboard-flow-kind">{flow.kindLabel}</p>}
         <p className={`info-billboard-value info-billboard-value--${valueSize}`}>
           {current.estimated && <span className="info-billboard-estimate">≈ </span>}
           {current.value}
         </p>
         {current.unit && <p className="info-billboard-unit">{current.unit}</p>}
         <h3 className="info-billboard-label">{current.label}</h3>
-        <div className="info-billboard-lines">
-          {current.lines.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
+        {flowPage ? (
+          <div className="info-billboard-flow">
+            <p>{current.lines[0]}</p>
+            {flow.state === 'ready' && (
+              <svg
+                viewBox="0 0 160 30"
+                role="img"
+                aria-label={
+                  flow.kind === 'events' && !bitcoin
+                    ? 'Débit moyen des notifications pending du fournisseur, historique d’environ une minute'
+                    : 'Débit moyen des ajouts observés du fournisseur, historique d’environ une minute'
+                }
+                data-flow-history-count={flow.history.length}
+              >
+                <path className="info-billboard-flow-baseline" d="M5 26H155" />
+                <path className="info-billboard-flow-line" d={flowPath} />
+                {flow.history.map((point, index) => (
+                  <circle
+                    key={point.observedAt}
+                    cx={5 + ((point.observedAt - flowEnd + 60_000) * 150) / 60_000}
+                    cy={26 - (flowRates[index]! * 22) / maxFlowRate}
+                    r="2"
+                  />
+                ))}
+              </svg>
+            )}
+            <span className="visually-hidden">{flow.note}</span>
+          </div>
+        ) : comparisonPage && comparison.available ? (
+          <div className="info-billboard-comparison">
+            <p className="info-comparison-scope">Complet · hors coinbase</p>
+            <dl className="info-comparison-counts">
+              {comparison.categories.map((category) => (
+                <div
+                  key={category.key}
+                  data-comparison-category={category.key}
+                  data-count={category.count}
+                  title={category.label}
+                >
+                  <dt>
+                    <span aria-hidden="true">{category.shortLabel}</span>
+                    <span className="visually-hidden">{category.label}</span>
+                  </dt>
+                  <dd>{number(category.count)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : (
+          <div className="info-billboard-lines">
+            {current.lines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        )}
       </div>
       <div className="info-billboard-footer">
         <nav className="info-billboard-navigation" aria-label={`Rubriques ${chainName}`}>
-          {pages.map((label, index) => (
+          {pageLabels.map((label, index) => (
             <button
               key={label}
               type="button"
               aria-label={`Afficher ${label.toLowerCase()} · ${chainName}`}
-              aria-pressed={page === index}
+              aria-pressed={pageIndex === index}
               title={label}
               onClick={() => {
                 setPage(index);
@@ -232,12 +349,39 @@ export const InfoBillboard = memo(function InfoBillboard({
           <span>{rotating ? '4 s' : rotationEnabled ? 'Pause' : 'Fixe'}</span>
         </button>
       </div>
-      <p className="info-billboard-source">
-        <i aria-hidden="true" /> {sourceLabel}
-        {page === 0 && mempool.status === 'stale' ? ' · compteur ancien' : ''}
-        {page === 1 && feeDisplayUnit === 'usd' && usableQuote && quote?.status === 'stale'
-          ? ' · cours conservé'
-          : ''}
+      <p
+        className="info-billboard-source"
+        title={flowPage ? flow.note : comparisonPage ? comparison.note : undefined}
+      >
+        <i aria-hidden="true" />{' '}
+        {flowPage ? (
+          flow.source && flow.observedAt !== null ? (
+            <>
+              <time dateTime={new Date(flow.observedAt).toISOString()}>
+                {new Date(flow.observedAt).toLocaleTimeString('fr-CH')}
+              </time>{' '}
+              · {flow.source}
+            </>
+          ) : (
+            sourceLabel
+          )
+        ) : comparisonPage && comparison.available ? (
+          <>
+            {comparison.stale ? 'Ancien bilan conservé · ' : ''}
+            {comparison.comparison.candidateSource} ·{' '}
+            <time dateTime={new Date(comparison.comparison.candidateObservedAt).toISOString()}>
+              {new Date(comparison.comparison.candidateObservedAt).toLocaleTimeString('fr-CH')}
+            </time>
+          </>
+        ) : (
+          <>
+            {sourceLabel}
+            {pageIndex === 0 && mempool.status === 'stale' ? ' · compteur ancien' : ''}
+            {pageIndex === 1 && feeDisplayUnit === 'usd' && usableQuote && quote?.status === 'stale'
+              ? ' · cours conservé'
+              : ''}
+          </>
+        )}
       </p>
     </section>
   );

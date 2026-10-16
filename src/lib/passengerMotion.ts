@@ -1,8 +1,11 @@
 import {
   MAX_INCLUSION_BLOCKS,
+  MAX_INDIVIDUAL_HISTORY,
   PENDING_SAMPLE_LIMIT,
   TRACKED_TRANSACTION_TTL_MS,
+  type BitcoinBlockTemplate,
   type Block,
+  type ChainId,
   type Snapshot,
   type Tx,
 } from '../../shared/model';
@@ -13,19 +16,38 @@ import {
   exitDoorPoint,
   exitPlatformPoint,
   isInsideDoorway,
-  HISTORY_QUEUE_START,
+  DEFAULT_QUEUE_LAYOUT,
   PLATFORM_CORRIDOR_X,
   WAGON_SEAT_COUNT,
   queuePosition,
+  historicalQueueLayout,
+  historicalQueuePosition,
+  networkBoxArrivalPath,
+  networkBoxBoardingPath,
+  NETWORK_BOX_RECT,
+  NETWORK_FLOW_LANES,
   wagonSeat,
+  type QueueLayout,
+  type PassengerQueueZone,
   type StreetPoint,
   type WagonKind,
 } from './streetGeometry';
 import { capacityForSnapshot, transactionBlockSize } from './blockCapacity';
+import {
+  bitcoinArrivalObservation,
+  isHistoricalPassenger,
+  type BitcoinArrivalObservation,
+} from './passengerStatus';
+import {
+  ethereumNonceDependencies,
+  ethereumPredecessorId,
+  type EthereumNonceDependency,
+  type EthereumNonceObservation,
+  type EthereumNoncePlanningContext,
+} from './ethereumNonceDependencies';
 
 export const MAX_PASSENGERS = PENDING_SAMPLE_LIMIT;
-export const MAX_RESIDENT_PASSENGERS = MAX_PASSENGERS * 2;
-const MAX_INDIVIDUAL_HISTORY = MAX_PASSENGERS;
+export const MAX_RESIDENT_PASSENGERS = MAX_PASSENGERS + MAX_INDIVIDUAL_HISTORY;
 export const MAX_ARCHIVED_OBSERVATIONS = 512;
 const MAX_DEPARTURE_PASSENGERS =
   MAX_RESIDENT_PASSENGERS + MAX_ARCHIVED_OBSERVATIONS + MAX_PASSENGERS;
@@ -36,11 +58,33 @@ export const CANDIDATE_CAPACITY = WAGON_SEAT_COUNT;
 const MAX_STEP_MS = 100;
 const QUEUE_RETRY_MS = 8_000;
 export const HANDOFF_DURATION_MS = 1_200;
-export const PREPARATION_DURATION_MS = 1_000;
+export const BITCOIN_PREPARATION_DURATION_MS = 3_000;
+export const ETHEREUM_PREPARATION_DURATION_MS = 1_500;
+/** Existing callers use this as Ethereum's preparation duration. */
+export const PREPARATION_DURATION_MS = ETHEREUM_PREPARATION_DURATION_MS;
+const NETWORK_TIMING_REFERENCE_MS = 1_000;
+const MAX_NETWORK_COHORT_STAGGER_MS = 480;
+const NETWORK_COHORT_SPACING_MS = 36;
+export const NETWORK_DOOR_OPEN_MS = 80;
+export const NETWORK_SIGNAL_LEAD_MS = 120;
+export const NETWORK_DOOR_BEFORE_PASSAGE_MS = 200;
+export const NETWORK_DOOR_AFTER_PASSAGE_MS = 150;
+const NETWORK_DOOR_CLOSE_MS = 80;
 const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
+const MAX_ARRIVAL_STAGGER_MS = 1_500;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-const GEOMETRY_VERSION = 'outer-platform-arrival-queue-v16';
+export const MIN_HEAD_SCALE = 0.8;
+export const MAX_HEAD_SCALE = 2.5;
+const GEOMETRY_VERSION = 'outer-platform-history-queue-v20';
+
+export function preparationDurationMs(chain: ChainId): number {
+  return chain === 'bitcoin' ? BITCOIN_PREPARATION_DURATION_MS : ETHEREUM_PREPARATION_DURATION_MS;
+}
+
+function statePreparationDurationMs(state: Pick<PassengerMotionState, 'context'>): number {
+  return preparationDurationMs(state.context.startsWith('bitcoin:') ? 'bitcoin' : 'ethereum');
+}
 
 export type PassengerPhase =
   | 'arriving'
@@ -56,12 +100,42 @@ export type PassengerPhase =
   | 'retiring'
   | 'confirmed';
 export type PassengerDestination = WagonKind | 'queue';
-export type PassengerReason = 'accepted' | 'fee' | 'capacity' | 'observed';
+export type PassengerReason =
+  | 'accepted'
+  | 'fee'
+  | 'capacity'
+  | 'observed'
+  | 'nonce'
+  | 'queued'
+  | 'absent'
+  | 'replaced'
+  | 'projection';
+export type PassengerPoolState = 'pending' | 'queued' | 'absent' | 'replaced' | 'unknown';
+export type PassengerArrivalKind = 'initial-stock' | 'new-observation' | 'late-inclusion';
+interface PoolPassengerObservation {
+  poolState: PassengerPoolState;
+  poolObservedAt?: number;
+  bitcoinArrival?: BitcoinArrivalObservation;
+  detailObservedAt?: number;
+  /** A dated exclusion stays a planning constraint after its public freshness expires. */
+  poolExcludedAt?: number;
+  poolExcludedState?: 'queued' | 'absent' | 'replaced';
+}
 
 interface Passenger {
   tx: Tx;
+  nonceDependency?: EthereumNonceDependency;
+  arrivalKind?: PassengerArrivalKind;
   lastObservedAt?: number;
+  poolState?: PassengerPoolState;
+  poolObservedAt?: number;
+  bitcoinArrival?: BitcoinArrivalObservation;
+  poolExcludedAt?: number;
+  poolExcludedState?: 'queued' | 'absent' | 'replaced';
   queueIndex: number;
+  queueZone?: PassengerQueueZone;
+  queuePoint?: StreetPoint;
+  queueReserved?: boolean;
   seatIndex: number;
   plannedSeatIndex: number;
   plannedWagon: WagonKind | null;
@@ -77,13 +151,19 @@ interface Passenger {
   handoffPhase?: PassengerPhase;
   joiningArchive?: boolean;
   presentInSample: boolean;
+  /** A real illustrated boarding, retained across temporary exits without refreshing provenance. */
+  hasBoardedProjection?: boolean;
   /** Only source-confirmed transactions associated with this departing block may leave aboard. */
   departureIncluded?: boolean;
   awaitingVerifiedDeparture?: boolean;
+  /** Opening time is part of the same preparation deadline, not an independent timer. */
+  networkDoorLeadMs?: number;
 }
 
 interface PassengerAdmission {
   tx: Tx;
+  arrivalKind?: PassengerArrivalKind;
+  nonceDependency?: EthereumNonceDependency;
   plannedSeatIndex: number;
   plannedWagon: WagonKind | null;
   selectedForCandidate: boolean;
@@ -93,11 +173,14 @@ interface PassengerAdmission {
 interface DepartureObservation {
   block: Block;
   transactions: Tx[];
+  /** Origins captured before reconciliation can consume an existing admission. */
+  networkOriginIds?: string[];
   recovered?: boolean;
 }
 
 interface ArchivedObservation {
   tx: Tx;
+  nonceDependency?: EthereumNonceDependency;
   lastSeenAt: number;
   reservedBlockHash?: string;
 }
@@ -116,6 +199,7 @@ interface WaitingArchiveState {
 
 export interface PassengerMotionState {
   context: string;
+  queueLayout: QueueLayout;
   elapsedMs: number;
   observedBlockHash: string | null;
   observedBlockHeight: number | null;
@@ -136,6 +220,10 @@ export interface PassengerMotionState {
   candidateUsed: number;
   /** Native block resource budget; null when the observed provider has no capacity. */
   candidateCapacity: number | null;
+  /** A proposed Bitcoin candidate constrains only projections, never real departures. */
+  blockTemplate: BitcoinBlockTemplate | null;
+  ethereumProjection: Snapshot['ethereumProjection'];
+  ethereumDependencies?: Snapshot['ethereumDependencies'];
   projectionCount: Record<WagonKind, number>;
   projectionUsed: Record<WagonKind, number>;
   passengers: Passenger[];
@@ -149,10 +237,17 @@ export interface PassengerMotionState {
 
 export interface PassengerPose {
   tx: Tx;
+  nonceDependency?: EthereumNonceDependency;
+  arrivalKind?: PassengerArrivalKind;
+  lastObservedAt?: number;
+  poolState?: PassengerPoolState;
+  poolObservedAt?: number;
+  bitcoinArrival?: BitcoinArrivalObservation;
   x: number;
   y: number;
   queueX: number;
   queueY: number;
+  queueZone?: PassengerQueueZone;
   phase: PassengerPhase;
   destination: PassengerDestination;
   reason: PassengerReason;
@@ -167,6 +262,8 @@ export interface PassengerPose {
   progress: number;
   facing: 1 | -1;
   movementAngle?: number;
+  /** A bounded suffix of the current network exit, ordered towards the traveller. */
+  trail?: readonly StreetPoint[];
   walkPhase: number;
 }
 
@@ -186,6 +283,10 @@ export interface PassengerFrame {
   elapsedMs: number;
   preparationProgress: number | null;
   preparationPassengerCount: number;
+  /** Shared animation-clock opening, including while a traveller waits in the doorway. */
+  networkDoorProgress: number;
+  /** True only during an actual departure through this network doorway. */
+  networkActive: boolean;
   waitingArchiveCount: number;
   waitingArchiveTrackedCount: number;
   waitingArchiveUnknownCount: number;
@@ -243,6 +344,12 @@ const projectionOccupancyCache = new WeakMap<Passenger[], ProjectionOccupancy>()
 const preparationInclusionCache = new WeakMap<Tx[], Map<string, PreparationInclusion>>();
 const residentIdCache = new WeakMap<Passenger[], Set<string>>();
 const departingIdCache = new WeakMap<PassengerPose[], Set<string>>();
+// A fixed queue can reuse its reservations while poses advance on the shared clock.
+// Admission may append to a fresh aligned array, so its length is checked as well.
+const alignedQueueCache = new WeakMap<
+  Passenger[],
+  { layout: QueueLayout; passengerCount: number }
+>();
 const WALKING_PHASES = new Set<PassengerPhase>([
   'arriving',
   'reordering',
@@ -337,6 +444,100 @@ function motionContext(snapshot: Snapshot): string {
   return `${snapshot.chain}:${snapshot.mode}:${GEOMETRY_VERSION}`;
 }
 
+const canonicalSnapshotCache = new WeakMap<Snapshot, Snapshot>();
+const canonicalHash = (value: string): string =>
+  /^(?:0x)?[a-fA-F0-9]{64}$/i.test(value) ? value.toLowerCase() : value;
+
+/** Hash casing cannot create a second traveller or disconnect exact block evidence. */
+function canonicalSnapshot(snapshot: Snapshot): Snapshot {
+  const cached = canonicalSnapshotCache.get(snapshot);
+  if (cached) return cached;
+  let changed = false;
+  const transactions = snapshot.transactions.map((tx) => {
+    const id = canonicalHash(tx.id);
+    const blockHash = tx.blockHash === undefined ? undefined : canonicalHash(tx.blockHash);
+    if (id === tx.id && blockHash === tx.blockHash) return tx;
+    changed = true;
+    return { ...tx, id, ...(blockHash === undefined ? {} : { blockHash }) };
+  });
+  const normalizeBlock = (block: Block): Block => {
+    const hash = canonicalHash(block.hash);
+    if (hash === block.hash) return block;
+    changed = true;
+    return { ...block, hash };
+  };
+  const blocks = snapshot.blocks.map(normalizeBlock);
+  const inclusions = snapshot.inclusions?.map((inclusion) => {
+    const block = normalizeBlock(inclusion.block);
+    const transactionIds = inclusion.transactionIds.map(canonicalHash);
+    if (
+      block === inclusion.block &&
+      transactionIds.every((id, index) => id === inclusion.transactionIds[index])
+    )
+      return inclusion;
+    changed = true;
+    return { block, transactionIds };
+  });
+  let blockTemplate = snapshot.blockTemplate;
+  if (blockTemplate) {
+    const previousBlockHash = canonicalHash(blockTemplate.previousBlockHash);
+    const selectedTransactionIds = blockTemplate.selectedTransactionIds.map(canonicalHash);
+    if (
+      previousBlockHash !== blockTemplate.previousBlockHash ||
+      selectedTransactionIds.some(
+        (id, index) => id !== blockTemplate!.selectedTransactionIds[index],
+      )
+    ) {
+      changed = true;
+      blockTemplate = { ...blockTemplate, previousBlockHash, selectedTransactionIds };
+    }
+  }
+  let poolObservation = snapshot.poolObservation;
+  if (poolObservation) {
+    const presentTransactionIds = poolObservation.presentTransactionIds.map(canonicalHash);
+    const queuedTransactionIds = poolObservation.queuedTransactionIds.map(canonicalHash);
+    const absentTransactionIds = poolObservation.absentTransactionIds.map(canonicalHash);
+    if (
+      presentTransactionIds.some(
+        (id, index) => id !== poolObservation!.presentTransactionIds[index],
+      ) ||
+      queuedTransactionIds.some(
+        (id, index) => id !== poolObservation!.queuedTransactionIds[index],
+      ) ||
+      absentTransactionIds.some((id, index) => id !== poolObservation!.absentTransactionIds[index])
+    ) {
+      changed = true;
+      poolObservation = {
+        ...poolObservation,
+        presentTransactionIds,
+        queuedTransactionIds,
+        absentTransactionIds,
+      };
+    }
+  }
+  let ethereumProjection = snapshot.ethereumProjection;
+  if (ethereumProjection) {
+    const parentBlockHash = canonicalHash(ethereumProjection.parentBlockHash);
+    if (parentBlockHash !== ethereumProjection.parentBlockHash) {
+      changed = true;
+      ethereumProjection = { ...ethereumProjection, parentBlockHash };
+    }
+  }
+  const canonical = changed
+    ? {
+        ...snapshot,
+        transactions,
+        blocks,
+        inclusions,
+        blockTemplate,
+        poolObservation,
+        ethereumProjection,
+      }
+    : snapshot;
+  canonicalSnapshotCache.set(snapshot, canonical);
+  return canonical;
+}
+
 function stableHash(value: string): number {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1)
@@ -347,7 +548,8 @@ function stableHash(value: string): number {
 export function transactionHeadScale(tx: Pick<Tx, 'chain' | 'size'>): number {
   const reference = tx.chain === 'bitcoin' ? 250 : 21_000;
   const size = Number.isFinite(tx.size) ? Math.max(0, tx.size) : 0;
-  return Math.max(0.8, Math.min(1.85, 0.8 + Math.log2(1 + size / reference) * 0.31));
+  if (size <= 0) return MIN_HEAD_SCALE;
+  return Math.max(MIN_HEAD_SCALE, Math.min(MAX_HEAD_SCALE, 1 + Math.log2(size / reference) * 0.5));
 }
 
 /** Three illustrative baggage sizes; never used as a block admission budget. */
@@ -357,58 +559,606 @@ export function transactionResourceUnits(tx: Pick<Tx, 'chain' | 'size'>): number
   return Math.max(1, Math.min(3, Math.ceil(size / reference)));
 }
 
-function planSnapshot(snapshot: Snapshot) {
+/** A fee recommendation is not an inclusion floor; only Ethereum's base fee is one. */
+function ethereumFeeCap(tx: Tx): bigint | null {
+  const cap = tx.ethereum?.maxFeePerGasWei ?? tx.ethereum?.gasPriceWei;
+  return cap !== undefined && /^\d+$/.test(cap) ? BigInt(cap) : null;
+}
+
+function feeEligible(
+  tx: Tx,
+  feeThreshold: number | null,
+  projection: Snapshot['ethereumProjection'] = null,
+): boolean {
+  if (tx.chain !== 'ethereum') return true;
+  const cap = ethereumFeeCap(tx);
+  if (cap !== null) return Boolean(projection) && cap >= BigInt(projection!.baseFeePerGasWei);
+  return tx.feeRate >= (feeThreshold ?? 0);
+}
+
+function comparePriority(left: Tx, right: Tx, projection: Snapshot['ethereumProjection']): number {
+  if (projection && left.chain === 'ethereum' && right.chain === 'ethereum') {
+    const baseFee = BigInt(projection.baseFeePerGasWei);
+    const priority = (tx: Tx): bigint | null => {
+      const cap = ethereumFeeCap(tx);
+      if (cap === null) return null;
+      const tip = tx.ethereum?.maxPriorityFeePerGasWei;
+      const offered = tip === undefined ? cap : baseFee + BigInt(tip);
+      return (cap < offered ? cap : offered) - baseFee;
+    };
+    const leftPriority = priority(left);
+    const rightPriority = priority(right);
+    if (leftPriority !== null && rightPriority !== null && leftPriority !== rightPriority)
+      return leftPriority > rightPriority ? -1 : 1;
+  }
+  return right.feeRate - left.feeRate || left.id.localeCompare(right.id);
+}
+
+export function activeEthereumProjection(snapshot: Snapshot): Snapshot['ethereumProjection'] {
+  const projection = snapshot.ethereumProjection;
+  const parent = snapshot.blocks[0];
+  return snapshot.chain === 'ethereum' &&
+    snapshot.mode === 'live' &&
+    snapshot.status === 'ok' &&
+    projection &&
+    parent &&
+    projection.parentBlockHash.toLowerCase() === parent.hash.toLowerCase() &&
+    projection.height === parent.height + 1 &&
+    projection.observedAt <= snapshot.observedAt &&
+    snapshot.observedAt - projection.observedAt <= 30_000
+    ? projection
+    : null;
+}
+
+function transactionObservedAt(snapshot: Snapshot, tx: Tx): number {
+  const arrival = bitcoinArrivalObservation(snapshot, tx);
+  if (arrival) return arrival.observedAt;
+  const candidate = activeBitcoinBlockTemplate(snapshot);
+  if (candidate && templateSelection(candidate)?.has(tx.id.toLowerCase()))
+    return candidate.observedAt;
+  return tx.status === 'pending'
+    ? (snapshot.sampling?.observedAt ?? snapshot.observedAt)
+    : snapshot.observedAt;
+}
+
+function poolStates(
+  snapshot: Snapshot,
+  passengers: Pick<
+    Passenger,
+    | 'tx'
+    | 'lastObservedAt'
+    | 'poolState'
+    | 'poolObservedAt'
+    | 'poolExcludedAt'
+    | 'poolExcludedState'
+  >[],
+): Map<string, PoolPassengerObservation> {
+  const states = new Map<string, PoolPassengerObservation>();
+  const observation = snapshot.poolObservation;
+  const fresh =
+    observation &&
+    snapshot.status === 'ok' &&
+    observation.observedAt <= snapshot.observedAt &&
+    snapshot.observedAt - observation.observedAt <= 60_000;
+  const explicit = new Map<string, PassengerPoolState>();
+  if (fresh) {
+    for (const id of observation.presentTransactionIds) explicit.set(id, 'pending');
+    for (const id of observation.queuedTransactionIds) explicit.set(id, 'queued');
+    for (const id of observation.absentTransactionIds) explicit.set(id, 'absent');
+  }
+  const current = new Map(snapshot.transactions.map((tx) => [tx.id, tx]));
+  const known = new Map(passengers.map((passenger) => [passenger.tx.id, passenger]));
+  for (const tx of snapshot.transactions)
+    if (!known.has(tx.id))
+      known.set(tx.id, { tx, lastObservedAt: transactionObservedAt(snapshot, tx) });
+  for (const passenger of known.values()) {
+    const tx = current.get(passenger.tx.id);
+    const detailAt = tx ? transactionObservedAt(snapshot, tx) : passenger.lastObservedAt;
+    const previousFresh =
+      fresh &&
+      passenger.poolObservedAt !== undefined &&
+      snapshot.observedAt - passenger.poolObservedAt <= 60_000;
+    let state: PoolPassengerObservation =
+      previousFresh && (passenger.poolObservedAt ?? 0) >= (detailAt ?? 0)
+        ? { poolState: passenger.poolState ?? 'unknown', poolObservedAt: passenger.poolObservedAt }
+        : { poolState: 'unknown', poolObservedAt: undefined };
+    state.bitcoinArrival = undefined;
+    state.poolExcludedAt = passenger.poolExcludedAt;
+    state.poolExcludedState = passenger.poolExcludedState;
+    state.detailObservedAt = Math.max(passenger.lastObservedAt ?? 0, detailAt ?? 0);
+    if (tx?.status === 'pending' && (detailAt ?? 0) >= (state.poolExcludedAt ?? 0)) {
+      state.poolExcludedAt = undefined;
+      state.poolExcludedState = undefined;
+    }
+    const explicitState = explicit.get(passenger.tx.id);
+    if (
+      fresh &&
+      explicitState &&
+      observation.observedAt >= (detailAt ?? 0) &&
+      observation.observedAt >= (state.poolObservedAt ?? 0)
+    ) {
+      state = { ...state, poolState: explicitState, poolObservedAt: observation.observedAt };
+    }
+    const arrival = tx ? bitcoinArrivalObservation(snapshot, tx) : undefined;
+    if (arrival) {
+      // Different providers have different mempool views. An RPC absence cannot
+      // negate a recently received pending detail from the independent stream.
+      state = {
+        ...state,
+        poolState: 'unknown',
+        poolObservedAt: undefined,
+        poolExcludedAt: undefined,
+        poolExcludedState: undefined,
+        bitcoinArrival: arrival,
+      };
+    }
+    if (
+      state.poolState === 'pending' &&
+      (state.poolObservedAt ?? 0) >= (state.poolExcludedAt ?? 0)
+    ) {
+      state.poolExcludedAt = undefined;
+      state.poolExcludedState = undefined;
+    } else if (state.poolState === 'absent' || state.poolState === 'queued') {
+      state.poolExcludedAt = state.poolObservedAt;
+      state.poolExcludedState = state.poolState;
+    } else if (
+      state.poolExcludedAt !== undefined &&
+      state.poolState === 'pending' &&
+      (state.poolObservedAt ?? 0) < state.poolExcludedAt
+    ) {
+      state.poolState = 'unknown';
+      state.poolObservedAt = undefined;
+    }
+    states.set(passenger.tx.id, state);
+  }
+  const replacementCandidates = new Map<string, { tx: Tx; observedAt: number } | null>();
+  for (const tx of snapshot.transactions) {
+    if (tx.status !== 'pending' || !tx.ethereum) continue;
+    const key = `${tx.ethereum.from.toLowerCase()}:${tx.ethereum.nonce}`;
+    const observedAt = transactionObservedAt(snapshot, tx);
+    const previous = replacementCandidates.get(key);
+    if (previous === undefined || (previous && observedAt > previous.observedAt))
+      replacementCandidates.set(key, { tx, observedAt });
+    else if (previous && observedAt === previous.observedAt && previous.tx.id !== tx.id)
+      replacementCandidates.set(key, null);
+  }
+  for (const passenger of passengers) {
+    if (passenger.tx.status !== 'pending' || !passenger.tx.ethereum) continue;
+    const oldState = states.get(passenger.tx.id);
+    const candidate = replacementCandidates.get(
+      `${passenger.tx.ethereum.from.toLowerCase()}:${passenger.tx.ethereum.nonce}`,
+    );
+    if (
+      candidate &&
+      candidate.tx.id !== passenger.tx.id &&
+      candidate.observedAt > (passenger.lastObservedAt ?? 0) &&
+      (!['pending', 'queued'].includes(oldState?.poolState ?? '') ||
+        candidate.observedAt > (oldState?.poolObservedAt ?? 0)) &&
+      !['absent', 'queued'].includes(oldState?.poolState ?? '')
+    )
+      states.set(passenger.tx.id, {
+        poolState: 'replaced',
+        poolObservedAt: candidate.observedAt,
+        poolExcludedAt: candidate.observedAt,
+        poolExcludedState: 'replaced',
+      });
+  }
+  return states;
+}
+
+/** A template expires with its parent, availability or age; it never proves inclusion. */
+export function activeBitcoinBlockTemplate(snapshot: Snapshot): BitcoinBlockTemplate | null {
+  const template = snapshot.blockTemplate;
+  const parent = snapshot.blocks[0];
+  if (
+    snapshot.chain !== 'bitcoin' ||
+    snapshot.mode !== 'live' ||
+    snapshot.status !== 'ok' ||
+    !template ||
+    !parent ||
+    template.previousBlockHash.toLowerCase() !== parent.hash.toLowerCase() ||
+    template.height !== parent.height + 1 ||
+    template.observedAt > snapshot.observedAt ||
+    snapshot.observedAt - template.observedAt > 30_000
+  )
+    return null;
+  return template;
+}
+
+const templateSelectionCache = new WeakMap<BitcoinBlockTemplate, ReadonlySet<string>>();
+function templateSelection(template: BitcoinBlockTemplate | null): ReadonlySet<string> | null {
+  if (!template) return null;
+  const previous = templateSelectionCache.get(template);
+  if (previous) return previous;
+  const selected = new Set(template.selectedTransactionIds.map((id) => id.toLowerCase()));
+  templateSelectionCache.set(template, selected);
+  return selected;
+}
+
+function planProjections(
+  transactions: Tx[],
+  capacity: number | null,
+  feeThreshold: number | null,
+  passengers: Passenger[] = [],
+  blockTemplate: BitcoinBlockTemplate | null = null,
+  ethereumProjection: Snapshot['ethereumProjection'] = null,
+  poolObservations = new Map<string, PoolPassengerObservation>(),
+  nonceContext?: EthereumNoncePlanningContext,
+) {
+  const selected = templateSelection(blockTemplate);
+  const preferredWagon = (tx: Tx): WagonKind =>
+    selected!.has(tx.id.toLowerCase()) ? 'next' : 'later';
+  const budget = (wagon: WagonKind) =>
+    wagon === 'next' && blockTemplate
+      ? Math.min(capacity ?? 0, blockTemplate.weightLimit / 4)
+      : (capacity ?? 0);
+  const reasons = new Map<string, PassengerReason>();
+  const unReplaced = transactions.filter(
+    (tx) => poolObservations.get(tx.id)?.poolExcludedState !== 'replaced',
+  );
+  const noncePlan = ethereumNonceDependencies(
+    transactions,
+    nonceContext ?? {
+      observedAt: 0,
+      healthy: true,
+      known: passengers.map((passenger) => ({
+        tx: passenger.tx,
+        resident: true,
+        dependency: passenger.nonceDependency,
+      })),
+      inclusions: new Map(),
+    },
+  );
+  const predecessors = new Map<string, string>();
+  for (const [id, dependency] of noncePlan.dependencies) {
+    const predecessor = ethereumPredecessorId(dependency);
+    if (predecessor) predecessors.set(id, predecessor);
+  }
+  const rawEligible = unReplaced
+    .filter((tx) => {
+      if (noncePlan.excludedIds.has(tx.id)) {
+        reasons.set(tx.id, 'nonce');
+        return false;
+      }
+      const presence = poolObservations.get(tx.id);
+      const exclusion = presence?.poolExcludedState;
+      const proposedAfterObservation =
+        selected?.has(tx.id) &&
+        blockTemplate!.observedAt >= (presence?.poolExcludedAt ?? presence?.poolObservedAt ?? 0);
+      if (
+        presence &&
+        (exclusion === 'absent' || exclusion === 'queued') &&
+        !proposedAfterObservation
+      ) {
+        reasons.set(tx.id, exclusion);
+        return false;
+      }
+      if (!feeEligible(tx, feeThreshold, ethereumProjection)) {
+        reasons.set(
+          tx.id,
+          tx.chain === 'ethereum' && ethereumFeeCap(tx) !== null && !ethereumProjection
+            ? 'projection'
+            : 'fee',
+        );
+        return false;
+      }
+      const size = transactionBlockSize(tx);
+      if (size <= 0 || capacity === null || size > capacity) {
+        reasons.set(tx.id, 'capacity');
+        return false;
+      }
+      return true;
+    })
+    .sort((left, right) => comparePriority(left, right, ethereumProjection));
+  for (const tx of transactions)
+    if (poolObservations.get(tx.id)?.poolExcludedState === 'replaced')
+      reasons.set(tx.id, 'replaced');
+  const byId = new Map(rawEligible.map((tx) => [tx.id, tx]));
+  const eligible: Tx[] = [];
+  const ordered = new Set<string>();
+  // Emit known lower nonces first without assuming any missing nonce is available.
+  for (const tx of rawEligible) {
+    const chain: Tx[] = [];
+    let cursor: Tx | undefined = tx;
+    while (cursor && !ordered.has(cursor.id)) {
+      ordered.add(cursor.id);
+      chain.push(cursor);
+      cursor = byId.get(predecessors.get(cursor.id) ?? '');
+    }
+    eligible.push(...chain.reverse());
+  }
+  const preferred = new Map(
+    passengers.map(
+      (passenger) =>
+        [
+          passenger.tx.id,
+          {
+            wagon: passenger.inHandoff ? 'next' : (passenger.wagon ?? passenger.plannedWagon),
+            seat: passenger.wagon ? passenger.seatIndex : passenger.plannedSeatIndex,
+          },
+        ] as const,
+    ),
+  );
+  const allocate = (preservePlaces: boolean) => {
+    const admitted = new Map<string, { wagon: WagonKind; seat: number }>();
+    const used: Record<WagonKind, number> = { next: 0, later: 0 };
+    const count: Record<WagonKind, number> = { next: 0, later: 0 };
+    const canFollow = (tx: Tx, wagon: WagonKind) => {
+      if (noncePlan.dependencies.get(tx.id)?.blocked) return false;
+      const predecessor = predecessors.get(tx.id);
+      if (!predecessor) return true;
+      const earlier = admitted.get(predecessor);
+      return earlier !== undefined && (wagon === 'later' || earlier.wagon === 'next');
+    };
+    if (preservePlaces) {
+      for (const tx of eligible) {
+        const place = preferred.get(tx.id);
+        if (!place?.wagon) continue;
+        if (selected && place.wagon !== preferredWagon(tx)) continue;
+        const wagon: WagonKind = place.wagon;
+        if (!canFollow(tx, wagon)) return null;
+        used[wagon] += transactionBlockSize(tx);
+        if (used[wagon] > budget(wagon)) return null;
+        admitted.set(tx.id, { wagon, seat: place.seat });
+        count[wagon] += 1;
+      }
+    }
+    for (const tx of eligible) {
+      if (admitted.has(tx.id)) continue;
+      const size = transactionBlockSize(tx);
+      const templateWagon = selected ? preferredWagon(tx) : null;
+      const wagon: WagonKind | null = templateWagon
+        ? used[templateWagon] + size <= budget(templateWagon)
+          ? templateWagon
+          : null
+        : used.next + size <= budget('next') && canFollow(tx, 'next')
+          ? 'next'
+          : used.later + size <= budget('later') && canFollow(tx, 'later')
+            ? 'later'
+            : null;
+      if (wagon) {
+        if (!canFollow(tx, wagon)) {
+          reasons.set(tx.id, 'nonce');
+          if (preservePlaces) return null;
+          continue;
+        }
+        const prior = preferred.get(tx.id);
+        admitted.set(tx.id, {
+          wagon,
+          seat: prior?.wagon === wagon ? prior.seat : count[wagon],
+        });
+        count[wagon] += 1;
+        used[wagon] += size;
+      } else {
+        if (
+          noncePlan.dependencies.get(tx.id)?.blocked ||
+          (predecessors.has(tx.id) && !admitted.has(predecessors.get(tx.id)!))
+        )
+          reasons.set(tx.id, 'nonce');
+        if (preservePlaces) return null;
+      }
+    }
+    return { admitted, used, count };
+  };
+  // Keep existing vehicles/places whenever everybody still fits. Only actual
+  // native-capacity competition requires repacking by descending fee rate.
+  const allocation = allocate(true) ?? allocate(false)!;
+  for (const tx of eligible)
+    reasons.set(
+      tx.id,
+      allocation.admitted.has(tx.id) ? 'accepted' : (reasons.get(tx.id) ?? 'capacity'),
+    );
+  return { ...allocation, reasons, nonceDependencies: noncePlan.dependencies };
+}
+
+function hasBoardedProjection(passenger: Passenger, now: number): boolean {
+  return (
+    passenger.hasBoardedProjection === true ||
+    (passenger.wagon !== null &&
+      (passenger.inHandoff ||
+        passenger.phase === 'boarded' ||
+        (passenger.phase === 'boarding' && isInsideDoorway(passengerPosition(passenger, now)))))
+  );
+}
+
+function retainedProjectionTransactions(
+  passengers: Passenger[],
+  sourceIds: ReadonlySet<string>,
+  observedAt: number,
+  now: number,
+  completedIds: ReadonlySet<string> = new Set(),
+  blockTemplate: BitcoinBlockTemplate | null = null,
+  observations = new Map<string, PoolPassengerObservation>(),
+): Tx[] {
+  const selected = templateSelection(blockTemplate);
+  return passengers
+    .filter(
+      (passenger) =>
+        !sourceIds.has(passenger.tx.id) &&
+        !completedIds.has(passenger.tx.id) &&
+        passenger.tx.status === 'pending' &&
+        !passenger.departureIncluded &&
+        !passenger.awaitingVerifiedDeparture &&
+        (!passenger.joiningArchive || selected?.has(passenger.tx.id.toLowerCase())) &&
+        passenger.lastObservedAt !== undefined &&
+        (selected?.has(passenger.tx.id.toLowerCase()) ||
+          observations.get(passenger.tx.id)?.poolState === 'pending' ||
+          (observedAt - passenger.lastObservedAt < TRACKED_TRANSACTION_TTL_MS &&
+            hasBoardedProjection(passenger, now))),
+    )
+    .sort(
+      (left, right) =>
+        Number(selected?.has(right.tx.id.toLowerCase()) ?? false) -
+          Number(selected?.has(left.tx.id.toLowerCase()) ?? false) ||
+        right.tx.feeRate - left.tx.feeRate ||
+        left.tx.id.localeCompare(right.tx.id),
+    )
+    .slice(0, MAX_INDIVIDUAL_HISTORY)
+    .map((passenger) => passenger.tx);
+}
+
+function noncePlanningContext(
+  snapshot: Pick<
+    Snapshot,
+    'mode' | 'status' | 'observedAt' | 'transactions' | 'inclusions' | 'ethereumDependencies'
+  > & {
+    blocks: Pick<Block, 'hash' | 'height'>[];
+  },
+  passengers: Passenger[],
+  archived: ArchivedObservation[],
+  admissions: PassengerAdmission[],
+  receipts: DepartureReceipt[],
+  observations: Map<string, PoolPassengerObservation>,
+): EthereumNoncePlanningContext {
+  const known: EthereumNonceObservation[] = [];
+  for (const entry of archived)
+    known.push({ tx: entry.tx, observedAt: entry.lastSeenAt, dependency: entry.nonceDependency });
+  for (const admission of admissions)
+    known.push({ tx: admission.tx, dependency: admission.nonceDependency });
+  for (const passenger of passengers)
+    known.push({
+      tx: passenger.tx,
+      observedAt: passenger.lastObservedAt,
+      resident: true,
+      dependency: passenger.nonceDependency,
+    });
+  const priorById = new Map(known.map((entry) => [entry.tx.id, entry]));
+  for (const tx of snapshot.transactions) {
+    const prior = priorById.get(tx.id);
+    known.push({
+      ...prior,
+      tx,
+      observedAt: observations.get(tx.id)?.detailObservedAt ?? snapshot.observedAt,
+    });
+  }
+  for (const entry of known) {
+    const presence = observations.get(entry.tx.id);
+    entry.poolState = presence?.poolExcludedState ?? presence?.poolState;
+    entry.poolObservedAt = presence?.poolObservedAt;
+  }
+  const healthy = snapshot.status === 'ok';
+  const inclusions = new Map<string, { blockHash: string; blockHeight: number }>();
+  if (healthy && snapshot.mode === 'live') {
+    const contradicted = (block: { hash: string; height: number }) =>
+      (snapshot.blocks[0]?.height ?? block.height) < block.height ||
+      snapshot.blocks.some(
+        (current) => current.height === block.height && current.hash !== block.hash,
+      ) ||
+      (snapshot.inclusions ?? []).some(
+        ({ block: current }) => current.height === block.height && current.hash !== block.hash,
+      );
+    for (const receipt of receipts)
+      if (!contradicted(receipt))
+        for (const id of receipt.transactionIds)
+          inclusions.set(id, { blockHash: receipt.hash, blockHeight: receipt.height });
+    for (const inclusion of snapshot.inclusions ?? [])
+      if (!contradicted(inclusion.block))
+        for (const id of inclusion.transactionIds)
+          inclusions.set(id, {
+            blockHash: inclusion.block.hash,
+            blockHeight: inclusion.block.height,
+          });
+    for (const tx of snapshot.transactions) {
+      const block = snapshot.blocks.find((entry) => entry.hash === tx.blockHash);
+      if (tx.status === 'confirmed' && block)
+        inclusions.set(tx.id, { blockHash: block.hash, blockHeight: block.height });
+    }
+  }
+  return {
+    observedAt: snapshot.observedAt,
+    healthy,
+    parentBlockHash: snapshot.blocks[0]?.hash,
+    height: snapshot.blocks[0] ? snapshot.blocks[0].height + 1 : undefined,
+    dependencies: snapshot.ethereumDependencies,
+    known,
+    inclusions,
+  };
+}
+
+function planSnapshot(
+  snapshot: Snapshot,
+  passengers: Passenger[] = [],
+  now = 0,
+  completedIds: ReadonlySet<string> = new Set(),
+  dependencyState?: Pick<
+    PassengerMotionState,
+    'waitingArchiveTransactions' | 'pendingAdmissions' | 'handledDepartures'
+  >,
+) {
   const capacity = capacityForSnapshot(snapshot);
-  const sourceTransactions = [...snapshot.transactions]
-    .sort((left, right) => right.feeRate - left.feeRate || left.id.localeCompare(right.id))
-    .filter((tx, index, array) => array.findIndex((other) => other.id === tx.id) === index);
+  const blockTemplate = activeBitcoinBlockTemplate(snapshot);
+  const ethereumProjection = activeEthereumProjection(snapshot);
+  const archived = [...(dependencyState?.waitingArchiveTransactions.values() ?? [])];
+  const dependencyObservations = [
+    ...archived.map((entry) => ({ tx: entry.tx, lastObservedAt: entry.lastSeenAt })),
+    ...passengers,
+  ];
+  const observations = poolStates(snapshot, dependencyObservations);
+  const sourceTransactions = [
+    ...new Map(
+      snapshot.transactions.filter((tx) => !completedIds.has(tx.id)).map((tx) => [tx.id, tx]),
+    ).values(),
+  ].sort((left, right) => right.feeRate - left.feeRate || left.id.localeCompare(right.id));
   // Historical confirmations are not a third queue of projection candidates.
   const transactions = sourceTransactions
     .filter((tx) => tx.status === 'pending')
     .slice(0, MAX_PASSENGERS);
-  const admitted = new Map<string, { wagon: WagonKind; seat: number }>();
-  const reasons = new Map<string, PassengerReason>();
-  const used: Record<WagonKind, number> = { next: 0, later: 0 };
-  const count: Record<WagonKind, number> = { next: 0, later: 0 };
-  for (const tx of transactions) {
-    if (tx.feeRate < (snapshot.feeRate ?? 0)) {
-      reasons.set(tx.id, 'fee');
-      continue;
-    }
-    // Seats are reusable drawing positions. Only native bytes/gas reserve block space.
-    const size = transactionBlockSize(tx);
-    if (size <= 0) {
-      reasons.set(tx.id, 'capacity');
-      continue;
-    }
-    const wagon: WagonKind | null =
-      capacity !== null && used.next + size <= capacity
-        ? 'next'
-        : capacity !== null && used.later + size <= capacity
-          ? 'later'
-          : null;
-    if (wagon) {
-      admitted.set(tx.id, { wagon, seat: count[wagon]++ });
-      used[wagon] += size;
-      reasons.set(tx.id, 'accepted');
-    } else reasons.set(tx.id, 'capacity');
-  }
+  const sourceIds = new Set(sourceTransactions.map((tx) => tx.id));
+  // A temporary exit must not turn an already-boarded observation into a new
+  // never-boarded candidate. Its original timestamp and bounded history still apply.
+  const retained = retainedProjectionTransactions(
+    passengers,
+    sourceIds,
+    snapshot.observedAt,
+    now,
+    completedIds,
+    blockTemplate,
+    observations,
+  );
+  const allocation = planProjections(
+    [...transactions, ...retained],
+    capacity,
+    snapshot.feeRate,
+    passengers,
+    blockTemplate,
+    ethereumProjection,
+    observations,
+    noncePlanningContext(
+      snapshot,
+      passengers,
+      archived,
+      dependencyState?.pendingAdmissions ?? [],
+      dependencyState?.handledDepartures ?? [],
+      observations,
+    ),
+  );
+  for (const [identity, observation] of observations)
+    if (
+      !allocation.admitted.has(identity) &&
+      !allocation.reasons.has(identity) &&
+      observation.poolExcludedState
+    )
+      allocation.reasons.set(identity, observation.poolExcludedState);
   return {
     transactions,
     sourceTransactions,
-    admitted,
-    reasons,
-    used,
-    count,
+    ...allocation,
     feeThreshold: snapshot.feeRate,
     capacity,
+    blockTemplate,
+    ethereumProjection,
+    observations,
   };
 }
 
-function admissionFor(tx: Tx, plan: ReturnType<typeof planSnapshot>): PassengerAdmission {
+function admissionFor(
+  tx: Tx,
+  plan: Pick<ReturnType<typeof planSnapshot>, 'admitted' | 'reasons' | 'nonceDependencies'>,
+): PassengerAdmission {
   const projection = plan.admitted.get(tx.id);
   return {
     tx,
+    nonceDependency: plan.nonceDependencies.get(tx.id),
     plannedWagon: projection?.wagon ?? null,
     plannedSeatIndex: projection?.seat ?? 0,
     selectedForCandidate: projection !== undefined,
@@ -422,7 +1172,7 @@ function projectionOccupancy(passengers: Passenger[]): ProjectionOccupancy {
   const projectionCount: Record<WagonKind, number> = { next: 0, later: 0 };
   const projectionUsed: Record<WagonKind, number> = { next: 0, later: 0 };
   for (const passenger of passengers) {
-    if (!passenger.presentInSample || !passenger.plannedWagon) continue;
+    if (!passenger.plannedWagon) continue;
     projectionCount[passenger.plannedWagon] += 1;
     projectionUsed[passenger.plannedWagon] += transactionBlockSize(passenger.tx);
   }
@@ -463,6 +1213,41 @@ function passengerPosition(passenger: Passenger, elapsedMs: number): StreetPoint
   );
 }
 
+/** Reconstruct behind the current position; never accumulate animation samples. */
+function passengerTrail(
+  path: StreetPoint[],
+  progress: number,
+  position: StreetPoint,
+): readonly StreetPoint[] | undefined {
+  const { segments, distance } = pathGeometry(path);
+  const travelled = distance * progress;
+  if (!Number.isFinite(travelled) || travelled <= 0.000001) return undefined;
+  const startDistance = Math.max(0, travelled - 110);
+  const points: StreetPoint[] = [];
+  const append = (point: StreetPoint) => {
+    const previous = points.at(-1);
+    if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) <= 0.000001) return;
+    points.push(point);
+    // Keep the most recent corners if a future route has more turns than today's paths.
+    if (points.length > 8) points.shift();
+  };
+  let segmentStart = 0;
+  for (const { from, to, length } of segments) {
+    const segmentEnd = segmentStart + length;
+    if (length > 0 && segmentEnd > startDistance && segmentStart < travelled) {
+      const start = Math.max(0, (startDistance - segmentStart) / length);
+      const end = Math.min(1, (travelled - segmentStart) / length);
+      append({ x: from.x + (to.x - from.x) * start, y: from.y + (to.y - from.y) * start });
+      append({ x: from.x + (to.x - from.x) * end, y: from.y + (to.y - from.y) * end });
+    }
+    segmentStart = segmentEnd;
+    if (segmentStart >= travelled) break;
+  }
+  if (points.length < 2) return undefined;
+  points[points.length - 1] = position;
+  return points;
+}
+
 function pathHeadingDegrees(path: StreetPoint[], progress: number): number {
   const { segments, distance } = pathGeometry(path);
   let remaining = distance * Math.max(0, Math.min(1, progress));
@@ -492,7 +1277,9 @@ function startPhase(
   path: StreetPoint[],
   durationMs: number,
 ): Passenger {
-  return { ...passenger, inHandoff: false, phase, phaseStartedAt: now, durationMs, path };
+  const updated = { ...passenger, inHandoff: false, phase, phaseStartedAt: now, durationMs, path };
+  if (updated.queueReserved && !needsQueuePlace(updated)) updated.queueReserved = false;
+  return updated;
 }
 
 function startWalking(passenger: Passenger, now: number, from: StreetPoint): Passenger {
@@ -507,13 +1294,13 @@ function startWalking(passenger: Passenger, now: number, from: StreetPoint): Pas
 }
 
 function startReturning(passenger: Passenger, now: number, from: StreetPoint): Passenger {
-  const path = platformPath(from, queuePosition(passenger.queueIndex));
+  const path = platformPath(from, passengerQueuePoint(passenger));
   return { ...startPhase(passenger, 'returning', now, path, pathDuration(path)), wagon: null };
 }
 
 function parkAtQueue(passenger: Passenger, now: number): Passenger {
   return {
-    ...startPhase(passenger, 'parked', now, [passengerPosition(passenger, now)], 0),
+    ...startPhase(passenger, waitingPhase(passenger), now, [passengerPosition(passenger, now)], 0),
     wagon: null,
     plannedWagon: null,
     selectedForCandidate: false,
@@ -521,80 +1308,173 @@ function parkAtQueue(passenger: Passenger, now: number): Passenger {
   };
 }
 
-function alignWaitingQueue(passengers: Passenger[], now: number, instant = false): Passenger[] {
-  // Only reappearing historical IDs need a new current queue slot. Existing arrivals keep theirs.
-  const returningToSample = passengers
-    .filter(
-      (passenger) =>
-        passenger.presentInSample &&
-        passenger.tx.status === 'pending' &&
-        passenger.queueIndex >= HISTORY_QUEUE_START &&
-        !passenger.wagon &&
-        !passenger.inHandoff &&
-        !passenger.departureIncluded &&
-        !passenger.awaitingVerifiedDeparture,
-    )
+function passengerQueuePoint(passenger: Passenger): StreetPoint {
+  return (
+    passenger.queuePoint ??
+    (passenger.queueZone === 'history'
+      ? historicalQueuePosition(passenger.queueIndex)
+      : queuePosition(passenger.queueIndex))
+  );
+}
+
+function waitingQueueZone(passenger: Passenger): PassengerQueueZone {
+  return isHistoricalPassenger({
+    tx: passenger.tx,
+    sourceObserved: passenger.presentInSample || passenger.awaitingVerifiedDeparture === true,
+    poolState: passenger.poolState,
+    poolObservedAt: passenger.poolObservedAt,
+    bitcoinArrival: passenger.bitcoinArrival,
+  })
+    ? 'history'
+    : 'active';
+}
+
+/** Seats and approaches release their queue place; exits reserve a destination before returning. */
+function needsQueuePlace(passenger: Passenger): boolean {
+  if (passenger.inHandoff || passenger.joiningArchive || passenger.departureIncluded) return false;
+  return (
+    ['arriving', 'queue', 'parked', 'reordering', 'returning', 'retiring', 'exiting'].includes(
+      passenger.phase,
+    ) ||
+    (passenger.phase === 'confirmed' && passenger.wagon === null)
+  );
+}
+
+function nextQueueSlot(occupied: number[], capacity: number): number {
+  let slot = occupied.findIndex((count) => count === 0);
+  if (slot < 0) {
+    slot = 0;
+    for (let index = 1; index < capacity; index += 1)
+      if (occupied[index]! < occupied[slot]!) slot = index;
+  }
+  const index = slot + occupied[slot]! * capacity;
+  occupied[slot]! += 1;
+  return index;
+}
+
+function waitingPhase(passenger: Passenger): PassengerPhase {
+  return passenger.tx.status === 'confirmed'
+    ? 'confirmed'
+    : waitingQueueZone(passenger) === 'active'
+      ? 'queue'
+      : 'parked';
+}
+
+function alignWaitingQueue(
+  passengers: Passenger[],
+  now: number,
+  layout: QueueLayout,
+  instant = false,
+): Passenger[] {
+  const cached = !instant && alignedQueueCache.get(passengers);
+  if (cached && cached.layout === layout && cached.passengerCount === passengers.length)
+    return passengers;
+  const historyLayout = historicalQueueLayout(layout);
+  const occupied = {
+    active: Array<number>(layout.capacity).fill(0),
+    history: Array<number>(historyLayout.capacity).fill(0),
+  };
+  const capacity = (zone: PassengerQueueZone) =>
+    zone === 'history' ? historyLayout.capacity : layout.capacity;
+  const places = new Map<string, number>();
+  // Existing reservations have priority over arrivals. Logical overflow indices
+  // cannot hide an empty physical place: only the first owner keeps each slot.
+  for (const passenger of passengers) {
+    if (!needsQueuePlace(passenger) || !passenger.queueReserved) continue;
+    const zone = waitingQueueZone(passenger);
+    if ((passenger.queueZone ?? 'active') !== zone) continue;
+    const slot = passenger.queueIndex % capacity(zone);
+    if (!Number.isInteger(slot) || slot < 0 || occupied[zone][slot] !== 0) continue;
+    occupied[zone][slot] = 1;
+    places.set(passenger.tx.id, slot);
+  }
+  const unassigned = passengers
+    .filter((passenger) => needsQueuePlace(passenger) && !places.has(passenger.tx.id))
     .sort(
       (left, right) => right.tx.feeRate - left.tx.feeRate || left.tx.id.localeCompare(right.tx.id),
     );
-  const restoredSlots = new Map<string, number>();
-  if (returningToSample.length) {
-    const occupied = new Set(
-      passengers
-        .filter(
-          (passenger) => passenger.presentInSample && passenger.queueIndex < HISTORY_QUEUE_START,
-        )
-        .map((passenger) => passenger.queueIndex),
-    );
-    for (const passenger of returningToSample) {
-      let slot = 0;
-      while (occupied.has(slot) && slot < HISTORY_QUEUE_START) slot += 1;
-      if (slot === HISTORY_QUEUE_START) break;
-      occupied.add(slot);
-      restoredSlots.set(passenger.tx.id, slot);
-    }
+  for (const passenger of unassigned) {
+    const zone = waitingQueueZone(passenger);
+    places.set(passenger.tx.id, nextQueueSlot(occupied[zone], capacity(zone)));
   }
-  return mapPassengers(passengers, (passenger) => {
-    if (
-      passenger.wagon ||
-      passenger.inHandoff ||
-      passenger.departureIncluded ||
-      passenger.awaitingVerifiedDeparture ||
-      passenger.joiningArchive
-    )
-      return passenger;
-    const queueIndex =
-      restoredSlots.get(passenger.tx.id) ??
-      (!passenger.presentInSample
-        ? passenger.queueIndex >= HISTORY_QUEUE_START
-          ? passenger.queueIndex
-          : HISTORY_QUEUE_START + (stableHash(passenger.tx.id) % MAX_PASSENGERS)
-        : passenger.queueIndex);
-    const updated = queueIndex === passenger.queueIndex ? passenger : { ...passenger, queueIndex };
-    const phase = passenger.presentInSample ? 'queue' : 'parked';
-    const target = queuePosition(queueIndex);
+  let reordering = false;
+  const aligned = mapPassengers(passengers, (passenger) => {
+    // A reordering path may settle within 0.5 units before its duration ends.
+    // Keep evaluating that time-dependent transition on every clock tick.
+    if (passenger.phase === 'reordering') reordering = true;
+    const queueIndex = places.get(passenger.tx.id);
+    if (queueIndex === undefined)
+      return passenger.queueReserved ? { ...passenger, queueReserved: false } : passenger;
+    const queueZone = waitingQueueZone(passenger);
+    const target =
+      queueZone === 'history'
+        ? historicalQueuePosition(queueIndex, layout)
+        : queuePosition(queueIndex, layout);
+    const changedPoint =
+      passenger.queuePoint?.x !== target.x || passenger.queuePoint?.y !== target.y;
+    const updated =
+      passenger.queueReserved &&
+      passenger.queueIndex === queueIndex &&
+      passenger.queueZone === queueZone &&
+      !changedPoint
+        ? passenger
+        : { ...passenger, queueIndex, queueZone, queuePoint: target, queueReserved: true };
     const point = passengerPosition(passenger, now);
-    if (instant && ['queue', 'parked', 'reordering'].includes(passenger.phase))
-      return startPhase(updated, phase, now, [target], 0);
-    // Arrivals, door passages and returns finish their captured path before changing places.
-    if (!['queue', 'parked', 'reordering'].includes(passenger.phase)) return updated;
-    if (Math.hypot(point.x - target.x, point.y - target.y) < 0.5)
-      return passenger.phase === 'reordering'
-        ? { ...startPhase(updated, phase, now, [target], 0), retryAt: now + 300 }
-        : updated;
-    const end = passenger.path[passenger.path.length - 1];
-    if (passenger.phase === 'reordering' && end?.x === target.x && end.y === target.y)
-      return updated;
-    const path = platformPath(point, target);
-    const { distance } = pathGeometry(path);
-    return startPhase(
-      updated,
-      'reordering',
-      now,
-      path,
-      Math.max(350, Math.min(1_000, distance * 3)),
-    );
+    const endpoint = passenger.path[passenger.path.length - 1];
+    if (['queue', 'parked', 'reordering', 'confirmed'].includes(passenger.phase)) {
+      const phase = waitingPhase(passenger);
+      if (instant) {
+        if (passenger.phase === phase && point.x === target.x && point.y === target.y)
+          return updated;
+        return startPhase(updated, phase, now, [target], 0);
+      }
+      if (Math.hypot(point.x - target.x, point.y - target.y) < 0.5)
+        return passenger.phase !== phase
+          ? { ...startPhase(updated, phase, now, [target], 0), retryAt: now + 300 }
+          : updated;
+      if (passenger.phase === 'reordering' && endpoint?.x === target.x && endpoint.y === target.y)
+        return updated;
+      const path = platformPath(point, target);
+      const { distance } = pathGeometry(path);
+      return startPhase(
+        updated,
+        'reordering',
+        now,
+        path,
+        Math.max(350, Math.min(1_000, distance * 3)),
+      );
+    }
+    // Door passages finish their captured route. Arrivals/returns keep their
+    // current position but can retarget a place lost during a resize or an exit.
+    if (
+      ['arriving', 'returning', 'retiring'].includes(passenger.phase) &&
+      (endpoint?.x !== target.x || endpoint.y !== target.y)
+    ) {
+      const path = passenger.phase === 'arriving' ? [point, target] : platformPath(point, target);
+      const remaining = Math.max(300, passenger.phaseStartedAt + passenger.durationMs - now);
+      return startPhase(updated, passenger.phase, now, path, remaining);
+    }
+    return updated;
   });
+  if (!instant && aligned === passengers && !reordering)
+    alignedQueueCache.set(passengers, { layout, passengerCount: passengers.length });
+  return aligned;
+}
+
+/** Reflow only pedestrian destinations; block evidence, vehicle clocks and seats are preserved. */
+export function reflowPassengerQueue(
+  state: PassengerMotionState,
+  queueLayout: QueueLayout,
+): PassengerMotionState {
+  const passengers = alignWaitingQueue(state.passengers, state.elapsedMs, queueLayout);
+  if (
+    passengers === state.passengers &&
+    state.queueLayout?.columns === queueLayout.columns &&
+    state.queueLayout?.rows === queueLayout.rows &&
+    state.queueLayout?.capacity === queueLayout.capacity
+  )
+    return state;
+  return { ...state, queueLayout, passengers };
 }
 
 function startExit(
@@ -613,6 +1493,9 @@ function startExit(
       [from, { x: inside.x, y: from.y }, inside, exitPlatformPoint(passenger.wagon)],
       durationMs,
     ),
+    hasBoardedProjection:
+      passenger.hasBoardedProjection ||
+      (passenger.tx.status === 'pending' && isInsideDoorway(from)),
   };
 }
 
@@ -749,7 +1632,11 @@ function groupWaitingObservations(
   const joiningIds = new Set(
     history
       .filter(
-        (passenger) => passenger.phase === 'parked' && !passenger.wagon && !passenger.inHandoff,
+        (passenger) =>
+          passenger.phase === 'parked' &&
+          !passenger.wagon &&
+          !passenger.plannedWagon &&
+          !passenger.inHandoff,
       )
       .sort((left, right) => left.phaseStartedAt - right.phaseStartedAt)
       .slice(0, joiningCount)
@@ -760,6 +1647,7 @@ function groupWaitingObservations(
       archive,
       merging.map((passenger) => ({
         tx: passenger.tx,
+        nonceDependency: passenger.nonceDependency,
         lastSeenAt: passenger.lastObservedAt ?? archive.archiveObservedAt,
       })),
     ),
@@ -785,10 +1673,12 @@ function admitPassengers(
     archiveObservedAt: 0,
   },
   residentLimit = MAX_RESIDENT_PASSENGERS,
+  queueLayout: QueueLayout = DEFAULT_QUEUE_LAYOUT,
+  initialStock = false,
 ): { passengers: Passenger[]; pendingAdmissions: PassengerAdmission[] } {
   if (admissions.length === 0) return { passengers: residents, pendingAdmissions: admissions };
   let passengers = residents;
-  let occupied: Set<number> | undefined;
+  let occupied: number[] | undefined;
   const residentIds = new Set(residentTransactionIds(residents));
   const pendingAdmissions: PassengerAdmission[] = [];
   let arrivalIndex = 0;
@@ -803,6 +1693,7 @@ function admitPassengers(
           right.tx.feeRate - left.tx.feeRate || left.tx.id.localeCompare(right.tx.id),
       ),
   ];
+  const arrivalSpacing = Math.min(90, MAX_ARRIVAL_STAGGER_MS / Math.max(1, incoming.length - 1));
   for (const admission of incoming.slice(0, MAX_PASSENGERS)) {
     if (residentIds.has(admission.tx.id)) continue;
     if (passengers.length >= residentLimit || blockedIds.has(admission.tx.id)) {
@@ -813,34 +1704,44 @@ function admitPassengers(
     // and their cached poses intact until an admission really has a free place.
     if (passengers === residents) passengers = [...residents];
     if (!occupied) {
-      occupied = new Set<number>();
-      for (const resident of residents) {
-        if (
-          resident.presentInSample ||
-          resident.wagon !== null ||
-          resident.inHandoff ||
-          resident.departureIncluded ||
-          resident.awaitingVerifiedDeparture
-        )
-          occupied.add(resident.queueIndex);
-      }
+      passengers = alignWaitingQueue(passengers, now, queueLayout);
+      occupied = Array<number>(queueLayout.capacity).fill(0);
+      for (const resident of passengers)
+        if (needsQueuePlace(resident) && (resident.queueZone ?? 'active') === 'active')
+          occupied[resident.queueIndex % queueLayout.capacity]! += 1;
     }
-    let queueIndex = 0;
-    while (occupied.has(queueIndex)) queueIndex += 1;
-    occupied.add(queueIndex);
+    const queueIndex = nextQueueSlot(occupied, queueLayout.capacity);
     residentIds.add(admission.tx.id);
-    const queue = queuePosition(queueIndex);
+    const queue = queuePosition(queueIndex, queueLayout);
     const archived = archive.waitingArchiveTransactions.get(admission.tx.id);
-    const path = archived ? [WAITING_ARCHIVE_POSITION] : [arrivalStart(queueIndex), queue];
+    const lateInclusion =
+      !initialStock &&
+      !archived &&
+      admission.arrivalKind === 'late-inclusion' &&
+      admission.tx.status === 'confirmed' &&
+      admission.tx.blockHash !== undefined;
+    const path = initialStock
+      ? [queue]
+      : archived
+        ? [WAITING_ARCHIVE_POSITION]
+        : lateInclusion
+          ? networkBoxArrivalPath()
+          : [arrivalStart(queueIndex, queueLayout), queue];
     passengers.push({
       ...admission,
+      arrivalKind: initialStock
+        ? 'initial-stock'
+        : lateInclusion
+          ? 'late-inclusion'
+          : 'new-observation',
       queueIndex,
+      queueZone: 'active',
+      queuePoint: queue,
+      queueReserved: true,
       seatIndex: admission.plannedSeatIndex,
-      phase: archived ? 'parked' : 'arriving',
-      phaseStartedAt: archived
-        ? now
-        : now + arrivalIndex++ * 90 + (stableHash(admission.tx.id) % 120),
-      durationMs: archived ? 0 : pathDuration(path),
+      phase: initialStock ? 'queue' : archived ? 'parked' : 'arriving',
+      phaseStartedAt: initialStock || archived ? now : now + arrivalIndex++ * arrivalSpacing,
+      durationMs: initialStock || archived ? 0 : pathDuration(path),
       retryAt: now,
       path,
       wagon: null,
@@ -870,6 +1771,7 @@ function sourceDepartures(state: PassengerMotionState, snapshot: Snapshot): Depa
     known.set(observation.tx.id, observation.tx);
   for (const passenger of state.passengers) known.set(passenger.tx.id, passenger.tx);
   for (const admission of state.pendingAdmissions) known.set(admission.tx.id, admission.tx);
+  const representedIds = new Set(known.keys());
   for (const tx of snapshot.transactions) known.set(tx.id, tx);
   const observations = new Map<string, DepartureObservation>();
   for (const inclusion of snapshot.inclusions ?? []) {
@@ -898,12 +1800,16 @@ function sourceDepartures(state: PassengerMotionState, snapshot: Snapshot): Depa
         (receipt) => receipt.hash === observation.block.hash,
       );
       const handledIds = new Set(handled?.transactionIds);
+      const transactions = observation.transactions
+        .filter((tx) => !handledIds.has(tx.id))
+        .slice(0, MAX_DEPARTURE_PASSENGERS);
       return {
         ...observation,
         recovered: Boolean(handled) || observation.block.height < (snapshot.blocks[0]?.height ?? 0),
-        transactions: observation.transactions
-          .filter((tx) => !handledIds.has(tx.id))
-          .slice(0, MAX_DEPARTURE_PASSENGERS),
+        transactions,
+        networkOriginIds: transactions
+          .filter((tx) => !representedIds.has(tx.id))
+          .map((tx) => tx.id),
       };
     })
     .filter(
@@ -936,14 +1842,122 @@ function initialDepartureReceipts(snapshot: Snapshot): DepartureReceipt[] {
   return [...receipts.values()].slice(-MAX_INCLUSION_BLOCKS * 2);
 }
 
-function prepareForDeparture(state: PassengerMotionState, now: number): PassengerMotionState {
-  const remainingMs = Math.max(
-    MIN_PREPARATION_PASSAGE_MS,
-    Math.min(
-      PREPARATION_DURATION_MS,
-      (state.preparationStartedAt ?? now) + PREPARATION_DURATION_MS - now,
-    ),
+function receiptTransactionIds(receipts: DepartureReceipt[]): Set<string> {
+  return new Set(receipts.flatMap((receipt) => receipt.transactionIds));
+}
+
+function activeDepartureTransactionIds(state: PassengerMotionState): Set<string> {
+  return new Set([
+    ...state.preparationTransactions.map((tx) => tx.id),
+    ...state.queuedDepartures.flatMap((observation) => observation.transactions.map((tx) => tx.id)),
+    ...state.departingPassengers.map(({ tx }) => tx.id),
+  ]);
+}
+
+/** A receipt is recorded when scheduled; its active cohort must still reach its vehicle. */
+function completedInclusionIds(state: PassengerMotionState): Set<string> {
+  const completed = receiptTransactionIds(state.handledDepartures);
+  for (const id of activeDepartureTransactionIds(state)) completed.delete(id);
+  return completed;
+}
+
+function blockContradicted(block: Pick<Block, 'height' | 'hash'>, snapshot: Snapshot): boolean {
+  if (snapshot.status !== 'ok') return false;
+  const latestHeight = snapshot.blocks[0]?.height;
+  return (
+    (latestHeight !== undefined && block.height > latestHeight) ||
+    snapshot.blocks.some(
+      (current) => current.height === block.height && current.hash !== block.hash,
+    ) ||
+    (snapshot.inclusions ?? []).some(
+      ({ block: current }) => current.height === block.height && current.hash !== block.hash,
+    )
   );
+}
+
+function discardContradictedReceipts(
+  state: PassengerMotionState,
+  snapshot: Snapshot,
+): PassengerMotionState {
+  if (snapshot.status !== 'ok') return state;
+  const handledDepartures = state.handledDepartures.filter(
+    (receipt) => !blockContradicted(receipt, snapshot),
+  );
+  return handledDepartures.length === state.handledDepartures.length
+    ? state
+    : { ...state, handledDepartures };
+}
+
+/** Exact consumed evidence wins over a replayed pool sample, never over an unknown absence. */
+function discardCompletedObservations(
+  state: PassengerMotionState,
+  completed = completedInclusionIds(state),
+): PassengerMotionState {
+  if (completed.size === 0) return state;
+  const passengers = state.passengers.filter((passenger) => !completed.has(passenger.tx.id));
+  const pendingAdmissions = state.pendingAdmissions.filter(
+    (admission) => !completed.has(admission.tx.id),
+  );
+  const archivedIds = [...state.waitingArchiveTransactions.keys()].filter((id) =>
+    completed.has(id),
+  );
+  if (
+    passengers.length === state.passengers.length &&
+    pendingAdmissions.length === state.pendingAdmissions.length &&
+    archivedIds.length === 0
+  )
+    return state;
+  return {
+    ...state,
+    passengers,
+    pendingAdmissions,
+    ...retainWaitingArchive(state, [], archivedIds),
+    ...projectionOccupancy(passengers),
+  };
+}
+
+/** Only exact late discoveries get a network origin; known travellers keep theirs. */
+function departureAdmissions(
+  transactions: Tx[],
+  state: PassengerMotionState,
+  networkOrigins?: ReadonlySet<string>,
+): PassengerAdmission[] {
+  if (transactions.length === 0) return [];
+  const residents = residentTransactionIds(state.passengers);
+  const awaiting = new Map(
+    state.pendingAdmissions.map((admission) => [admission.tx.id, admission]),
+  );
+  return transactions.map((tx) => ({
+    tx,
+    plannedWagon: null,
+    plannedSeatIndex: 0,
+    selectedForCandidate: false,
+    reason: 'observed',
+    arrivalKind:
+      awaiting.get(tx.id)?.arrivalKind ??
+      ((networkOrigins
+        ? networkOrigins.has(tx.id)
+        : !residents.has(tx.id) &&
+          !awaiting.has(tx.id) &&
+          !state.waitingArchiveTransactions.has(tx.id)) &&
+      tx.status === 'confirmed' &&
+      tx.blockHash !== undefined
+        ? 'late-inclusion'
+        : undefined),
+  }));
+}
+
+function prepareForDeparture(
+  state: PassengerMotionState,
+  now: number,
+  networkOrigins?: ReadonlySet<string>,
+): PassengerMotionState {
+  const preparationMs = statePreparationDurationMs(state);
+  const passageDeadline = Math.max(
+    now + MIN_PREPARATION_PASSAGE_MS,
+    Math.min(now + preparationMs, (state.preparationStartedAt ?? now) + preparationMs),
+  );
+  const remainingMs = passageDeadline - now;
   const exitMs = Math.min(FAST_EXIT_DURATION_MS, remainingMs);
   // Riders of the lower projection share this deadline between their exit and boarding above.
   const connectingExitMs = Math.max(MIN_PREPARATION_PASSAGE_MS, Math.min(exitMs, remainingMs / 2));
@@ -952,13 +1966,7 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
   const missing = state.preparationTransactions.filter((tx) => !existingIds.has(tx.id));
   const grouped = groupWaitingObservations(state.passengers, state, now, missing.length);
   const admissions = [
-    ...missing.map((tx): PassengerAdmission => ({
-      tx,
-      plannedWagon: null,
-      plannedSeatIndex: 0,
-      selectedForCandidate: false,
-      reason: 'observed',
-    })),
+    ...departureAdmissions(missing, state, networkOrigins),
     ...state.pendingAdmissions.filter((admission) => !included.has(admission.tx.id)),
   ];
   const admitted = admitPassengers(
@@ -968,6 +1976,35 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
     new Set(),
     grouped,
     MAX_RESIDENT_PASSENGERS + MAX_DEPARTURE_PASSENGERS,
+    state.queueLayout,
+  );
+  // Count only new, proved network passages. Existing residents keep their path and clock.
+  const networkNewcomers: Passenger[] = [];
+  let networkPassages = 0;
+  for (const passenger of admitted.passengers) {
+    if (
+      passenger.inHandoff ||
+      passenger.arrivalKind !== 'late-inclusion' ||
+      !included.has(passenger.tx.id)
+    )
+      continue;
+    if (passenger.phase === 'preparing' && (passenger.networkDoorLeadMs ?? 0) > 0)
+      networkPassages += 1;
+    else if (passenger.phase === 'arriving') networkNewcomers.push(passenger);
+  }
+  const networkTimingScale = Math.min(1, remainingMs / NETWORK_TIMING_REFERENCE_MS);
+  const networkPreludeMs =
+    (NETWORK_SIGNAL_LEAD_MS + NETWORK_DOOR_BEFORE_PASSAGE_MS) * networkTimingScale;
+  const networkSpacing =
+    networkNewcomers.length > 1
+      ? Math.min(
+          NETWORK_COHORT_SPACING_MS,
+          MAX_NETWORK_COHORT_STAGGER_MS / (networkNewcomers.length - 1),
+          ((remainingMs - networkPreludeMs) * 0.4) / (networkNewcomers.length - 1),
+        )
+      : 0;
+  const networkOrder = new Map(
+    networkNewcomers.map((passenger, index) => [passenger.tx.id, index]),
   );
   const passengers = mapPassengers(admitted.passengers, (passenger) => {
     if (passenger.inHandoff) return passenger;
@@ -999,12 +2036,31 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
       if (passenger.wagon === 'later' && isInsideDoorway(point))
         return startPreparationExit(updated, now, point, connectingExitMs);
       const seat = wagonSeat('next', inclusion.index);
-      const path =
-        passenger.wagon === 'next' && isInsideDoorway(point)
+      const fromNetwork =
+        passenger.arrivalKind === 'late-inclusion' && passenger.phase === 'arriving';
+      const networkDoorLeadMs = fromNetwork
+        ? NETWORK_DOOR_BEFORE_PASSAGE_MS * networkTimingScale
+        : 0;
+      const networkIndex = networkOrder.get(passenger.tx.id) ?? 0;
+      const passageLeadMs = fromNetwork ? networkPreludeMs + networkIndex * networkSpacing : 0;
+      const passageStartedAt = now + passageLeadMs;
+      const path = fromNetwork
+        ? networkBoxBoardingPath(
+            inclusion.index,
+            (networkPassages + networkIndex) % NETWORK_FLOW_LANES.length,
+          )
+        : passenger.wagon === 'next' && isInsideDoorway(point)
           ? [point, seat]
           : [...platformPath(point, boardingApproach('next')), entryDoorPoint('next'), seat];
       return {
-        ...startPhase(updated, 'preparing', now, path, remainingMs),
+        ...startPhase(
+          updated,
+          'preparing',
+          passageStartedAt,
+          path,
+          passageDeadline - passageStartedAt,
+        ),
+        networkDoorLeadMs: fromNetwork ? networkDoorLeadMs : undefined,
         wagon: 'next' as const,
         seatIndex: inclusion.index,
         handoffPhase: undefined,
@@ -1015,11 +2071,13 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
       point = passengerPosition(passenger, now);
       if (isInsideDoorway(point)) return startPreparationExit(passenger, now, point, exitMs);
     }
-    // Retained riders may free resident places during this stationary stop. Riders
-    // still assigned to either projection stay in the lower vehicle for promotion.
+    // A node candidate determines which lower riders may be promoted. Evacuate
+    // incompatible riders while stopped instead of carrying them up just to exit.
     if (
       passenger.wagon === 'later' &&
-      (!passenger.presentInSample || !passenger.plannedWagon || passenger.tx.status === 'confirmed')
+      (!passenger.plannedWagon ||
+        passenger.tx.status === 'confirmed' ||
+        (state.blockTemplate !== null && passenger.plannedWagon !== 'next'))
     ) {
       point = passengerPosition(passenger, now);
       if (isInsideDoorway(point)) return startPreparationExit(passenger, now, point, exitMs);
@@ -1031,7 +2089,7 @@ function prepareForDeparture(state: PassengerMotionState, now: number): Passenge
   return {
     ...state,
     ...admitted,
-    passengers,
+    passengers: alignWaitingQueue(passengers, now, state.queueLayout),
     ...retainWaitingArchive(grouped, [], residentTransactionIds(admitted.passengers)),
   };
 }
@@ -1041,13 +2099,11 @@ function beginPreparation(
   observation: DepartureObservation,
 ): PassengerMotionState {
   // The source list is bounded, and IDs already in the scene keep their positions.
-  const admissions = observation.transactions.map((tx): PassengerAdmission => ({
-    tx,
-    plannedWagon: null,
-    plannedSeatIndex: 0,
-    selectedForCandidate: false,
-    reason: 'observed',
-  }));
+  const admissions = departureAdmissions(
+    observation.transactions,
+    state,
+    observation.networkOriginIds ? new Set(observation.networkOriginIds) : undefined,
+  );
   const residentIds = residentTransactionIds(state.passengers);
   const reserve = observation.transactions.filter((tx) => !residentIds.has(tx.id)).length;
   const grouped = groupWaitingObservations(state.passengers, state, state.elapsedMs, reserve);
@@ -1058,6 +2114,7 @@ function beginPreparation(
     new Set(),
     grouped,
     MAX_RESIDENT_PASSENGERS + MAX_DEPARTURE_PASSENGERS,
+    state.queueLayout,
   );
   return prepareForDeparture(
     {
@@ -1078,8 +2135,13 @@ function beginPreparation(
   );
 }
 
-export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState {
-  const plan = planSnapshot(snapshot);
+export function createPassengerMotion(
+  snapshot: Snapshot,
+  queueLayout: QueueLayout = DEFAULT_QUEUE_LAYOUT,
+): PassengerMotionState {
+  snapshot = canonicalSnapshot(snapshot);
+  const handledDepartures = initialDepartureReceipts(snapshot);
+  const plan = planSnapshot(snapshot, [], 0, receiptTransactionIds(handledDepartures));
   const admitted = admitPassengers(
     [],
     plan.transactions.map((tx) => admissionFor(tx, plan)),
@@ -1090,9 +2152,19 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
       waitingArchiveUnknownCount: 0,
       archiveObservedAt: snapshot.observedAt,
     },
+    MAX_RESIDENT_PASSENGERS,
+    queueLayout,
+    true,
   );
+  admitted.passengers = admitted.passengers.map((passenger) => ({
+    ...passenger,
+    lastObservedAt: transactionObservedAt(snapshot, passenger.tx),
+    ...plan.observations.get(passenger.tx.id),
+  }));
+  admitted.passengers = alignWaitingQueue(admitted.passengers, 0, queueLayout, true);
   return {
     context: motionContext(snapshot),
+    queueLayout,
     elapsedMs: 0,
     observedBlockHash: snapshot.blocks[0]?.hash ?? null,
     observedBlockHeight: snapshot.blocks[0]?.height ?? null,
@@ -1106,7 +2178,7 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
     preparationTransactions: [],
     queuedDeparture: null,
     queuedDepartures: [],
-    handledDepartures: initialDepartureReceipts(snapshot),
+    handledDepartures,
     departingPassengers: [],
     waitingArchiveCount: 0,
     waitingArchiveTransactions: new Map(),
@@ -1114,6 +2186,9 @@ export function createPassengerMotion(snapshot: Snapshot): PassengerMotionState 
     archiveObservedAt: snapshot.observedAt,
     feeThreshold: plan.feeThreshold,
     candidateCapacity: plan.capacity,
+    blockTemplate: plan.blockTemplate,
+    ethereumProjection: plan.ethereumProjection,
+    ethereumDependencies: snapshot.ethereumDependencies,
     ...projectionOccupancy(admitted.passengers),
     ...admitted,
   };
@@ -1128,7 +2203,8 @@ function reconcileDesiredPassenger(passenger: Passenger, now: number, moving: bo
   )
     return passenger;
   const point = passengerPosition(passenger, now);
-  if (!passenger.presentInSample) return waitOutsideSample(passenger, now);
+  if (!passenger.presentInSample && !passenger.plannedWagon)
+    return waitOutsideSample(passenger, now);
   if (['arriving', 'exiting', 'returning'].includes(passenger.phase)) return passenger;
   if (passenger.wagon && isInsideDoorway(point)) {
     if (passenger.wagon !== passenger.plannedWagon || passenger.tx.status === 'confirmed')
@@ -1158,7 +2234,7 @@ function reconcileDesiredPassenger(passenger: Passenger, now: number, moving: bo
       return passenger;
     return { ...startPhase(passenger, 'confirmed', now, [point], 0), wagon: null };
   }
-  if (passenger.phase === 'parked')
+  if (passenger.phase === 'parked' && waitingQueueZone(passenger) === 'active')
     return { ...startPhase(passenger, 'queue', now, [point], 0), retryAt: now + QUEUE_RETRY_MS };
   return passenger;
 }
@@ -1167,9 +2243,13 @@ export function reconcilePassengerMotion(
   state: PassengerMotionState,
   snapshot: Snapshot,
 ): PassengerMotionState {
-  if (state.context !== motionContext(snapshot)) return createPassengerMotion(snapshot);
+  snapshot = canonicalSnapshot(snapshot);
+  if (state.context !== motionContext(snapshot))
+    return createPassengerMotion(snapshot, state.queueLayout);
   if (state.observedBlockHeight === null && snapshot.status === 'ok' && snapshot.blocks.length)
-    return createPassengerMotion(snapshot);
+    return createPassengerMotion(snapshot, state.queueLayout);
+  state = discardCompletedObservations(discardContradictedReceipts(state, snapshot));
+  const completedIds = completedInclusionIds(state);
   let availableDepartureSlots = MAX_INCLUSION_BLOCKS - state.queuedDepartures.length;
   const observations = sourceDepartures(state, snapshot).filter((observation) => {
     if (
@@ -1182,7 +2262,25 @@ export function reconcilePassengerMotion(
     availableDepartureSlots -= 1;
     return true;
   });
-  const plan = planSnapshot(snapshot);
+  let projectionExcludedIds: ReadonlySet<string> = completedIds;
+  if (activeBitcoinBlockTemplate(snapshot)) {
+    // A proof for the block being handled is no longer a candidate for the
+    // node's new-parent proposal, even if its old pending row was retained.
+    projectionExcludedIds = new Set([
+      ...completedIds,
+      ...state.preparationTransactions.map((tx) => tx.id),
+      ...[...state.queuedDepartures, ...observations].flatMap((observation) =>
+        observation.transactions.map((tx) => tx.id),
+      ),
+    ]);
+  }
+  const plan = planSnapshot(
+    snapshot,
+    state.passengers,
+    state.elapsedMs,
+    projectionExcludedIds,
+    state,
+  );
   const previous = new Map(state.passengers.map((passenger) => [passenger.tx.id, passenger]));
   const nextIds = new Set(plan.sourceTransactions.map((tx) => tx.id));
   const departingIds = departingTransactionIds(state.departingPassengers);
@@ -1202,23 +2300,28 @@ export function reconcilePassengerMotion(
       seatIndex: existing.wagon ? existing.seatIndex : admission.plannedSeatIndex,
       presentInSample: true,
       joiningArchive: false,
-      lastObservedAt: snapshot.observedAt,
+      lastObservedAt: Math.max(existing.lastObservedAt ?? 0, transactionObservedAt(snapshot, tx)),
+      ...plan.observations.get(tx.id),
     });
   }
   for (const passenger of state.passengers) {
     if (nextIds.has(passenger.tx.id)) continue;
     passengers.push({
       ...passenger,
+      ...admissionFor(passenger.tx, plan),
       presentInSample: false,
-      plannedWagon: null,
-      selectedForCandidate: false,
+      seatIndex: passenger.seatIndex,
+      joiningArchive: plan.admitted.has(passenger.tx.id) ? false : passenger.joiningArchive,
+      ...plan.observations.get(passenger.tx.id),
     });
   }
   const reservedArchive = new Map(state.waitingArchiveTransactions);
   const promised = new Map<string, Tx>();
-  for (const tx of state.preparationTransactions) promised.set(tx.id, tx);
+  if (!state.departingBlock || !blockContradicted(state.departingBlock, snapshot))
+    for (const tx of state.preparationTransactions) promised.set(tx.id, tx);
   for (const observation of [...state.queuedDepartures, ...observations])
-    for (const tx of observation.transactions) promised.set(tx.id, tx);
+    if (!blockContradicted(observation.block, snapshot))
+      for (const tx of observation.transactions) promised.set(tx.id, tx);
   for (const [id, archived] of reservedArchive) {
     const inclusion = promised.get(id);
     reservedArchive.set(id, {
@@ -1248,7 +2351,17 @@ export function reconcilePassengerMotion(
     state.elapsedMs,
     departingIds,
     grouped,
+    MAX_RESIDENT_PASSENGERS,
+    state.queueLayout,
   );
+  admitted.passengers = mapPassengers(admitted.passengers, (passenger) => {
+    if (previous.has(passenger.tx.id)) return passenger;
+    return {
+      ...passenger,
+      lastObservedAt: transactionObservedAt(snapshot, passenger.tx),
+      ...plan.observations.get(passenger.tx.id),
+    };
+  });
   let next: PassengerMotionState = {
     ...state,
     ...admitted,
@@ -1263,6 +2376,9 @@ export function reconcilePassengerMotion(
         : state.observedBlockHeight,
     feeThreshold: plan.feeThreshold,
     candidateCapacity: plan.capacity,
+    blockTemplate: plan.blockTemplate,
+    ethereumProjection: plan.ethereumProjection,
+    ethereumDependencies: snapshot.ethereumDependencies,
     queuedDepartures: state.queuedDepartures.map((observation) => ({
       ...observation,
       transactions: [...observation.transactions],
@@ -1299,6 +2415,12 @@ export function reconcilePassengerMotion(
     next.departingBlock = null;
     next.passengers = next.passengers.map((passenger) => ({
       ...passenger,
+      phase:
+        passenger.phase === 'preparing'
+          ? 'boarding'
+          : passenger.departureIncluded && passenger.phase === 'confirmed'
+            ? 'boarded'
+            : passenger.phase,
       departureIncluded: false,
       awaitingVerifiedDeparture: false,
       presentInSample: nextIds.has(passenger.tx.id),
@@ -1322,6 +2444,13 @@ export function reconcilePassengerMotion(
         const included = new Map(queued.transactions.map((tx) => [tx.id, tx]));
         for (const tx of observation.transactions) included.set(tx.id, tx);
         queued.transactions = [...included.values()].slice(0, MAX_DEPARTURE_PASSENGERS);
+        const networkOrigins = new Set([
+          ...(queued.networkOriginIds ?? []),
+          ...(observation.networkOriginIds ?? []),
+        ]);
+        queued.networkOriginIds = queued.transactions
+          .filter((tx) => networkOrigins.has(tx.id))
+          .map((tx) => tx.id);
       } else if (next.queuedDepartures.length < MAX_INCLUSION_BLOCKS) {
         next.queuedDepartures.push(observation);
       } else continue; // Do not mark evidence consumed when the bounded queue is full.
@@ -1349,8 +2478,12 @@ export function reconcilePassengerMotion(
       : passenger,
   );
   next.queuedDeparture = next.queuedDepartures[0] ?? null;
-  next.passengers = alignWaitingQueue(next.passengers, state.elapsedMs);
-  if (next.preparationStartedAt !== null) return prepareForDeparture(next, state.elapsedMs);
+  if (next.preparationStartedAt !== null)
+    return prepareForDeparture(
+      next,
+      state.elapsedMs,
+      new Set(observations.flatMap((observation) => observation.networkOriginIds ?? [])),
+    );
   if (
     next.handoffStartedAt === null &&
     next.candidateArrivalStartedAt === null &&
@@ -1371,6 +2504,7 @@ export function reconcilePassengerMotion(
           (passenger.wagon ?? passenger.plannedWagon) === 'later'),
     ),
   );
+  next.passengers = alignWaitingQueue(next.passengers, state.elapsedMs, state.queueLayout);
   return next;
 }
 
@@ -1410,6 +2544,90 @@ function departPreparedWagons(
     if (departingPassengers.length === MAX_DEPARTURE_PASSENGERS) break;
   }
   const departingIds = departingTransactionIds(departingPassengers);
+  const passengers = mapPassengers(
+    state.passengers.filter((passenger) => !departingIds.has(passenger.tx.id)),
+    (passenger) =>
+      isRider(passenger, 'later', departureAt)
+        ? carryToNext(passenger, departureAt)
+        : passenger.departureIncluded
+          ? { ...passenger, departureIncluded: false }
+          : passenger,
+  );
+  const candidates = new Map<string, Tx>();
+  for (const passenger of passengers)
+    if (passenger.tx.status === 'pending' && passenger.presentInSample)
+      candidates.set(passenger.tx.id, passenger.tx);
+  for (const admission of state.pendingAdmissions)
+    if (admission.tx.status === 'pending') candidates.set(admission.tx.id, admission.tx);
+  for (const tx of retainedProjectionTransactions(
+    passengers,
+    new Set(candidates.keys()),
+    state.archiveObservedAt,
+    departureAt,
+    completedInclusionIds(state),
+    state.blockTemplate,
+    new Map(
+      state.passengers.map((passenger) => [
+        passenger.tx.id,
+        {
+          poolState: passenger.poolState ?? 'unknown',
+          poolObservedAt: passenger.poolObservedAt,
+          poolExcludedAt: passenger.poolExcludedAt,
+          poolExcludedState: passenger.poolExcludedState,
+        },
+      ]),
+    ),
+  ))
+    candidates.set(tx.id, tx);
+  // Promotion changes a vehicle's position. Re-budget its retained riders at
+  // that new position before allowing anyone to board or exit after arrival.
+  const plan = planProjections(
+    [...candidates.values()],
+    state.candidateCapacity,
+    state.feeThreshold,
+    passengers,
+    state.blockTemplate,
+    state.ethereumProjection,
+    new Map(
+      state.passengers.map((passenger) => [
+        passenger.tx.id,
+        {
+          poolState: passenger.poolState ?? 'unknown',
+          poolObservedAt: passenger.poolObservedAt,
+          poolExcludedAt: passenger.poolExcludedAt,
+          poolExcludedState: passenger.poolExcludedState,
+        },
+      ]),
+    ),
+    noncePlanningContext(
+      {
+        mode: state.context.startsWith('ethereum:live:') ? 'live' : 'demo',
+        status: state.ethereumProjection ? 'ok' : 'stale',
+        observedAt: state.archiveObservedAt,
+        transactions: [],
+        blocks:
+          state.observedBlockHash !== null && state.observedBlockHeight !== null
+            ? [{ hash: state.observedBlockHash, height: state.observedBlockHeight }]
+            : [],
+        ethereumDependencies: state.ethereumDependencies,
+      },
+      state.passengers,
+      [...state.waitingArchiveTransactions.values()],
+      state.pendingAdmissions,
+      state.handledDepartures,
+      new Map(
+        state.passengers.map((passenger) => [
+          passenger.tx.id,
+          {
+            poolState: passenger.poolState ?? 'unknown',
+            poolObservedAt: passenger.poolObservedAt,
+            poolExcludedAt: passenger.poolExcludedAt,
+            poolExcludedState: passenger.poolExcludedState,
+          },
+        ]),
+      ),
+    ),
+  );
   return {
     ...state,
     preparationStartedAt: null,
@@ -1418,15 +2636,12 @@ function departPreparedWagons(
     lastDepartureStartedAt: departureAt,
     candidateArrivalStartedAt: null,
     departingPassengers,
-    passengers: mapPassengers(
-      state.passengers.filter((passenger) => !departingIds.has(passenger.tx.id)),
-      (passenger) =>
-        isRider(passenger, 'later', departureAt)
-          ? carryToNext(passenger, departureAt)
-          : passenger.departureIncluded
-            ? { ...passenger, departureIncluded: false }
-            : passenger,
-    ),
+    passengers: mapPassengers(passengers, (passenger) => ({
+      ...passenger,
+      ...admissionFor(passenger.tx, plan),
+      seatIndex: passenger.seatIndex,
+    })),
+    pendingAdmissions: state.pendingAdmissions.map((admission) => admissionFor(admission.tx, plan)),
   };
 }
 
@@ -1435,6 +2650,7 @@ function stationaryPassenger(passenger: Passenger, now: number): Passenger {
   const settled = {
     ...passenger,
     wagon,
+    hasBoardedProjection: passenger.hasBoardedProjection || wagon !== null,
     seatIndex:
       wagon !== null && passenger.wagon === wagon
         ? passenger.seatIndex
@@ -1447,13 +2663,15 @@ function stationaryPassenger(passenger: Passenger, now: number): Passenger {
     phaseStartedAt: now,
     durationMs: 0,
     retryAt: now + QUEUE_RETRY_MS,
-    path: [wagon ? wagonSeat(wagon, settled.seatIndex) : queuePosition(passenger.queueIndex)],
+    path: [wagon ? wagonSeat(wagon, settled.seatIndex) : passengerQueuePoint(passenger)],
   };
 }
 
-/** Reduced motion retains observations on the platform instead of erasing a departing cohort. */
+/** Reduced motion consumes proved inclusions immediately and retains only unproved observations. */
 function settleReducedMotion(state: PassengerMotionState): PassengerMotionState {
   const now = state.elapsedMs;
+  const includedIds = receiptTransactionIds(state.handledDepartures);
+  for (const id of activeDepartureTransactionIds(state)) includedIds.add(id);
   const residents = new Map<string, Passenger>();
   const occupiedQueueSlots = new Set(state.passengers.map((passenger) => passenger.queueIndex));
   const nextQueueIndex = () => {
@@ -1463,6 +2681,7 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
     return index;
   };
   for (const passenger of state.passengers) {
+    if (includedIds.has(passenger.tx.id)) continue;
     const retained = {
       ...passenger,
       departureIncluded: false,
@@ -1473,10 +2692,13 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
     };
     residents.set(
       passenger.tx.id,
-      passenger.presentInSample ? stationaryPassenger(retained, now) : parkAtQueue(retained, now),
+      passenger.presentInSample || passenger.plannedWagon
+        ? stationaryPassenger(retained, now)
+        : parkAtQueue(retained, now),
     );
   }
   const restoreObservation = (tx: Tx) => {
+    if (includedIds.has(tx.id)) return;
     const existing = residents.get(tx.id);
     if (existing) {
       // A queued inclusion upgrades an already visible observation too.
@@ -1508,19 +2730,20 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
       phaseStartedAt: now,
       durationMs: 0,
       retryAt: now + QUEUE_RETRY_MS,
-      path: [queuePosition(queueIndex)],
+      path: [queuePosition(queueIndex, state.queueLayout)],
       wagon: null,
       inHandoff: false,
       presentInSample: tx.status === 'confirmed',
     });
   };
-  // These exact statuses come from a prior source observation. They are retained
-  // as historical observations, never silently relabelled as pending candidates.
+  // An unproved observation keeps its exact prior status. A verified departing
+  // cohort is consumed above instead of reappearing as people waiting on the quay.
   for (const pose of state.departingPassengers) restoreObservation(pose.tx);
   for (const tx of state.preparationTransactions) restoreObservation(tx);
   for (const observation of state.queuedDepartures)
     for (const tx of observation.transactions) restoreObservation(tx);
   for (const admission of state.pendingAdmissions) {
+    if (includedIds.has(admission.tx.id)) continue;
     if (residents.has(admission.tx.id)) continue;
     if (admission.tx.status === 'confirmed') {
       restoreObservation(admission.tx);
@@ -1529,13 +2752,14 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
     const queueIndex = nextQueueIndex();
     const passenger: Passenger = {
       ...admission,
+      lastObservedAt: state.archiveObservedAt,
       queueIndex,
       seatIndex: admission.plannedSeatIndex,
       phase: 'queue',
       phaseStartedAt: now,
       durationMs: 0,
       retryAt: now + QUEUE_RETRY_MS,
-      path: [queuePosition(queueIndex)],
+      path: [queuePosition(queueIndex, state.queueLayout)],
       wagon: null,
       inHandoff: false,
       presentInSample: true,
@@ -1561,14 +2785,22 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
     .concat(overflowObservations)
     .sort(
       (left, right) =>
-        left.phaseStartedAt - right.phaseStartedAt || left.queueIndex - right.queueIndex,
+        Number(left.plannedWagon !== null) - Number(right.plannedWagon !== null) ||
+        (left.lastObservedAt ?? 0) - (right.lastObservedAt ?? 0) ||
+        left.phaseStartedAt - right.phaseStartedAt ||
+        left.queueIndex - right.queueIndex,
     );
   const historyCapacity = Math.max(
     0,
     Math.min(MAX_INDIVIDUAL_HISTORY, MAX_RESIDENT_PASSENGERS - current.length),
   );
   const groupedCount = Math.max(0, history.length - historyCapacity);
-  const passengers = alignWaitingQueue([...current, ...history.slice(groupedCount)], now, true);
+  const passengers = alignWaitingQueue(
+    [...current, ...history.slice(groupedCount)],
+    now,
+    state.queueLayout,
+    true,
+  );
   return {
     ...state,
     ...projectionOccupancy(passengers),
@@ -1593,9 +2825,10 @@ function settleReducedMotion(state: PassengerMotionState): PassengerMotionState 
       },
       history.slice(0, groupedCount).map((passenger) => ({
         tx: passenger.tx,
+        nonceDependency: passenger.nonceDependency,
         lastSeenAt: passenger.lastObservedAt ?? state.archiveObservedAt,
       })),
-      passengers.map((passenger) => passenger.tx.id),
+      [...includedIds, ...passengers.map((passenger) => passenger.tx.id)],
     ),
     passengers,
   };
@@ -1618,6 +2851,12 @@ function advancePassenger(
     ['boarding', 'exiting'].includes(passenger.phase)
   )
     return { ...passenger, phaseStartedAt: passenger.phaseStartedAt + now - previousTime };
+  if (
+    !passenger.hasBoardedProjection &&
+    passenger.tx.status === 'pending' &&
+    hasBoardedProjection(passenger, now)
+  )
+    passenger = { ...passenger, hasBoardedProjection: true };
   if (passenger.inHandoff) {
     if (now - passenger.phaseStartedAt < HANDOFF_DURATION_MS) return passenger;
     const point = passengerPosition(passenger, now);
@@ -1633,7 +2872,6 @@ function advancePassenger(
     };
     if (
       passenger.handoffPhase === 'exiting' ||
-      !passenger.presentInSample ||
       passenger.plannedWagon !== 'next' ||
       passenger.tx.status !== 'pending'
     )
@@ -1655,11 +2893,16 @@ function advancePassenger(
     };
   if (passenger.phase === 'reordering')
     return {
-      ...startPhase(passenger, passenger.presentInSample ? 'queue' : 'parked', now, [point], 0),
+      ...startPhase(passenger, waitingPhase(passenger), now, [point], 0),
       retryAt: now + 300,
     };
   if (passenger.phase === 'arriving') {
-    if (!passenger.presentInSample) return parkAtQueue(passenger, now);
+    if (
+      !passenger.presentInSample &&
+      !passenger.plannedWagon &&
+      waitingQueueZone(passenger) === 'history'
+    )
+      return parkAtQueue(passenger, now);
     return {
       ...startPhase(
         passenger,
@@ -1673,7 +2916,12 @@ function advancePassenger(
     };
   }
   if (passenger.phase === 'queue') {
-    if (!passenger.presentInSample) return parkAtQueue(passenger, now);
+    if (
+      !passenger.presentInSample &&
+      !passenger.plannedWagon &&
+      waitingQueueZone(passenger) === 'history'
+    )
+      return parkAtQueue(passenger, now);
     if (moving || preparing || now < passenger.retryAt || !passenger.plannedWagon) return passenger;
     return startWalking(passenger, now, point);
   }
@@ -1719,7 +2967,7 @@ function advancePassenger(
           ...startPhase(passenger, 'parked', now, [WAITING_ARCHIVE_POSITION], 0),
           wagon: null,
         };
-      return parkAtQueue(passenger, now);
+      if (!passenger.plannedWagon) return parkAtQueue(passenger, now);
     }
     return {
       ...startPhase(
@@ -1747,7 +2995,7 @@ export function advancePassengerMotion(
   const elapsedMs =
     state.elapsedMs +
     Math.min(MAX_STEP_MS, deltaMs) *
-      (Number.isFinite(speed) ? Math.max(0.5, Math.min(2, speed)) : 1);
+      (Number.isFinite(speed) ? Math.max(0.5, Math.min(10, speed)) : 1);
   let workingState = state;
   if (state.preparationStartedAt !== null) {
     workingState = prepareForDeparture(state, state.elapsedMs);
@@ -1761,7 +3009,7 @@ export function advancePassengerMotion(
       },
       elapsedMs,
     );
-    if (elapsedMs - state.preparationStartedAt >= PREPARATION_DURATION_MS) {
+    if (elapsedMs - state.preparationStartedAt >= statePreparationDurationMs(state)) {
       const included = preparationInclusions(workingState.preparationTransactions);
       const readyIds = new Set<string>();
       for (const passenger of workingState.passengers) {
@@ -1781,7 +3029,13 @@ export function advancePassengerMotion(
       const allExcludedOutside = workingState.passengers.every(
         (passenger) => passenger.departureIncluded || !isRider(passenger, 'next', elapsedMs),
       );
-      if (allIncludedReady && allExcludedOutside)
+      const allPromotedRidersEligible =
+        workingState.blockTemplate === null ||
+        workingState.passengers.every(
+          (passenger) =>
+            passenger.plannedWagon === 'next' || !isRider(passenger, 'later', elapsedMs),
+        );
+      if (allIncludedReady && allExcludedOutside && allPromotedRidersEligible)
         workingState = departPreparedWagons(workingState, elapsedMs);
     }
   }
@@ -1816,6 +3070,7 @@ export function advancePassengerMotion(
     workingState.preparationStartedAt !== null
       ? MAX_RESIDENT_PASSENGERS + MAX_DEPARTURE_PASSENGERS
       : MAX_RESIDENT_PASSENGERS,
+    workingState.queueLayout,
   );
   let next: PassengerMotionState = {
     ...workingState,
@@ -1833,7 +3088,6 @@ export function advancePassengerMotion(
   };
   if (next.preparationStartedAt !== null) next = prepareForDeparture(next, elapsedMs);
   else if (!handoffMoving) {
-    next.passengers = alignWaitingQueue(next.passengers, elapsedMs);
     next.passengers = mapPassengers(next.passengers, (passenger) =>
       reconcileDesiredPassenger(
         passenger,
@@ -1850,6 +3104,10 @@ export function advancePassengerMotion(
       next = beginPreparation(next, observation);
     }
   }
+  if (next.preparationStartedAt === null)
+    next.passengers = alignWaitingQueue(next.passengers, elapsedMs, next.queueLayout);
+  if (!handoffMoving && workingState.departingPassengers.length)
+    next = discardCompletedObservations(next);
   return next;
 }
 
@@ -1858,18 +3116,23 @@ function passengerPose(passenger: Passenger, elapsedMs: number): PassengerPose {
     passenger.durationMs > 0
       ? Math.min(1, Math.max(0, (elapsedMs - passenger.phaseStartedAt) / passenger.durationMs))
       : 1;
+  // Only an identified, newly discovered inclusion waits unseen behind the network
+  // door. Existing travellers keep their visibility and their original positions.
+  const opacity =
+    passenger.arrivalKind === 'late-inclusion' &&
+    passenger.phase === 'preparing' &&
+    passenger.departureIncluded &&
+    (passenger.networkDoorLeadMs ?? 0) > 0 &&
+    elapsedMs < passenger.phaseStartedAt
+      ? 0
+      : 1;
   const cached = passengerPoseCache.get(passenger);
-  if (cached?.pose.progress === progress) {
-    const walking =
-      !cached.pose.inWagon &&
-      !passenger.inHandoff &&
-      WALKING_PHASES.has(passenger.phase) &&
-      progress > 0 &&
-      progress < 1;
+  if (cached?.pose.progress === progress && cached.pose.opacity === opacity) {
+    const walking = WALKING_PHASES.has(passenger.phase) && progress > 0 && progress < 1;
     if (!walking || cached.elapsedMs === elapsedMs) return cached.pose;
   }
   const point = passengerPosition(passenger, elapsedMs);
-  const queue = queuePosition(passenger.queueIndex);
+  const queue = passengerQueuePoint(passenger);
   const inWagon =
     passenger.wagon !== null &&
     (passenger.inHandoff ||
@@ -1878,17 +3141,19 @@ function passengerPose(passenger: Passenger, elapsedMs: number): PassengerPose {
   const from = passenger.path[0] ?? point;
   const to = passenger.path[passenger.path.length - 1] ?? point;
   const appearance = transactionAppearance(passenger.tx);
-  const walking =
-    !inWagon &&
-    !passenger.inHandoff &&
-    WALKING_PHASES.has(passenger.phase) &&
-    progress > 0 &&
-    progress < 1;
+  const walking = WALKING_PHASES.has(passenger.phase) && progress > 0 && progress < 1;
   const pose: PassengerPose = {
     tx: passenger.tx,
+    nonceDependency: passenger.nonceDependency,
+    arrivalKind: passenger.arrivalKind,
+    lastObservedAt: passenger.lastObservedAt,
+    poolState: passenger.poolState,
+    poolObservedAt: passenger.poolObservedAt,
+    bitcoinArrival: passenger.bitcoinArrival,
     ...point,
     queueX: queue.x,
     queueY: queue.y,
+    queueZone: passenger.queueZone,
     phase: passenger.phase,
     destination: passenger.departureIncluded ? 'next' : (passenger.plannedWagon ?? 'queue'),
     reason: passenger.reason,
@@ -1899,15 +3164,52 @@ function passengerPose(passenger: Passenger, elapsedMs: number): PassengerPose {
     sourceObserved: passenger.presentInSample || passenger.awaitingVerifiedDeparture === true,
     headScale: appearance.headScale,
     resourceUnits: appearance.resourceUnits,
-    opacity: 1,
+    opacity,
     progress,
     facing: to.x < from.x ? -1 : 1,
     movementAngle: pathHeadingDegrees(passenger.path, progress),
+    trail:
+      walking &&
+      !inWagon &&
+      !passenger.inHandoff &&
+      passenger.phase === 'preparing' &&
+      passenger.departureIncluded &&
+      (passenger.networkDoorLeadMs ?? 0) > 0
+        ? passengerTrail(passenger.path, progress, point)
+        : undefined,
     // Waiting people have no gait to redraw. Moving people keep the same walking rhythm.
     walkPhase: walking ? (elapsedMs / 160 + (appearance.hash % 7)) % (Math.PI * 2) : 0,
   };
   passengerPoseCache.set(passenger, { elapsedMs, pose });
   return pose;
+}
+
+/** Open before emergence, hold through the vestibule, then close on the same clock. */
+function passengerNetworkDoorProgress(passenger: Passenger, elapsedMs: number): number {
+  const leadMs = passenger.networkDoorLeadMs;
+  if (
+    passenger.arrivalKind !== 'late-inclusion' ||
+    passenger.phase !== 'preparing' ||
+    leadMs === undefined ||
+    leadMs <= 0
+  )
+    return 0;
+  const openingAt = passenger.phaseStartedAt - leadMs;
+  const timingScale = Math.min(1, leadMs / NETWORK_DOOR_BEFORE_PASSAGE_MS);
+  const openingDuration = Math.min(NETWORK_DOOR_OPEN_MS, leadMs / 2);
+  const opening = Math.max(0, Math.min(1, (elapsedMs - openingAt) / openingDuration));
+  if (elapsedMs < passenger.phaseStartedAt) return opening;
+  const { distance, lengths } = pathGeometry(passenger.path);
+  // The head/body must clear the lower doorway and its lateral edge before closing.
+  const clearDistance =
+    (lengths[0] ?? 0) + Math.min(lengths[1] ?? 0, NETWORK_BOX_RECT.width / 2 + 24);
+  const clearedAt =
+    passenger.phaseStartedAt +
+    (distance > 0 ? (passenger.durationMs * clearDistance) / distance : 0);
+  const closingAt = clearedAt + NETWORK_DOOR_AFTER_PASSAGE_MS * timingScale;
+  return elapsedMs <= closingAt
+    ? opening
+    : Math.max(0, 1 - (elapsedMs - closingAt) / (NETWORK_DOOR_CLOSE_MS * timingScale));
 }
 
 export function passengerFrame(state: PassengerMotionState): PassengerFrame {
@@ -1932,11 +3234,24 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
   const previousPoses = passengerCollectionPoseCache.get(state.passengers);
   let unchangedPoses = previousPoses !== undefined;
   let preparationPassengerCount = 0;
+  let networkDoorProgress = 0;
+  let networkActive = false;
   let passengers = state.passengers.map((passenger, index): PassengerPose => {
     if (passenger.presentInSample) counts[passenger.phase] += 1;
     else if (passenger.phase === 'parked') counts.parked += 1;
     else counts.retiring += 1;
     if (passenger.departureIncluded) preparationPassengerCount += 1;
+    networkDoorProgress = Math.max(
+      networkDoorProgress,
+      passengerNetworkDoorProgress(passenger, state.elapsedMs),
+    );
+    if (
+      state.preparationStartedAt !== null &&
+      passenger.phase === 'preparing' &&
+      passenger.departureIncluded &&
+      (passenger.networkDoorLeadMs ?? 0) > 0
+    )
+      networkActive = true;
     const moving =
       state.handoffStartedAt !== null ||
       (state.candidateArrivalStartedAt !== null && passenger.wagon === 'later');
@@ -1979,9 +3294,14 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
         ? null
         : Math.min(
             1,
-            Math.max(0, (state.elapsedMs - state.preparationStartedAt) / PREPARATION_DURATION_MS),
+            Math.max(
+              0,
+              (state.elapsedMs - state.preparationStartedAt) / statePreparationDurationMs(state),
+            ),
           ),
     preparationPassengerCount,
+    networkDoorProgress,
+    networkActive,
     waitingArchiveCount: state.waitingArchiveCount,
     waitingArchiveTrackedCount: state.waitingArchiveTransactions.size,
     waitingArchiveUnknownCount: state.waitingArchiveUnknownCount,
