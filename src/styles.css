@@ -427,6 +427,28 @@ a:hover {
 .immersion-topbar .mode-switch {
   margin: 0;
 }
+.language-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.language-switch button {
+  min-width: 30px;
+  min-height: 32px;
+  padding: 4px;
+  border-radius: 4px;
+  color: #a9c6b8;
+  font-size: 11px;
+  font-weight: 700;
+}
+.language-switch button[aria-pressed='true'] {
+  color: #0c2527;
+  background: #a8e2c0;
+}
 .immersion-navigation {
   display: flex;
   align-items: center;
@@ -904,25 +926,34 @@ main.immersion-main {
 }
 @media (max-width: 700px) {
   .immersion-topbar {
-    flex-wrap: wrap;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'brand language navigation'
+      'chains mode mode';
     gap: 4px 12px;
     padding: 6px 10px;
   }
   .immersion-topbar .wordmark {
+    grid-area: brand;
     font-size: 21px;
   }
   .immersion-topbar .chain-tabs {
-    order: 3;
+    grid-area: chains;
   }
   .immersion-topbar .chain-tab {
     min-height: 35px;
     padding: 3px 5px;
   }
   .immersion-topbar .mode-switch {
-    order: 4;
+    grid-area: mode;
+    justify-self: end;
+  }
+  .language-switch {
+    grid-area: language;
   }
   .immersion-navigation {
+    grid-area: navigation;
     gap: 2px;
   }
   .immersion-navigation button {
@@ -1024,7 +1055,7 @@ main.immersion-main {
   .scene-workspace--immersive > .info-panel,
   .chain-pane .scene-stage > .info-panel {
     position: fixed;
-    top: max(12px, 12dvh);
+    top: max(124px, 12dvh);
     bottom: max(112px, calc(96px + env(safe-area-inset-bottom)));
     left: 12px;
     right: 12px;
@@ -1080,6 +1111,12 @@ main.immersion-main {
   }
   .immersion-topbar .chain-tabs {
     gap: 3px;
+  }
+  .immersion-topbar .wordmark {
+    font-size: 18px;
+  }
+  .immersion-topbar .brand-mark {
+    display: none;
   }
   .immersion-topbar .chain-tab {
     font-size: 11px;
@@ -1164,9 +1201,14 @@ main.immersion-main {
   }
   .scene-workspace--immersive > .info-panel,
   .chain-pane .scene-stage > .info-panel {
-    top: 6px;
     max-height: calc(100% - 12px);
     padding: 12px;
+  }
+}
+@media (max-height: 540px) and (min-width: 701px) {
+  .scene-workspace--immersive > .info-panel,
+  .chain-pane .scene-stage > .info-panel {
+    top: 6px;
   }
 }
 @media (pointer: coarse) {

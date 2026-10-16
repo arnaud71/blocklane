@@ -1,3 +1,4 @@
+import { languageTag, translate, type Locale } from '../i18n/locale';
 import type { BitcoinCandidateComparison, Snapshot } from '../../shared/model';
 import { number } from './format';
 
@@ -17,7 +18,11 @@ export const COMPARISON_CATEGORIES = [
   },
 ] as const;
 
-type ComparisonCategory = (typeof COMPARISON_CATEGORIES)[number] & { count: number };
+type ComparisonCategory = Omit<(typeof COMPARISON_CATEGORIES)[number], 'label' | 'shortLabel'> & {
+  label: string;
+  shortLabel: string;
+  count: number;
+};
 type ComparisonDisplayFields = {
   candidateShare: number | null;
   value: string;
@@ -37,7 +42,10 @@ function validDate(value: number): boolean {
 }
 
 /** Complete server-side sets describe one observed block, independently of the drawn sample. */
-export function candidateComparisonDisplay(snapshot: Snapshot | null): CandidateComparisonDisplay {
+export function candidateComparisonDisplay(
+  snapshot: Snapshot | null,
+  locale: Locale = 'fr',
+): CandidateComparisonDisplay {
   const missing: CandidateComparisonDisplay = {
     available: false,
     comparison: null,
@@ -47,8 +55,16 @@ export function candidateComparisonDisplay(snapshot: Snapshot | null): Candidate
     categories: [],
     note:
       snapshot?.mode === 'demo'
-        ? 'Démonstration : aucun bilan réel n’est calculé.'
-        : 'Un candidat complet préalablement observé et le contenu vérifié du bloc correspondant sont nécessaires. Une absence de bilan ne signifie pas zéro transaction commune.',
+        ? translate(
+            locale,
+            'Démonstration : aucun bilan réel n’est calculé.',
+            'Demo: no real comparison is calculated.',
+          )
+        : translate(
+            locale,
+            'Un candidat complet préalablement observé et le contenu vérifié du bloc correspondant sont nécessaires. Une absence de bilan ne signifie pas zéro transaction commune.',
+            'A previously observed complete candidate and the verified contents of the corresponding block are required. No comparison does not mean zero matching transactions.',
+          ),
   };
   const comparison = snapshot?.candidateComparison;
   const latest = snapshot?.blocks[0];
@@ -97,12 +113,33 @@ export function candidateComparisonDisplay(snapshot: Snapshot | null): Candidate
     available: true,
     comparison,
     candidateShare,
-    value: candidateShare === null ? '—' : number(candidateShare, 1),
+    value: candidateShare === null ? '—' : number(candidateShare, 1, locale),
     stale,
     categories: COMPARISON_CATEGORIES.map((category) => ({
       ...category,
+      label: translate(
+        locale,
+        category.label,
+        category.key === 'common'
+          ? 'Proposed and included'
+          : category.key === 'candidate-only'
+            ? 'Proposed but not included in this block'
+            : 'Included outside the candidate',
+      ),
+      shortLabel: translate(
+        locale,
+        category.shortLabel,
+        category.key === 'common'
+          ? 'Included'
+          : category.key === 'candidate-only'
+            ? 'Not included'
+            : 'Outside candidate',
+      ),
       count: comparison[category.field],
     })),
-    note: `${stale ? 'Ancien bilan conservé, avec ses dates d’origine. ' : ''}Bilan complet hors coinbase du bloc #${number(comparison.blockHeight)}, indépendant des détails individuels de la scène. Candidat de ${comparison.candidateSource}, relevé le ${new Date(comparison.candidateObservedAt).toLocaleString('fr-CH')}. Bloc vérifié auprès de ${comparison.blockSource}, détecté pour la première fois le ${new Date(comparison.blockObservedAt).toLocaleString('fr-CH')}. ${candidateShare === null ? 'Candidat vide : la part retrouvée n’est pas définie.' : 'Le pourcentage est la part des transactions de ce candidat retrouvées dans ce bloc, pas un score de prédiction.'} Ne pas être incluse dans ce bloc ne prouve pas qu’une transaction est encore en attente. Le mineur peut avoir construit un autre candidat. Ce bilan ne garantit pas la finalité du bloc ; une réorganisation reste possible.`,
+    note:
+      locale === 'en'
+        ? `${stale ? 'Previous comparison retained with its original timestamps. ' : ''}Complete comparison excluding coinbase for block #${number(comparison.blockHeight, 0, locale)}, independent of the scene’s individual details. Candidate from ${comparison.candidateSource}, observed on ${new Date(comparison.candidateObservedAt).toLocaleString(languageTag(locale))}. Block verified with ${comparison.blockSource}, first detected on ${new Date(comparison.blockObservedAt).toLocaleString(languageTag(locale))}. ${candidateShare === null ? 'Empty candidate: the matching share is undefined.' : 'The percentage is the share of this candidate’s transactions found in this block, not a prediction score.'} Not being included in this block does not prove that a transaction is still pending. The miner may have built a different candidate. This comparison does not guarantee block finality; a reorganization remains possible.`
+        : `${stale ? 'Ancien bilan conservé, avec ses dates d’origine. ' : ''}Bilan complet hors coinbase du bloc #${number(comparison.blockHeight)}, indépendant des détails individuels de la scène. Candidat de ${comparison.candidateSource}, relevé le ${new Date(comparison.candidateObservedAt).toLocaleString('fr-CH')}. Bloc vérifié auprès de ${comparison.blockSource}, détecté pour la première fois le ${new Date(comparison.blockObservedAt).toLocaleString('fr-CH')}. ${candidateShare === null ? 'Candidat vide : la part retrouvée n’est pas définie.' : 'Le pourcentage est la part des transactions de ce candidat retrouvées dans ce bloc, pas un score de prédiction.'} Ne pas être incluse dans ce bloc ne prouve pas qu’une transaction est encore en attente. Le mineur peut avoir construit un autre candidat. Ce bilan ne garantit pas la finalité du bloc ; une réorganisation reste possible.`,
   };
 }
