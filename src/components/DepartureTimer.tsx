@@ -1,3 +1,4 @@
+import { languageTag, useI18n } from '../i18n';
 import { useEffect, useState } from 'react';
 
 /** A wall-clock counter with its own one-second tick, independent of animation speed. */
@@ -8,6 +9,7 @@ export function DepartureTimer({
   departedAt: number | null;
   demo?: boolean;
 }) {
+  const { locale, t } = useI18n();
   const [now, setNow] = useState(Date.now);
 
   useEffect(() => {
@@ -46,8 +48,14 @@ export function DepartureTimer({
       dateTime={seconds === null ? undefined : `PT${seconds}S`}
       title={
         departedAt === null
-          ? `Aucun départ ${demo ? 'simulé' : 'animé'} dans cette session.`
-          : `Dernier départ ${demo ? 'simulé' : 'animé'} à ${new Date(departedAt).toLocaleTimeString('fr-CH')}. Temps réel écoulé depuis le départ du wagon dans cette session.`
+          ? t(
+              `Aucun départ ${demo ? 'simulé' : 'animé'} dans cette session.`,
+              `No ${demo ? 'simulated' : 'animated'} departure in this session.`,
+            )
+          : t(
+              `Dernier départ ${demo ? 'simulé' : 'animé'} à ${new Date(departedAt).toLocaleTimeString(languageTag(locale))}. Temps réel écoulé depuis le départ du wagon dans cette session.`,
+              `Last ${demo ? 'simulated' : 'animated'} departure at ${new Date(departedAt).toLocaleTimeString(languageTag(locale))}. Actual elapsed time since the wagon departed in this session.`,
+            )
       }
     >
       {duration}

@@ -1,3 +1,4 @@
+import { languageTag, useI18n } from '../i18n';
 import { useEffect, useMemo, useState } from 'react';
 import { PENDING_SAMPLE_LIMIT, type Snapshot, type Tx } from '../../shared/model';
 import { explorerUrl, number, shortHash } from '../lib/format';
@@ -16,6 +17,7 @@ import {
 } from '../lib/feeDisplay';
 import { activeBitcoinBlockTemplate } from '../lib/passengerMotion';
 import { bitcoinArrivalObservation, passengerStatus } from '../lib/passengerStatus';
+import { sourceName } from '../lib/sourceDescription';
 import { Icon } from './Icon';
 import './InfoPanel.css';
 
@@ -46,9 +48,9 @@ type InfoPanelProps = {
 };
 
 const pages = [
-  { label: 'Réseau', id: 'network' },
-  { label: 'Bloc', id: 'block' },
-  { label: 'Voyageurs', id: 'travelers' },
+  { label: 'Réseau', english: 'Network', id: 'network' },
+  { label: 'Bloc', english: 'Block', id: 'block' },
+  { label: 'Voyageurs', english: 'Travelers', id: 'travelers' },
 ] as const;
 
 function Detail({ label, children }: { label: string; children: React.ReactNode }) {
@@ -62,7 +64,9 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
 
 /** The comparison uses complete server inventories, never the displayed traveller count. */
 export function CandidateComparisonDetails({ snapshot }: { snapshot: Snapshot | null }) {
-  const display = candidateComparisonDisplay(snapshot);
+  const { locale, t } = useI18n();
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
+  const display = candidateComparisonDisplay(snapshot, locale);
   const comparedBlockLink = display.available
     ? explorerUrl('bitcoin', display.comparison.blockHash, 'block')
     : null;
@@ -73,21 +77,36 @@ export function CandidateComparisonDetails({ snapshot }: { snapshot: Snapshot | 
       data-testid="candidate-comparison-details"
       data-comparison-available={display.available}
       data-comparison-scope={display.available ? 'complete' : undefined}
-      aria-label="Comparaison candidat / bloc"
+      aria-label={t('Comparaison candidat / bloc', 'Candidate / block comparison')}
     >
-      <h4>Comparaison candidat / bloc</h4>
+      <h4>{t('Comparaison candidat / bloc', 'Candidate / block comparison')}</h4>
       {display.available ? (
         <>
           <p className="info-comparison-summary">
             {display.candidateShare === null
-              ? 'Part du candidat non définie : candidat vide.'
-              : `${display.value} % du candidat retrouvé dans ce bloc.`}
+              ? t(
+                  'Part du candidat non définie : candidat vide.',
+                  'Candidate share undefined: empty candidate.',
+                )
+              : t(
+                  `${display.value} % du candidat retrouvé dans ce bloc.`,
+                  `${display.value}% of the candidate found in this block.`,
+                )}
           </p>
           {display.stale && (
-            <p className="info-caution">Ancien bilan conservé, avec ses dates d’origine.</p>
+            <p className="info-caution">
+              {t(
+                'Ancien bilan conservé, avec ses dates d’origine.',
+                'Previous comparison retained with its original timestamps.',
+              )}
+            </p>
           )}
           <p className="info-explanation">
-            Comparaison complète hors coinbase · bloc #{number(display.comparison.blockHeight)}.
+            {t(
+              'Comparaison complète hors coinbase · bloc #',
+              'Complete comparison excluding coinbase · block #',
+            )}
+            {n(display.comparison.blockHeight)}.
           </p>
           <dl className="info-details info-comparison-categories">
             {display.categories.map((category) => (
@@ -98,35 +117,41 @@ export function CandidateComparisonDetails({ snapshot }: { snapshot: Snapshot | 
                 data-count={category.count}
               >
                 <dt>{category.label}</dt>
-                <dd>{number(category.count)}</dd>
+                <dd>{n(category.count)}</dd>
               </div>
             ))}
           </dl>
           <dl className="info-details">
-            <Detail label="Total du candidat">
-              {number(display.comparison.candidateTransactionCount)} transactions
+            <Detail label={t('Total du candidat', 'Candidate total')}>
+              {n(display.comparison.candidateTransactionCount)} transactions
             </Detail>
-            <Detail label="Total du bloc hors coinbase">
-              {number(display.comparison.blockTransactionCount)} transactions
+            <Detail label={t('Total du bloc hors coinbase', 'Block total excluding coinbase')}>
+              {n(display.comparison.blockTransactionCount)} transactions
             </Detail>
-            <Detail label="Source du candidat">{display.comparison.candidateSource}</Detail>
-            <Detail label="Source du bloc">{display.comparison.blockSource}</Detail>
-            <Detail label="Relevé du candidat">
+            <Detail label={t('Source du candidat', 'Candidate source')}>
+              {display.comparison.candidateSource}
+            </Detail>
+            <Detail label={t('Source du bloc', 'Block source')}>
+              {display.comparison.blockSource}
+            </Detail>
+            <Detail label={t('Relevé du candidat', 'Candidate observed')}>
               <time dateTime={new Date(display.comparison.candidateObservedAt).toISOString()}>
-                {new Date(display.comparison.candidateObservedAt).toLocaleString('fr-CH')}
+                {new Date(display.comparison.candidateObservedAt).toLocaleString(
+                  languageTag(locale),
+                )}
               </time>
             </Detail>
-            <Detail label="Première détection du bloc">
+            <Detail label={t('Première détection du bloc', 'Block first detected')}>
               <time dateTime={new Date(display.comparison.blockObservedAt).toISOString()}>
-                {new Date(display.comparison.blockObservedAt).toLocaleString('fr-CH')}
+                {new Date(display.comparison.blockObservedAt).toLocaleString(languageTag(locale))}
               </time>
             </Detail>
-            <Detail label="Identifiant du bloc">
+            <Detail label={t('Identifiant du bloc', 'Block ID')}>
               <span title={display.comparison.blockHash}>
                 {shortHash(display.comparison.blockHash)}
               </span>
             </Detail>
-            <Detail label="Parent du candidat">
+            <Detail label={t('Parent du candidat', 'Candidate parent')}>
               <span title={display.comparison.parentBlockHash}>
                 {shortHash(display.comparison.parentBlockHash)}
               </span>
@@ -139,13 +164,16 @@ export function CandidateComparisonDetails({ snapshot }: { snapshot: Snapshot | 
               target="_blank"
               rel="noopener noreferrer"
             >
-              Explorer le bloc comparé <Icon name="external" size={13} />
+              {t('Explorer le bloc comparé', 'Explore compared block')}
+              <Icon name="external" size={13} />
             </a>
           )}
         </>
       ) : (
         <>
-          <p className="info-comparison-summary">En attente d’un bilan</p>
+          <p className="info-comparison-summary">
+            {t('En attente d’un bilan', 'Waiting for comparison')}
+          </p>
           <p className="info-comparison-empty">—</p>
         </>
       )}
@@ -170,6 +198,8 @@ export function InfoPanel({
   onClearSelection,
   onClose,
 }: InfoPanelProps) {
+  const { locale, t } = useI18n();
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
   const [page, setPage] = useState(0);
   const [rotationEnabled, setRotationEnabled] = useState(true);
   const [interacting, setInteracting] = useState(false);
@@ -207,8 +237,8 @@ export function InfoPanel({
   const displayUsd = feeDisplayUnit === 'usd';
   const medianFee = useMemo(() => medianTransactionFee(snapshot), [snapshot]);
   const mempool = useProviderMempool(snapshot);
-  const medianAmount = formatMedianTransactionFee(chain, medianFee, feeDisplayUnit, quote);
-  const medianAmountParts = medianAmount.match(/^(.+) (BTC|ETH|\$ US)$/);
+  const medianAmount = formatMedianTransactionFee(chain, medianFee, feeDisplayUnit, quote, locale);
+  const medianAmountParts = medianAmount.match(/^(.+) (BTC|ETH|\$ US|USD)$/);
   const latest = snapshot?.blocks[0];
   const nodeTemplate = snapshot ? activeBitcoinBlockTemplate(snapshot) : null;
   const completeFees = medianFee.scope === 'template';
@@ -220,32 +250,35 @@ export function InfoPanel({
         snapshot?.blockTemplate?.observedAt ??
         snapshot?.observedAt);
   const pendingDetails = snapshot?.transactions.filter((tx) => tx.status === 'pending').length ?? 0;
-  const blockValue = latestBlockValueDisplay(snapshot);
+  const blockValue = latestBlockValueDisplay(snapshot, locale);
   const blockLink = latest && !demo ? explorerUrl(chain, latest.hash, 'block') : null;
   const txLink = selectedTx && !demo ? explorerUrl(chain, selectedTx.id, 'tx') : null;
   const selectionStatus = selectedTx
-    ? passengerStatus({
-        bitcoinArrival: bitcoinArrivalObservation(snapshot, selectedTx),
-        tx: selectedTx,
-        sourceObserved: !selectedHistorical,
-        poolState: selectedPoolState,
-        poolObservedAt: selectedPoolObservedAt,
-      })
+    ? passengerStatus(
+        {
+          bitcoinArrival: bitcoinArrivalObservation(snapshot, selectedTx),
+          tx: selectedTx,
+          sourceObserved: !selectedHistorical,
+          poolState: selectedPoolState,
+          poolObservedAt: selectedPoolObservedAt,
+        },
+        locale,
+      )
     : null;
   const sourceState = !snapshot
-    ? 'Connexion en cours'
+    ? t('Connexion en cours', 'Connecting')
     : demo
-      ? 'Données simulées'
+      ? t('Données simulées', 'Simulated data')
       : snapshot.status === 'ok'
-        ? 'Source en direct'
+        ? t('Source en direct', 'Live source')
         : snapshot.status === 'stale'
-          ? 'Données anciennes'
-          : 'Source indisponible';
+          ? t('Données anciennes', 'Old data')
+          : t('Source indisponible', 'Source unavailable');
 
   return (
     <aside
       className={`info-panel ${bitcoin ? 'info-bitcoin' : 'info-ethereum'} ${paused || reducedMotion ? 'info-still' : ''}`}
-      aria-label="Panneau d’informations de la ville"
+      aria-label={t('Panneau d’informations de la ville', 'City information panel')}
       data-testid="info-panel"
       data-page={selectedTx ? 'transaction' : (pages[page] ?? pages[0]).id}
       data-auto-rotating={rotating}
@@ -263,7 +296,8 @@ export function InfoPanel({
     >
       <div className="info-panel-top">
         <span className="info-panel-caption">
-          <i /> LE PANNEAU DU QUAI
+          <i />
+          {t('LE PANNEAU DU QUAI', 'THE PLATFORM BOARD')}
         </span>
         <div className="info-panel-actions">
           {selectedTx && onClearSelection && (
@@ -271,8 +305,8 @@ export function InfoPanel({
               type="button"
               className="info-icon-button"
               onClick={onClearSelection}
-              aria-label="Libérer le panneau d’informations"
-              title="Revenir aux informations du réseau"
+              aria-label={t('Libérer le panneau d’informations', 'Unpin the information panel')}
+              title={t('Revenir aux informations du réseau', 'Return to network information')}
             >
               <Icon name="signal" size={16} />
             </button>
@@ -282,8 +316,11 @@ export function InfoPanel({
               type="button"
               className="info-icon-button info-panel-close"
               onClick={onClose}
-              aria-label="Fermer le panneau d’informations"
-              title="Fermer le panneau d’informations · Échap"
+              aria-label={t('Fermer le panneau d’informations', 'Close information panel')}
+              title={t(
+                'Fermer le panneau d’informations · Échap',
+                'Close information panel · Escape',
+              )}
             >
               <Icon name="close" size={18} />
             </button>
@@ -297,13 +334,13 @@ export function InfoPanel({
         <div className="info-panel-content info-selected" key={selectedTx.id}>
           <p className="info-kicker">
             {selectedHistorical
-              ? 'Dernière observation connue'
-              : 'VOYAGEUR SÉLECTIONNÉ · PANNEAU FIXÉ'}
+              ? t('Dernière observation connue', 'Last known observation')
+              : t('VOYAGEUR SÉLECTIONNÉ · PANNEAU FIXÉ', 'SELECTED TRAVELER · PANEL PINNED')}
           </p>
           <h3>
-            Une transaction,
+            {t('Une transaction,', 'One transaction,')}
             <br />
-            un voyageur.
+            {t('un voyageur.', 'one traveler.')}
           </h3>
           <span className="info-transaction-hash" title={selectedTx.id}>
             {shortHash(selectedTx.id)}
@@ -313,58 +350,81 @@ export function InfoPanel({
               {selectedTx.status === 'confirmed'
                 ? selectionStatus?.description
                 : selectedPoolState === 'pending'
-                  ? 'Présence vérifiée dans le dernier inventaire du fournisseur. Les détails de frais restent ceux de la dernière observation.'
+                  ? t(
+                      'Présence vérifiée dans le dernier inventaire du fournisseur. Les détails de frais restent ceux de la dernière observation.',
+                      'Presence verified in the provider’s latest inventory. Fee details remain those of the last observation.',
+                    )
                   : selectedPoolState === 'queued'
-                    ? 'Toujours présente, mais classée queued par le fournisseur Ethereum.'
+                    ? t(
+                        'Toujours présente, mais classée queued par le fournisseur Ethereum.',
+                        'Still present, but classified as queued by the Ethereum provider.',
+                      )
                     : selectedPoolState === 'absent'
-                      ? 'Absente du dernier inventaire complet. Cela ne prouve ni une confirmation ni un remplacement.'
+                      ? t(
+                          'Absente du dernier inventaire complet. Cela ne prouve ni une confirmation ni un remplacement.',
+                          'Absent from the latest complete inventory. This proves neither confirmation nor replacement.',
+                        )
                       : selectedPoolState === 'replaced'
-                        ? 'Une autre transaction plus récemment observée utilise le même compte et le même nonce.'
-                        : 'Présence actuelle dans le mempool inconnue.'}
+                        ? t(
+                            'Une autre transaction plus récemment observée utilise le même compte et le même nonce.',
+                            'Another more recently observed transaction uses the same account and nonce.',
+                          )
+                        : t(
+                            'Présence actuelle dans le mempool inconnue.',
+                            'Current presence in the mempool is unknown.',
+                          )}
             </p>
           )}
           <dl className="info-details">
-            <Detail label={demo ? 'Présence simulée' : 'Présence / inclusion'}>
+            <Detail
+              label={
+                demo
+                  ? t('Présence simulée', 'Simulated presence')
+                  : t('Présence / inclusion', 'Presence / inclusion')
+              }
+            >
               <span data-testid="transaction-presence-status">{selectionStatus?.label}</span>
             </Detail>
-            {selectedReasonLabel && <Detail label="Dans la scène">{selectedReasonLabel}</Detail>}
+            {selectedReasonLabel && (
+              <Detail label={t('Dans la scène', 'In the scene')}>{selectedReasonLabel}</Detail>
+            )}
             {selectedPoolState !== 'unknown' && selectedPoolObservedAt !== undefined && (
               <Detail
                 label={
                   selectedPoolState === 'replaced'
-                    ? 'Observation du remplacement'
-                    : 'Inventaire vérifié'
+                    ? t('Observation du remplacement', 'Replacement observed')
+                    : t('Inventaire vérifié', 'Verified inventory')
                 }
               >
                 <time dateTime={new Date(selectedPoolObservedAt).toISOString()}>
-                  {new Date(selectedPoolObservedAt).toLocaleString('fr-CH')}
+                  {new Date(selectedPoolObservedAt).toLocaleString(languageTag(locale))}
                 </time>
               </Detail>
             )}
             <Detail
               label={
                 selectedHistorical
-                  ? 'État des derniers détails reçus'
+                  ? t('État des derniers détails reçus', 'Status of last received details')
                   : demo
-                    ? 'État simulé'
-                    : 'État des détails reçus'
+                    ? t('État simulé', 'Simulated status')
+                    : t('État des détails reçus', 'Status of received details')
               }
             >
               {selectedHistorical
                 ? selectedTx.status === 'pending'
-                  ? 'En attente lors de cette observation'
-                  : 'Inclusion observée antérieurement'
+                  ? t('En attente lors de cette observation', 'Pending at this observation')
+                  : t('Inclusion observée antérieurement', 'Inclusion observed previously')
                 : selectedTx.status === 'pending'
-                  ? 'En attente'
-                  : 'Incluse dans un bloc observé'}
+                  ? t('En attente', 'Pending')
+                  : t('Incluse dans un bloc observé', 'Included in an observed block')}
             </Detail>
             {selectedHistorical && selectedObservedAt !== undefined && (
-              <Detail label="Dernière observation">
+              <Detail label={t('Dernière observation', 'Last observed')}>
                 <time
                   dateTime={new Date(selectedObservedAt).toISOString()}
-                  title={new Date(selectedObservedAt).toLocaleString('fr-CH')}
+                  title={new Date(selectedObservedAt).toLocaleString(languageTag(locale))}
                 >
-                  {new Date(selectedObservedAt).toLocaleString('fr-CH')}
+                  {new Date(selectedObservedAt).toLocaleString(languageTag(locale))}
                 </time>
               </Detail>
             )}
@@ -372,65 +432,112 @@ export function InfoPanel({
               label={
                 displayUsd
                   ? bitcoin
-                    ? 'Frais estimés'
-                    : 'Estimation avec limite de gas'
+                    ? t('Frais estimés', 'Estimated fees')
+                    : t('Estimation avec limite de gas', 'Estimate using gas limit')
                   : bitcoin
-                    ? 'Frais par vByte'
-                    : 'Prix du gas observé'
+                    ? t('Frais par vByte', 'Fees per vByte')
+                    : t('Prix du gas observé', 'Observed gas price')
               }
             >
-              {formatTransactionFee(selectedTx, feeDisplayUnit, quote)}
+              {formatTransactionFee(selectedTx, feeDisplayUnit, quote, locale)}
             </Detail>
-            <Detail label={bitcoin ? 'Taille virtuelle' : 'Limite de gas déclarée'}>
-              {number(selectedTx.size)} {bitcoin ? 'vB' : 'gas'}
+            <Detail
+              label={
+                bitcoin
+                  ? t('Taille virtuelle', 'Virtual size')
+                  : t('Limite de gas déclarée', 'Declared gas limit')
+              }
+            >
+              {n(selectedTx.size)} {bitcoin ? 'vB' : 'gas'}
             </Detail>
-            <Detail label="Valeur fournie">{selectedTx.value}</Detail>
-            <Detail label="Nature">
-              {selectedTx.kind === 'contract' ? 'Données ou création de contrat' : 'Transfert'}
+            <Detail label={t('Valeur fournie', 'Reported value')}>
+              {selectedTx.value === 'Montant non fourni'
+                ? t('Montant non fourni', 'Amount not provided')
+                : selectedTx.value}
+            </Detail>
+            <Detail label={t('Nature', 'Kind')}>
+              {selectedTx.kind === 'contract'
+                ? t('Données ou création de contrat', 'Contract data or deployment')
+                : t('Transfert', 'Transfer')}
             </Detail>
           </dl>
           {selectedInclusionOnly && (
             <p className="info-caution">
-              Inclusion vérifiée dans le bloc {shortHash(selectedTx.blockHash ?? '')}. Les frais, la
-              taille et la valeur proviennent de la dernière observation conservée ; les frais
-              affichés ne sont pas un reçu des frais effectivement payés.
+              {t('Inclusion vérifiée dans le bloc ', 'Inclusion verified in block ')}
+              {shortHash(selectedTx.blockHash ?? '')}
+              {t(
+                '. Les frais, la taille et la valeur proviennent de la dernière observation conservée ; les frais affichés ne sont pas un reçu des frais effectivement payés.',
+                '. Fees, size and value come from the last retained observation; displayed fees are not a receipt of fees actually paid.',
+              )}
             </p>
           )}
           {selectedHistorical && (
             <p className="info-explanation">
               {selectedTx.status === 'pending'
                 ? selectedPoolState === 'pending' || selectedPoolState === 'queued'
-                  ? 'La présence vient du relevé daté du fournisseur ; les frais individuels peuvent être plus anciens.'
-                  : 'La position de ce voyageur ne prouve pas sa présence actuelle dans le mempool.'
-                : 'L’inclusion affichée provient d’une observation conservée.'}{' '}
-              Sa couleur compare les derniers frais connus à l’échantillon actuel ; le rouge ne
-              garantit ni priorité ni place dans un bloc.
+                  ? t(
+                      'La présence vient du relevé daté du fournisseur ; les frais individuels peuvent être plus anciens.',
+                      'Presence comes from the provider’s dated inventory; individual fee details may be older.',
+                    )
+                  : t(
+                      'La position de ce voyageur ne prouve pas sa présence actuelle dans le mempool.',
+                      'This traveler’s position does not prove current presence in the mempool.',
+                    )
+                : t(
+                    'L’inclusion affichée provient d’une observation conservée.',
+                    'The displayed inclusion comes from a retained observation.',
+                  )}{' '}
+              {t(
+                'Sa couleur compare les derniers frais connus à l’échantillon actuel ; le rouge ne garantit ni priorité ni place dans un bloc.',
+                'Its color compares the last known fees with the current sample; red guarantees neither priority nor a place in a block.',
+              )}
             </p>
           )}
           {displayUsd && (
             <>
               <p className="info-explanation">
-                Taux natif : {formatFeeRate(chain, selectedTx.feeRate, 'native')}.{' '}
+                {t('Taux natif : ', 'Native rate: ')}
+                {formatFeeRate(chain, selectedTx.feeRate, 'native', undefined, locale)}.{' '}
                 {bitcoin
-                  ? 'Coût approximatif calculé avec la taille virtuelle observée.'
-                  : 'Calcul avec la limite de gas déclarée, pas le gas consommé ni les frais réellement payés.'}
+                  ? t(
+                      'Coût approximatif calculé avec la taille virtuelle observée.',
+                      'Approximate cost calculated using the observed virtual size.',
+                    )
+                  : t(
+                      'Calcul avec la limite de gas déclarée, pas le gas consommé ni les frais réellement payés.',
+                      'Calculated using the declared gas limit, not gas consumed or fees actually paid.',
+                    )}
               </p>
-              <p className="info-explanation">{usdQuoteNote(quote, demo)}</p>
+              <p className="info-explanation">{usdQuoteNote(quote, demo, locale)}</p>
             </>
           )}
           <p className="info-explanation">
             {bitcoin
-              ? 'La tête représente la taille virtuelle. La couleur représente les frais.'
-              : 'La tête représente la limite de gas déclarée, pas les octets ni le gas consommé.'}
+              ? t(
+                  'La tête représente la taille virtuelle. La couleur représente les frais.',
+                  'Head size represents virtual size. Color represents fees.',
+                )
+              : t(
+                  'La tête représente la limite de gas déclarée, pas les octets ni le gas consommé.',
+                  'Head size represents the declared gas limit, not bytes or gas consumed.',
+                )}
           </p>
           {txLink ? (
             <a className="info-explorer" href={txLink} target="_blank" rel="noopener noreferrer">
-              Explorer cette transaction <Icon name="external" size={13} />
+              {t('Explorer cette transaction', 'Explore this transaction')}
+              <Icon name="external" size={13} />
             </a>
           ) : (
-            <p className="info-explanation">Données fictives : aucun lien réseau.</p>
+            <p className="info-explanation">
+              {t('Données fictives : aucun lien réseau.', 'Fictional data: no network link.')}
+            </p>
           )}
-          <p className="info-caution">Un déplacement animé ne prouve aucune confirmation.</p>
+          <p className="info-caution">
+            {t(
+              'Un déplacement animé ne prouve aucune confirmation.',
+              'Animated movement does not prove confirmation.',
+            )}
+          </p>
         </div>
       ) : (
         <>
@@ -442,11 +549,12 @@ export function InfoPanel({
             aria-labelledby={`info-panel-tab-${page}`}
           >
             <p className="info-kicker">
-              {bitcoin ? 'BITCOIN' : 'ETHEREUM'} · {demo ? 'SIMULATION' : 'OBSERVATOIRE'}
+              {bitcoin ? 'BITCOIN' : 'ETHEREUM'} ·{' '}
+              {demo ? t('SIMULATION', 'SIMULATION') : t('OBSERVATOIRE', 'OBSERVATORY')}
             </p>
             {page === 0 && (
               <>
-                <h3>La vie du réseau.</h3>
+                <h3>{t('La vie du réseau.', 'Network activity.')}</h3>
                 <p className="info-hero info-fee-amount">
                   {medianAmountParts ? (
                     <>
@@ -458,72 +566,104 @@ export function InfoPanel({
                   )}
                 </p>
                 <p className="info-hero-caption">
-                  Frais médians{completeFees ? '' : ' estimés'} / transaction ·{' '}
-                  {medianTransactionFeeScopeLabel(medianFee)}
+                  {t('Frais médians', 'Median fees')}
+                  {completeFees ? '' : t(' estimés', ' estimated')} / transaction ·{' '}
+                  {medianTransactionFeeScopeLabel(medianFee, locale)}
                 </p>
                 <p className="info-explanation">
-                  {medianTransactionFeeNote(chain, medianFee.sampleSize, demo, medianFee.scope)}
+                  {medianTransactionFeeNote(
+                    chain,
+                    medianFee.sampleSize,
+                    demo,
+                    medianFee.scope,
+                    locale,
+                  )}
                 </p>
                 {nodeTemplate && !completeFees && (
                   <p className="info-explanation">
-                    Cet instantané ne fournit pas la médiane complète du candidat : cette valeur
-                    porte seulement sur les détails reçus.
+                    {t(
+                      'Cet instantané ne fournit pas la médiane complète du candidat : cette valeur porte seulement sur les détails reçus.',
+                      'This snapshot does not provide the complete candidate’s median: this value covers only the received details.',
+                    )}
                   </p>
                 )}
                 {displayUsd && (
                   <p className="info-explanation">
-                    Médiane en {bitcoin ? 'BTC' : 'ETH'} :{' '}
-                    {formatMedianTransactionFee(chain, medianFee, 'native')}.{' '}
-                    {usdQuoteNote(quote, demo)}
+                    {t('Médiane en ', 'Median in ')}
+                    {bitcoin ? 'BTC' : 'ETH'} :{' '}
+                    {formatMedianTransactionFee(chain, medianFee, 'native', undefined, locale)}.{' '}
+                    {usdQuoteNote(quote, demo, locale)}
                   </p>
                 )}
                 <dl className="info-details">
-                  <Detail label={demo ? 'Mempool simulée' : 'Mempool du fournisseur'}>
+                  <Detail
+                    label={
+                      demo
+                        ? t('Mempool simulée', 'Simulated mempool')
+                        : t('Mempool du fournisseur', 'Provider mempool')
+                    }
+                  >
                     {mempool.total === null
-                      ? 'Non mesuré'
-                      : `${number(mempool.total)} transactions`}
+                      ? t('Non mesuré', 'Not measured')
+                      : `${n(mempool.total)} transactions`}
                   </Detail>
                   {!bitcoin && mempool.pending !== null && mempool.queued !== null && (
                     <Detail label="Pending / queued">
-                      {number(mempool.pending)} / {number(mempool.queued)}
+                      {n(mempool.pending)} / {n(mempool.queued)}
                     </Detail>
                   )}
-                  <Detail label="Échantillon reçu">
-                    {snapshot ? `${number(snapshot.transactions.length)} transactions` : '—'}
+                  <Detail label={t('Échantillon reçu', 'Received sample')}>
+                    {snapshot ? `${n(snapshot.transactions.length)} transactions` : '—'}
                   </Detail>
-                  <Detail label="Source des frais">
-                    {completeFees ? nodeTemplate?.source : (snapshot?.source ?? 'En attente')}
+                  <Detail label={t('Source des frais', 'Fee source')}>
+                    {completeFees
+                      ? nodeTemplate?.source
+                      : (sourceName(snapshot, locale) ?? t('En attente', 'Pending'))}
                   </Detail>
                   {feeObservedAt !== undefined && (
-                    <Detail label="Relevé des frais">
+                    <Detail label={t('Relevé des frais', 'Fees observed')}>
                       <time dateTime={new Date(feeObservedAt).toISOString()}>
-                        {new Date(feeObservedAt).toLocaleTimeString('fr-CH')}
+                        {new Date(feeObservedAt).toLocaleTimeString(languageTag(locale))}
                       </time>
                     </Detail>
                   )}
                   <Detail
-                    label={bitcoin ? 'Taux conseillé · ~30 min' : 'Frais de base · sans pourboire'}
+                    label={
+                      bitcoin
+                        ? t('Taux conseillé · ~30 min', 'Suggested rate · ~30 min')
+                        : t('Frais de base · sans pourboire', 'Base fee · excluding tip')
+                    }
                   >
-                    {formatFeeRate(chain, snapshot?.feeRate ?? null, 'native')}
+                    {formatFeeRate(chain, snapshot?.feeRate ?? null, 'native', undefined, locale)}
                   </Detail>
-                  <Detail label="Source">{snapshot?.source ?? 'En attente'}</Detail>
+                  <Detail label={t('Source', 'Source')}>
+                    {sourceName(snapshot, locale) ?? t('En attente', 'Pending')}
+                  </Detail>
                 </dl>
                 <p className="info-explanation">{mempool.note}</p>
                 <p className="info-explanation">
                   {bitcoin
-                    ? 'Les frais influencent la priorité. Le délai d’inclusion reste incertain.'
-                    : 'Le taux de base ci-dessus exclut le pourboire. La médiane des coûts utilise le prix du gas des transactions. Aucun inventaire mondial des transactions en attente n’est fourni.'}
+                    ? t(
+                        'Les frais influencent la priorité. Le délai d’inclusion reste incertain.',
+                        'Fees influence priority. Inclusion time remains uncertain.',
+                      )
+                    : t(
+                        'Le taux de base ci-dessus exclut le pourboire. La médiane des coûts utilise le prix du gas des transactions. Aucun inventaire mondial des transactions en attente n’est fourni.',
+                        'The base rate above excludes the tip. The cost median uses transaction gas prices. No worldwide pending transaction inventory is provided.',
+                      )}
                 </p>
               </>
             )}
             {page === 1 && (
               <>
-                <h3>Le dernier bloc reçu.</h3>
+                <h3>{t('Le dernier bloc reçu.', 'The latest received block.')}</h3>
                 <p className="info-hero info-block-number">
-                  {latest ? `#${number(latest.height)}` : '—'}
+                  {latest ? `#${n(latest.height)}` : '—'}
                 </p>
                 <p className="info-hero-caption">
-                  {demo ? 'Bloc synthétique' : 'Dernier bloc observé'}
+                  {demo
+                    ? t('Bloc synthétique', 'Synthetic block')
+                    : t('Dernier bloc observé', 'Latest observed block')}
                 </p>
                 <div className="info-capacity" aria-hidden="true">
                   <span
@@ -531,22 +671,39 @@ export function InfoPanel({
                   />
                 </div>
                 <dl className="info-details">
-                  <Detail label="Transactions">{latest ? number(latest.txCount) : '—'}</Detail>
+                  <Detail label={t('Transactions', 'Transactions')}>
+                    {latest ? n(latest.txCount) : '—'}
+                  </Detail>
                   <Detail label={blockValue.label}>
                     {blockValue.approximate ? '≈ ' : ''}
                     {blockValue.value} {blockValue.unit}
                   </Detail>
                   {blockValue.usd && (
-                    <Detail label="Équivalent au cours reçu">{blockValue.usd}</Detail>
+                    <Detail
+                      label={t(
+                        'Équivalent au cours reçu',
+                        'Equivalent at the observed exchange rate',
+                      )}
+                    >
+                      {blockValue.usd}
+                    </Detail>
                   )}
-                  <Detail label={bitcoin ? 'Espace virtuel utilisé' : 'Gas consommé'}>
-                    {latest ? `${number(latest.used)} ${bitcoin ? 'vB' : 'gas'}` : '—'}
+                  <Detail
+                    label={
+                      bitcoin
+                        ? t('Espace virtuel utilisé', 'Virtual space used')
+                        : t('Gas consommé', 'Gas consumed')
+                    }
+                  >
+                    {latest ? `${n(latest.used)} ${bitcoin ? 'vB' : 'gas'}` : '—'}
                   </Detail>
-                  <Detail label="Occupation">
-                    {latest ? `${number((latest.used / latest.capacity) * 100, 1)} %` : '—'}
+                  <Detail label={t('Occupation', 'Capacity used')}>
+                    {latest ? `${n((latest.used / latest.capacity) * 100, 1)} %` : '—'}
                   </Detail>
-                  <Detail label="Horodatage du bloc">
-                    {latest ? new Date(latest.timestamp * 1_000).toLocaleTimeString('fr-CH') : '—'}
+                  <Detail label={t('Horodatage du bloc', 'Block timestamp')}>
+                    {latest
+                      ? new Date(latest.timestamp * 1_000).toLocaleTimeString(languageTag(locale))
+                      : '—'}
                   </Detail>
                 </dl>
                 <p className="info-explanation">{blockValue.note}</p>
@@ -557,51 +714,89 @@ export function InfoPanel({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Explorer ce bloc <Icon name="external" size={13} />
+                    {t('Explorer ce bloc', 'Explore this block')}
+                    <Icon name="external" size={13} />
                   </a>
                 )}
                 <p className="info-explanation">
-                  À réception de ce bloc, le premier wagon part avec les inclusions connues de notre
-                  échantillon.{' '}
+                  {t(
+                    'À réception de ce bloc, le premier wagon part avec les inclusions connues de notre échantillon.',
+                    'When this block is received, the first wagon departs with known inclusions from our sample.',
+                  )}{' '}
                   {nodeTemplate
-                    ? 'À l’arrêt, le premier représente un échantillon du candidat proposé par le nœud ; le second reste une estimation.'
-                    : 'Les deux wagons à l’arrêt projettent les blocs suivants.'}{' '}
+                    ? t(
+                        'À l’arrêt, le premier représente un échantillon du candidat proposé par le nœud ; le second reste une estimation.',
+                        'While stopped, the first shows a sample of the node’s proposed candidate; the second remains an estimate.',
+                      )
+                    : t(
+                        'Les deux wagons à l’arrêt projettent les blocs suivants.',
+                        'The two stopped wagons project the next blocks.',
+                      )}{' '}
                   {demo
-                    ? 'Ce départ est une illustration pédagogique.'
-                    : 'Observé ne signifie pas finalisé. Le prochain départ n’a pas d’échéance garantie.'}
+                    ? t(
+                        'Ce départ est une illustration pédagogique.',
+                        'This departure is an educational illustration.',
+                      )
+                    : t(
+                        'Observé ne signifie pas finalisé. Le prochain départ n’a pas d’échéance garantie.',
+                        'Observed does not mean finalized. There is no guaranteed deadline for the next departure.',
+                      )}
                 </p>
                 {bitcoin && <CandidateComparisonDetails snapshot={snapshot} />}
               </>
             )}
             {page === 2 && (
               <>
-                <h3>À chacun sa place.</h3>
+                <h3>{t('À chacun sa place.', 'A place for each traveler.')}</h3>
                 <span className="info-projection-label">
                   {nodeTemplate
-                    ? 'Candidat du nœud et estimation'
-                    : 'Deux projections pédagogiques'}
+                    ? t('Candidat du nœud et estimation', 'Node candidate and estimate')
+                    : t('Deux projections pédagogiques', 'Two educational projections')}
                 </span>
                 {nodeTemplate && (
                   <dl className="info-details">
-                    <Detail label="Candidat du nœud">#{number(nodeTemplate.height)}</Detail>
-                    <Detail label="Candidat complet hors coinbase">
-                      {number(nodeTemplate.transactionCount)} transactions
+                    <Detail label={t('Candidat du nœud', 'Node candidate')}>
+                      #{n(nodeTemplate.height)}
                     </Detail>
-                    <Detail label="Poids hors coinbase / limite">
-                      {number(nodeTemplate.weight)} / {number(nodeTemplate.weightLimit)} WU
+                    <Detail
+                      label={t(
+                        'Candidat complet hors coinbase',
+                        'Complete candidate excluding coinbase',
+                      )}
+                    >
+                      {n(nodeTemplate.transactionCount)} transactions
                     </Detail>
-                    <Detail label="Détails individuels reçus">
-                      {number(pendingDetails)} / {number(PENDING_SAMPLE_LIMIT)} maximum
+                    <Detail
+                      label={t('Poids hors coinbase / limite', 'Weight excluding coinbase / limit')}
+                    >
+                      {n(nodeTemplate.weight)} / {n(nodeTemplate.weightLimit)} WU
+                    </Detail>
+                    <Detail label={t('Détails individuels reçus', 'Individual details received')}>
+                      {n(pendingDetails)} / {n(PENDING_SAMPLE_LIMIT)} maximum
                     </Detail>
                     {completeFees && (
-                      <Detail label="Frais médians du candidat complet">
-                        {formatMedianTransactionFee(chain, medianFee, feeDisplayUnit, quote)} / tx
+                      <Detail
+                        label={t(
+                          'Frais médians du candidat complet',
+                          'Complete candidate median fees',
+                        )}
+                      >
+                        {formatMedianTransactionFee(
+                          chain,
+                          medianFee,
+                          feeDisplayUnit,
+                          quote,
+                          locale,
+                        )}{' '}
+                        / tx
                       </Detail>
                     )}
-                    <Detail label="Source du candidat">{nodeTemplate.source}</Detail>
-                    <Detail label="Relevé du candidat">
+                    <Detail label={t('Source du candidat', 'Candidate source')}>
+                      {nodeTemplate.source}
+                    </Detail>
+                    <Detail label={t('Relevé du candidat', 'Candidate observed')}>
                       <time dateTime={new Date(nodeTemplate.observedAt).toISOString()}>
-                        {new Date(nodeTemplate.observedAt).toLocaleTimeString('fr-CH')}
+                        {new Date(nodeTemplate.observedAt).toLocaleTimeString(languageTag(locale))}
                       </time>
                     </Detail>
                   </dl>
@@ -609,45 +804,67 @@ export function InfoPanel({
                 <div className="info-flow">
                   {(
                     [
-                      ['walking', 'Vers le wagon', '↗'],
-                      ['boarded', 'À bord', '▰'],
-                      ['returning', 'Retour au quai', '↩'],
-                      ['waiting', 'Sur le quai', '◷'],
+                      ['walking', t('Vers le wagon', 'Heading to wagon'), '↗'],
+                      ['boarded', t('À bord', 'On board'), '▰'],
+                      ['returning', t('Retour au quai', 'Returning to platform'), '↩'],
+                      ['waiting', t('Sur le quai', 'On the platform'), '◷'],
                     ] as const
                   ).map(([phase, label, symbol]) => (
                     <div className={`info-flow-item ${phase}`} key={phase}>
                       <span aria-hidden="true">{symbol}</span>
-                      <strong>{activity ? number(activity[phase]) : '—'}</strong>
+                      <strong>{activity ? n(activity[phase]) : '—'}</strong>
                       <p>{label}</p>
                     </div>
                   ))}
                 </div>
                 {activity && (
                   <p className="info-explanation">
-                    Dans la scène : {number(activity.observed ?? 0)} transactions encore observées,{' '}
-                    {number(activity.historical ?? 0)} observations historiques conservées. Ces
-                    effectifs ne sont pas le total du mempool.
+                    {t('Dans la scène : ', 'In the scene: ')}
+                    {n(activity.observed ?? 0)}
+                    {t(' transactions encore observées,', ' transactions still observed,')}{' '}
+                    {n(activity.historical ?? 0)}
+                    {t(
+                      ' observations historiques conservées. Ces effectifs ne sont pas le total du mempool.',
+                      ' historical observations retained. These counts are not the mempool total.',
+                    )}
                   </p>
                 )}
                 <p className="info-explanation">
                   {nodeTemplate
-                    ? `Le candidat complet proposé par le nœud réunit ${number(nodeTemplate.transactionCount)} transactions hors coinbase et ${number(nodeTemplate.weight)} WU. Jusqu’à ${number(PENDING_SAMPLE_LIMIT)} détails individuels sont transmis ; les autres membres peuvent être représentés collectivement, sans inventer leurs données individuelles. La médiane complète est calculée à partir des frais de toutes ses transactions lorsqu’ils sont disponibles. Le second wagon reste une estimation. Rien ne prouve qu’un pool minier travaille sur ce candidat.`
-                    : 'Le premier wagon projette le prochain bloc, le second projette le suivant. Les voyageurs avancent selon leurs frais et la place disponible. Une hausse du tarif recommandé Bitcoin ou une absence du nouvel échantillon ne retire pas à elle seule la réservation d’un voyageur déjà embarqué.'}{' '}
-                  L’horloge signale des détails individuels anciens. Leur présence actuelle est
-                  indiquée séparément lorsqu’un inventaire complet permet de la vérifier.
+                    ? t(
+                        `Le candidat complet proposé par le nœud réunit ${n(nodeTemplate.transactionCount)} transactions hors coinbase et ${n(nodeTemplate.weight)} WU. Jusqu’à ${n(PENDING_SAMPLE_LIMIT)} détails individuels sont transmis ; les autres membres peuvent être représentés collectivement, sans inventer leurs données individuelles. La médiane complète est calculée à partir des frais de toutes ses transactions lorsqu’ils sont disponibles. Le second wagon reste une estimation. Rien ne prouve qu’un pool minier travaille sur ce candidat.`,
+                        `The node’s complete proposed candidate contains ${n(nodeTemplate.transactionCount)} transactions excluding coinbase and ${n(nodeTemplate.weight)} WU. Up to ${n(PENDING_SAMPLE_LIMIT)} individual details are supplied; other members may be represented collectively without inventing individual data. The complete median uses fees from all candidate transactions when available. The second wagon remains an estimate. There is no proof that a mining pool is working on this candidate.`,
+                      )
+                    : t(
+                        'Le premier wagon projette le prochain bloc, le second projette le suivant. Les voyageurs avancent selon leurs frais et la place disponible. Une hausse du tarif recommandé Bitcoin ou une absence du nouvel échantillon ne retire pas à elle seule la réservation d’un voyageur déjà embarqué.',
+                        'The first wagon projects the next block, the second the following one. Travelers move according to their fees and available capacity. A rise in Bitcoin’s recommended fee or absence from a new sample alone does not cancel an already boarded traveler’s reservation.',
+                      )}{' '}
+                  {t(
+                    'L’horloge signale des détails individuels anciens. Leur présence actuelle est indiquée séparément lorsqu’un inventaire complet permet de la vérifier.',
+                    'The clock marks old individual details. Current presence is shown separately when a complete inventory can verify it.',
+                  )}
                 </p>
                 <p className="info-caution">
-                  Ces places sont une illustration, pas des inclusions ou des rejets annoncés par le
-                  réseau.
+                  {t(
+                    'Ces places sont une illustration, pas des inclusions ou des rejets annoncés par le réseau.',
+                    'These places are illustrations, not inclusions or rejections announced by the network.',
+                  )}
                 </p>
                 <p className="info-click-hint">
-                  Sélectionnez un voyageur pour découvrir ses données.
+                  {t(
+                    'Sélectionnez un voyageur pour découvrir ses données.',
+                    'Select a traveler to see its data.',
+                  )}
                 </p>
               </>
             )}
           </div>
-          <div className="info-panel-navigation" role="tablist" aria-label="Rubriques du panneau">
-            {pages.map(({ label }, index) => (
+          <div
+            className="info-panel-navigation"
+            role="tablist"
+            aria-label={t('Rubriques du panneau', 'Panel sections')}
+          >
+            {pages.map(({ label, english }, index) => (
               <button
                 key={label}
                 id={`info-panel-tab-${index}`}
@@ -677,7 +894,7 @@ export function InfoPanel({
                   document.getElementById(`info-panel-tab-${next}`)?.focus();
                 }}
               >
-                {label}
+                {t(label, english)}
               </button>
             ))}
           </div>
@@ -687,10 +904,12 @@ export function InfoPanel({
             aria-pressed={rotationEnabled}
           >
             <Icon name={rotationEnabled ? 'pause' : 'play'} size={11} />
-            {rotationEnabled ? 'Défilement · 4 s' : 'Activer le défilement · 4 s'}
+            {rotationEnabled
+              ? t('Défilement · 4 s', 'Rotation · 4 s')
+              : t('Activer le défilement · 4 s', 'Enable rotation · 4 s')}
             {(paused || reducedMotion || interacting || snapshot?.status !== 'ok') &&
             rotationEnabled
-              ? ' · en pause'
+              ? t(' · en pause', ' · paused')
               : ''}
           </button>
         </>
@@ -704,18 +923,23 @@ export function InfoPanel({
         {snapshot && (
           <span>
             <time dateTime={new Date(snapshot.observedAt).toISOString()}>
-              Chaîne à {new Date(snapshot.observedAt).toLocaleTimeString('fr-CH')}
+              {t('Chaîne à ', 'Chain at ')}
+              {new Date(snapshot.observedAt).toLocaleTimeString(languageTag(locale))}
             </time>
             {snapshot.sampling && (
               <time dateTime={new Date(snapshot.sampling.observedAt).toISOString()}>
-                {' · Pool à '}
-                {new Date(snapshot.sampling.observedAt).toLocaleTimeString('fr-CH')}
+                {t(' · Pool à ', ' · Pool at ')}
+                {new Date(snapshot.sampling.observedAt).toLocaleTimeString(languageTag(locale))}
               </time>
             )}
             {snapshot.blockTemplate && (
               <time dateTime={new Date(snapshot.blockTemplate.observedAt).toISOString()}>
-                {nodeTemplate ? ' · Candidat à ' : ' · Candidat conservé à '}
-                {new Date(snapshot.blockTemplate.observedAt).toLocaleTimeString('fr-CH')}
+                {nodeTemplate
+                  ? t(' · Candidat à ', ' · Candidate at ')
+                  : t(' · Candidat conservé à ', ' · Retained candidate at ')}
+                {new Date(snapshot.blockTemplate.observedAt).toLocaleTimeString(
+                  languageTag(locale),
+                )}
               </time>
             )}
           </span>

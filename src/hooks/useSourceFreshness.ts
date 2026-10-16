@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 import { useEffect, useState } from 'react';
 import type { Snapshot, UsdQuote } from '../../shared/model';
 import { hasUsableUsdQuote, QUOTE_MAX_AGE_MS } from '../lib/feeDisplay';
@@ -28,7 +29,8 @@ export function useUsableUsdQuote(quote: UsdQuote | null | undefined): boolean {
 }
 
 export function useProviderMempool(snapshot: Snapshot | null) {
-  const pool = providerMempool(snapshot);
+  const { locale } = useI18n();
+  const pool = providerMempool(snapshot, locale);
   const deadline =
     snapshot?.mode === 'live' &&
     (snapshot.chain === 'ethereum' || snapshot.sampling?.method === 'getrawmempool') &&

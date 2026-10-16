@@ -1,3 +1,4 @@
+import { translate, type Locale } from '../i18n/locale';
 import {
   EVENT_FLOW_MAX_AGE_MS,
   EVENT_FLOW_SILENCE_MS,
@@ -25,23 +26,35 @@ export interface PoolFlowDisplay {
 }
 
 /** Counts are differences of complete provider inventories, never a world-wide arrival meter. */
-export function poolFlowDisplay(snapshot: Snapshot, now = Date.now()): PoolFlowDisplay {
+export function poolFlowDisplay(
+  snapshot: Snapshot,
+  now = Date.now(),
+  locale: Locale = 'fr',
+): PoolFlowDisplay {
+  const t = (fr: string, en: string) => translate(locale, fr, en);
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
   const flow = snapshot.poolFlow;
   const empty: PoolFlowDisplay = {
     state: 'unavailable',
     value: '—',
-    label: 'Flux non mesuré',
+    label: t('Flux non mesuré', 'Flow not measured'),
     interval: '',
     average: '',
     source: flow?.source ?? null,
     observedAt: flow?.observedAt ?? null,
     kind: flow ? 'inventory' : 'none',
-    kindLabel: 'Relevé périodique',
+    kindLabel: t('Relevé périodique', 'Periodic inventory'),
     history: [],
     note:
       snapshot.mode === 'demo'
-        ? 'Le flux réel du fournisseur n’est pas simulé dans la démonstration.'
-        : 'Deux inventaires complets successifs du même fournisseur sont nécessaires. Les détails de l’échantillon ne mesurent pas le flux total.',
+        ? t(
+            'Le flux réel du fournisseur n’est pas simulé dans la démonstration.',
+            'The provider’s real flow is not simulated in the demo.',
+          )
+        : t(
+            'Deux inventaires complets successifs du même fournisseur sont nécessaires. Les détails de l’échantillon ne mesurent pas le flux total.',
+            'Two successive complete inventories from the same provider are required. Sample details do not measure total flow.',
+          ),
   };
   if (snapshot.mode !== 'live' || !flow || snapshot.status === 'unavailable') return empty;
   if (
@@ -52,16 +65,22 @@ export function poolFlowDisplay(snapshot: Snapshot, now = Date.now()): PoolFlowD
     return {
       ...empty,
       state: 'stale',
-      label: 'Flux ancien',
-      note: `Le dernier inventaire de ${flow.source} est ancien ou le direct est interrompu. Aucun débit actuel n’est déduit.`,
+      label: t('Flux ancien', 'Old flow data'),
+      note: t(
+        `Le dernier inventaire de ${flow.source} est ancien ou le direct est interrompu. Aucun débit actuel n’est déduit.`,
+        `The latest inventory from ${flow.source} is old or the live feed is interrupted. No current rate is inferred.`,
+      ),
     };
   if (flow.state === 'warming' || flow.history.length === 0)
     return {
       ...empty,
       state: 'warming',
-      label: 'Flux en initialisation',
-      interval: `Base : ${number(flow.inventoryCount)} tx`,
-      note: `Premier inventaire complet de ${flow.source} reçu. Attente d’un second relevé : le débit est encore inconnu, pas nul.`,
+      label: t('Flux en initialisation', 'Flow initializing'),
+      interval: t(`Base : ${n(flow.inventoryCount)} tx`, `Baseline: ${n(flow.inventoryCount)} tx`),
+      note: t(
+        `Premier inventaire complet de ${flow.source} reçu. Attente d’un second relevé : le débit est encore inconnu, pas nul.`,
+        `First complete inventory received from ${flow.source}. Waiting for a second observation: the rate is still unknown, not zero.`,
+      ),
     };
   const latest = flow.history.at(-1)!;
   const seconds = (latest.observedAt - latest.fromObservedAt) / 1_000;
@@ -73,16 +92,19 @@ export function poolFlowDisplay(snapshot: Snapshot, now = Date.now()): PoolFlowD
   const rate = measuredMs > 0 ? (entered * 1_000) / measuredMs : 0;
   return {
     state: 'ready',
-    value: `+${number(latest.enteredCount)}`,
-    label: 'Entrées observées',
-    interval: `sur ${number(seconds, 1)} s`,
-    average: `${number(rate, 1)} tx/s · moy. observée`,
+    value: `+${n(latest.enteredCount)}`,
+    label: t('Entrées observées', 'Observed arrivals'),
+    interval: t(`sur ${n(seconds, 1)} s`, `over ${n(seconds, 1)} s`),
+    average: t(`${n(rate, 1)} tx/s · moy. observée`, `${n(rate, 1)} tx/s · observed avg.`),
     source: flow.source,
     observedAt: flow.observedAt,
     kind: 'inventory',
-    kindLabel: 'Relevé périodique',
+    kindLabel: t('Relevé périodique', 'Periodic inventory'),
     history: flow.history,
-    note: `Différences d’identifiants entre inventaires complets de ${flow.source} (${flow.method}). ${number(latest.enteredCount)} entrées et ${number(latest.disappearedCount)} disparitions sur ${number(seconds, 1)} s : ce n’est pas la variation nette. La moyenne couvre ${number(measuredMs / 1_000, 1)} s observées ; la courbe conserve les points des 60 dernières secondes. Ce n’est ni un débit instantané ni une mesure mondiale. Une disparition ne prouve pas une confirmation.`,
+    note:
+      locale === 'en'
+        ? `Identifier differences between complete inventories from ${flow.source} (${flow.method}). ${n(latest.enteredCount)} arrivals and ${n(latest.disappearedCount)} disappearances over ${n(seconds, 1)} s: this is not the net change. The average covers ${n(measuredMs / 1_000, 1)} observed seconds; the chart retains points from the past 60 seconds. This is neither an instantaneous rate nor a worldwide measurement. A disappearance does not prove confirmation.`
+        : `Différences d’identifiants entre inventaires complets de ${flow.source} (${flow.method}). ${n(latest.enteredCount)} entrées et ${n(latest.disappearedCount)} disparitions sur ${n(seconds, 1)} s : ce n’est pas la variation nette. La moyenne couvre ${n(measuredMs / 1_000, 1)} s observées ; la courbe conserve les points des 60 dernières secondes. Ce n’est ni un débit instantané ni une mesure mondiale. Une disparition ne prouve pas une confirmation.`,
   };
 }
 
@@ -104,7 +126,13 @@ function currentEventFlow(snapshot: Snapshot, now: number) {
 }
 
 /** Event signals and inventory differences have distinct meanings and clocks. */
-export function providerFlowDisplay(snapshot: Snapshot, now = Date.now()): PoolFlowDisplay {
+export function providerFlowDisplay(
+  snapshot: Snapshot,
+  now = Date.now(),
+  locale: Locale = 'fr',
+): PoolFlowDisplay {
+  const t = (fr: string, en: string) => translate(locale, fr, en);
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
   const events = currentEventFlow(snapshot, now);
   if (events) {
     const bitcoin = snapshot.chain === 'bitcoin';
@@ -117,38 +145,46 @@ export function providerFlowDisplay(snapshot: Snapshot, now = Date.now()): PoolF
     const seconds = (latest.observedAt - latest.fromObservedAt) / 1_000;
     return {
       state: 'ready',
-      value: `+${number(latest.enteredCount)}`,
-      label: bitcoin ? 'Ajouts observés' : 'Notifications pending',
-      interval: `sur ${number(seconds, 1)} s`,
-      average: `${number((count * 1_000) / measuredMs, 1)} ${bitcoin ? 'ajouts' : 'notif.'}/s · moy. observée`,
+      value: `+${n(latest.enteredCount)}`,
+      label: bitcoin
+        ? t('Ajouts observés', 'Observed additions')
+        : t('Notifications pending', 'Pending notifications'),
+      interval: t(`sur ${n(seconds, 1)} s`, `over ${n(seconds, 1)} s`),
+      average: `${n((count * 1_000) / measuredMs, 1)} ${bitcoin ? t('ajouts', 'additions') : 'notif.'}/s · ${t('moy. observée', 'observed avg.')}`,
       source: events.source,
       observedAt: events.observedAt,
       kind: 'events',
-      kindLabel: 'Flux suivi · événements',
+      kindLabel: t('Flux suivi · événements', 'Tracked flow · events'),
       history: events.history,
-      note: `${snapshot.status === 'stale' ? 'Relevé des blocs ancien ; notifications datées indépendamment. ' : ''}${bitcoin ? 'Ajouts signalés par le flux local Bitcoin' : 'Notifications pending reçues du fournisseur Ethereum'} ${events.source} (${events.method}). Moyenne sur ${number(measuredMs / 1_000, 1)} s réellement observées, points conservés sur environ une minute. ${bitcoin ? 'Ce flux décrit la vue de ce fournisseur, pas un inventaire mondial.' : 'Une notification peut correspondre à une promotion depuis queued ou à une réémission ; elle ne mesure pas les nouvelles entrées d’un mempool mondial.'} Aucun signal ne prouve une sélection ni une confirmation.`,
+      note:
+        locale === 'en'
+          ? `${snapshot.status === 'stale' ? 'Block observations are old; notifications are timestamped independently. ' : ''}${bitcoin ? 'Additions reported by the local Bitcoin flow from' : 'Pending notifications received from Ethereum provider'} ${events.source} (${events.method}). Average over ${n(measuredMs / 1_000, 1)} seconds actually observed; points retained for about a minute. ${bitcoin ? 'This flow describes this provider’s view, not a worldwide inventory.' : 'A notification may be a promotion from queued or a repeated notification; it does not measure new arrivals in a worldwide mempool.'} No signal proves selection or confirmation.`
+          : `${snapshot.status === 'stale' ? 'Relevé des blocs ancien ; notifications datées indépendamment. ' : ''}${bitcoin ? 'Ajouts signalés par le flux local Bitcoin' : 'Notifications pending reçues du fournisseur Ethereum'} ${events.source} (${events.method}). Moyenne sur ${n(measuredMs / 1_000, 1)} s réellement observées, points conservés sur environ une minute. ${bitcoin ? 'Ce flux décrit la vue de ce fournisseur, pas un inventaire mondial.' : 'Une notification peut correspondre à une promotion depuis queued ou à une réémission ; elle ne mesure pas les nouvelles entrées d’un mempool mondial.'} Aucun signal ne prouve une sélection ni une confirmation.`,
     };
   }
-  const inventory = poolFlowDisplay(snapshot, now);
+  const inventory = poolFlowDisplay(snapshot, now, locale);
   const flow = snapshot.eventFlow;
   if (!flow || snapshot.mode !== 'live') return inventory;
   const reason =
     flow.state === 'disabled'
-      ? 'Flux événementiel non activé'
+      ? t('Flux événementiel non activé', 'Event flow disabled')
       : flow.state === 'connecting'
-        ? 'Connexion au flux…'
+        ? t('Connexion au flux…', 'Connecting to flow…')
         : flow.state === 'warming'
-          ? 'Flux en initialisation'
+          ? t('Flux en initialisation', 'Flow initializing')
           : flow.state === 'limited'
-            ? 'Limite du flux atteinte'
+            ? t('Limite du flux atteinte', 'Flow limit reached')
             : flow.state === 'interrupted'
-              ? 'Flux interrompu'
-              : 'Flux événementiel ancien';
+              ? t('Flux interrompu', 'Flow interrupted')
+              : t('Flux événementiel ancien', 'Old event flow');
   if (inventory.state === 'ready')
     return {
       ...inventory,
-      kindLabel: `Relevé périodique · ${flow.state === 'connecting' ? 'connexion' : flow.state === 'warming' ? 'initialisation' : flow.state === 'limited' ? 'limite atteinte' : flow.state === 'interrupted' ? 'flux interrompu' : flow.state === 'disabled' ? 'événements désactivés' : 'flux ancien'}`,
-      note: `${reason}. Secours par relevé périodique indépendant. ${inventory.note}`,
+      kindLabel: `${t('Relevé périodique', 'Periodic inventory')} · ${flow.state === 'connecting' ? t('connexion', 'connecting') : flow.state === 'warming' ? t('initialisation', 'initializing') : flow.state === 'limited' ? t('limite atteinte', 'limit reached') : flow.state === 'interrupted' ? t('flux interrompu', 'flow interrupted') : flow.state === 'disabled' ? t('événements désactivés', 'events disabled') : t('flux ancien', 'old flow data')}`,
+      note: t(
+        `${reason}. Secours par relevé périodique indépendant. ${inventory.note}`,
+        `${reason}. Falling back to independent periodic inventories. ${inventory.note}`,
+      ),
     };
   return {
     ...inventory,
@@ -161,8 +197,11 @@ export function providerFlowDisplay(snapshot: Snapshot, now = Date.now()): PoolF
     source: flow.source,
     observedAt: flow.observedAt,
     kind: 'none',
-    kindLabel: 'Flux suivi · événements',
-    note: `${reason}. Aucun débit actuel n’est déduit ; une connexion ou un premier relevé ne signifie pas zéro. ${inventory.note}`,
+    kindLabel: t('Flux suivi · événements', 'Tracked flow · events'),
+    note: t(
+      `${reason}. Aucun débit actuel n’est déduit ; une connexion ou un premier relevé ne signifie pas zéro. ${inventory.note}`,
+      `${reason}. No current rate is inferred; a connection or first observation does not mean zero. ${inventory.note}`,
+    ),
   };
 }
 

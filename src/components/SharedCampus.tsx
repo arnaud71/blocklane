@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useI18n } from '../i18n';
 import './SharedCampus.css';
 
 function Tree({ x, y }: { x: number; y: number }) {
@@ -14,14 +15,18 @@ function Tree({ x, y }: { x: number; y: number }) {
 
 /** One shared decorative campus sits between both roads; it carries no chain-specific data. */
 export const SharedCampus = memo(function SharedCampus({ theme }: { theme: 'heg' | 'neutral' }) {
+  const { t } = useI18n();
   return (
-    <aside className="shared-campus" aria-label="Maisons communes aux deux rues">
+    <aside
+      className="shared-campus"
+      aria-label={t('Maisons communes aux deux rues', 'Buildings shared by both streets')}
+    >
       <header className="shared-campus-header">
         <span className="shared-campus-identity">{theme === 'heg' ? 'HEG' : 'CAMPUS'}</span>
         <span className="shared-campus-title">
-          MAISONS
+          {t('MAISONS', 'SHARED')}
           <br />
-          COMMUNES
+          {t('COMMUNES', 'BUILDINGS')}
         </span>
         <span className="shared-campus-networks" aria-hidden="true">
           <i>₿</i>
@@ -32,7 +37,10 @@ export const SharedCampus = memo(function SharedCampus({ theme }: { theme: 'heg'
         <svg
           viewBox="0 0 180 740"
           role="img"
-          aria-label="Une rangée centrale de bâtiments partagée par Bitcoin et Ethereum"
+          aria-label={t(
+            'Une rangée centrale de bâtiments partagée par Bitcoin et Ethereum',
+            'A central row of buildings shared by Bitcoin and Ethereum',
+          )}
         >
           <rect width="180" height="740" fill="#274b3c" />
           <path d="M9 0v740M171 0v740" stroke="#79947b" strokeWidth="3" opacity=".45" />
@@ -86,7 +94,7 @@ export const SharedCampus = memo(function SharedCampus({ theme }: { theme: 'heg'
         </svg>
       </div>
       <div className="shared-campus-foundations" aria-hidden="true" />
-      <p className="shared-campus-footer">SCÈNE COMMUNE</p>
+      <p className="shared-campus-footer">{t('SCÈNE COMMUNE', 'SHARED SCENE')}</p>
     </aside>
   );
 });

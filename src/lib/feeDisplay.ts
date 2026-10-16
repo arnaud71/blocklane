@@ -1,3 +1,4 @@
+import { languageTag, translate, type Locale } from '../i18n/locale';
 import {
   MAX_TRANSACTIONS,
   type ChainId,
@@ -21,7 +22,7 @@ export type MedianTransactionFee = {
 export const QUOTE_MAX_AGE_MS = 5 * 60 * 1_000;
 const QUOTE_FUTURE_TOLERANCE_MS = 5_000;
 const MIN_DISPLAYABLE_USD = 0.00000001;
-const dollarFormatters = new Map<number, Intl.NumberFormat>();
+const dollarFormatters = new Map<string, Intl.NumberFormat>();
 
 export function hasUsableUsdQuote(quote: UsdQuote | null | undefined): quote is UsdQuote {
   if (!quote) return false;
@@ -43,19 +44,22 @@ function validAmount(amount: number | null): amount is number {
   return amount !== null && Number.isFinite(amount) && amount >= 0;
 }
 
-function dollars(amount: number): string {
-  if (!validAmount(amount)) return '— $ US';
-  if (amount > 0 && amount < MIN_DISPLAYABLE_USD) return '< 0,00000001 $ US';
+function dollars(amount: number, locale: Locale): string {
+  const currency = translate(locale, '$ US', 'USD');
+  if (!validAmount(amount)) return `— ${currency}`;
+  if (amount > 0 && amount < MIN_DISPLAYABLE_USD)
+    return `< ${number(MIN_DISPLAYABLE_USD, 8, locale)} ${currency}`;
   const digits = amount === 0 ? 2 : Math.min(8, Math.max(2, 2 - Math.floor(Math.log10(amount))));
-  let formatter = dollarFormatters.get(digits);
+  const key = `${locale}:${digits}`;
+  let formatter = dollarFormatters.get(key);
   if (!formatter) {
-    formatter = new Intl.NumberFormat('fr-FR', {
+    formatter = new Intl.NumberFormat(locale === 'fr' ? 'fr-FR' : languageTag(locale), {
       minimumFractionDigits: Math.min(2, digits),
       maximumFractionDigits: digits,
     });
-    dollarFormatters.set(digits, formatter);
+    dollarFormatters.set(key, formatter);
   }
-  return `${formatter.format(amount)} $ US`;
+  return `${formatter.format(amount)} ${currency}`;
 }
 
 function estimatedNativeFee(transaction: Tx): number | null {
@@ -109,8 +113,11 @@ export function medianTransactionFee(snapshot: Snapshot | null): MedianTransacti
   return { nativeAmount, sampleSize: amounts.length, scope: 'sample' };
 }
 
-export function medianTransactionFeeScopeLabel(median: MedianTransactionFee): string {
-  return `${median.scope === 'template' ? 'Candidat complet' : 'Échantillon'} : ${number(median.sampleSize)} tx`;
+export function medianTransactionFeeScopeLabel(
+  median: MedianTransactionFee,
+  locale: Locale = 'fr',
+): string {
+  return `${median.scope === 'template' ? translate(locale, 'Candidat complet', 'Complete candidate') : translate(locale, 'Échantillon', 'Sample')}${locale === 'fr' ? ' :' : ':'} ${number(median.sampleSize, 0, locale)} tx`;
 }
 
 /** Complete integer-satoshi fees can have a half-satoshi median for an even cohort. */
@@ -119,6 +126,7 @@ export function formatMedianTransactionFee(
   median: MedianTransactionFee,
   unit: FeeDisplayUnit,
   quote?: UsdQuote | null,
+  locale: Locale = 'fr',
 ): string {
   if (
     chain === 'bitcoin' &&
@@ -135,9 +143,9 @@ export function formatMedianTransactionFee(
       .toString()
       .padStart(9, '0')
       .replace(/0+$/, '');
-    return `${number(Number(whole))}${decimals ? `,${decimals}` : ''} BTC`;
+    return `${number(Number(whole), 0, locale)}${decimals ? `${locale === 'fr' ? ',' : '.'}${decimals}` : ''} BTC`;
   }
-  return formatEstimatedFeeAmount(chain, median.nativeAmount, unit, quote);
+  return formatEstimatedFeeAmount(chain, median.nativeAmount, unit, quote, locale);
 }
 
 export function formatEstimatedFeeAmount(
@@ -145,24 +153,27 @@ export function formatEstimatedFeeAmount(
   nativeAmount: number | null,
   unit: FeeDisplayUnit,
   quote?: UsdQuote | null,
+  locale: Locale = 'fr',
 ): string {
   const coin = chain === 'bitcoin' ? 'BTC' : 'ETH';
-  if (!validAmount(nativeAmount)) return unit === 'usd' ? '— $ US' : `— ${coin}`;
+  const currency = translate(locale, '$ US', 'USD');
+  if (!validAmount(nativeAmount)) return unit === 'usd' ? `— ${currency}` : `— ${coin}`;
   if (unit === 'usd') {
-    if (!hasUsableUsdQuote(quote)) return '— $ US';
+    if (!hasUsableUsdQuote(quote)) return `— ${currency}`;
     const amount = nativeAmount * quote.usdPerCoin;
-    if (amount === 0 && nativeAmount > 0) return '≈ < 0,00000001 $ US';
-    return validAmount(amount) ? `≈ ${dollars(amount)}` : '— $ US';
+    if (amount === 0 && nativeAmount > 0)
+      return translate(locale, '≈ < 0,00000001 $ US', '≈ < 0.00000001 USD');
+    return validAmount(amount) ? `≈ ${dollars(amount, locale)}` : `— ${currency}`;
   }
   const precisionLimit = chain === 'bitcoin' ? 8 : 12;
   if (nativeAmount > 0 && nativeAmount < 10 ** -precisionLimit) {
-    return `≈ < ${number(10 ** -precisionLimit, precisionLimit)} ${coin}`;
+    return `≈ < ${number(10 ** -precisionLimit, precisionLimit, locale)} ${coin}`;
   }
   const digits =
     nativeAmount === 0
       ? 0
       : Math.min(precisionLimit, Math.max(0, 2 - Math.floor(Math.log10(nativeAmount))));
-  return `≈ ${number(nativeAmount, digits)} ${coin}`;
+  return `≈ ${number(nativeAmount, digits, locale)} ${coin}`;
 }
 
 export function medianTransactionFeeNote(
@@ -170,14 +181,35 @@ export function medianTransactionFeeNote(
   sampleSize: number,
   demo = false,
   scope: MedianTransactionFee['scope'] = 'sample',
+  locale: Locale = 'fr',
 ): string {
   if (scope === 'template')
     return sampleSize === 0
-      ? 'Candidat complet du nœud vide, hors coinbase : médiane non mesurée. Une proposition ne prouve aucune inclusion.'
-      : `Médiane des frais proposés pour les ${number(sampleSize)} transactions du candidat complet du nœud, hors coinbase. Elle ne décrit ni la médiane du mempool ni des frais confirmés. Cette proposition ne prouve aucune inclusion ni qu’un pool minier la mine.`;
-  if (sampleSize === 0) return 'Aucune transaction en attente exploitable dans l’échantillon reçu.';
-  if (demo) return `Médiane simulée sur ${sampleSize} transactions en attente fictives.`;
-  return `Médiane des coûts estimés de ${sampleSize} transactions en attente de l’échantillon reçu. L’échantillon privilégie les frais élevés et ne représente pas la médiane du réseau. ${
+      ? translate(
+          locale,
+          'Candidat complet du nœud vide, hors coinbase : médiane non mesurée. Une proposition ne prouve aucune inclusion.',
+          'The node’s complete candidate is empty, excluding coinbase: no median was measured. A proposal proves no inclusion.',
+        )
+      : translate(
+          locale,
+          `Médiane des frais proposés pour les ${number(sampleSize)} transactions du candidat complet du nœud, hors coinbase. Elle ne décrit ni la médiane du mempool ni des frais confirmés. Cette proposition ne prouve aucune inclusion ni qu’un pool minier la mine.`,
+          `Median proposed fees for all ${number(sampleSize, 0, locale)} transactions in the node’s complete candidate, excluding coinbase. This is neither the mempool median nor confirmed fees. This proposal proves no inclusion or that a mining pool is mining it.`,
+        );
+  if (sampleSize === 0)
+    return translate(
+      locale,
+      'Aucune transaction en attente exploitable dans l’échantillon reçu.',
+      'No usable pending transaction in the received sample.',
+    );
+  if (demo)
+    return translate(
+      locale,
+      `Médiane simulée sur ${sampleSize} transactions en attente fictives.`,
+      `Simulated median for ${number(sampleSize, 0, locale)} fictional pending transactions.`,
+    );
+  if (locale === 'en')
+    return `Median estimated costs for ${number(sampleSize, 0, locale)} pending transactions in the received sample. This limited sample does not represent the network median. ${chain === 'bitcoin' ? 'Calculated as each transaction’s observed rate multiplied by its virtual size.' : 'Calculated as each transaction’s observed gas price, including tip, multiplied by its declared gas limit; these are not the fees actually paid.'}`;
+  return `Médiane des coûts estimés de ${sampleSize} transactions en attente de l’échantillon reçu. Cet échantillon limité ne représente pas la médiane du réseau. ${
     chain === 'bitcoin'
       ? 'Calcul du taux observé multiplié par la taille virtuelle de chaque transaction.'
       : 'Calcul du prix du gas observé, pourboire compris, multiplié par la limite de gas déclarée de chaque transaction ; ce ne sont pas les frais réellement payés.'
@@ -189,15 +221,20 @@ export function formatFeeRate(
   rate: number | null,
   unit: FeeDisplayUnit,
   quote?: UsdQuote | null,
+  locale: Locale = 'fr',
 ): string {
   if (unit === 'native') {
-    return `${validAmount(rate) ? number(rate, 3) : '—'} ${chain === 'bitcoin' ? 'sat/vB' : 'Gwei'}`;
+    return `${validAmount(rate) ? number(rate, 3, locale) : '—'} ${chain === 'bitcoin' ? 'sat/vB' : 'Gwei'}`;
   }
   const resource = chain === 'bitcoin' ? 'vB' : 'gas';
-  if (!validAmount(rate) || !hasUsableUsdQuote(quote)) return `— $ US/${resource}`;
+  if (!validAmount(rate) || !hasUsableUsdQuote(quote))
+    return `— ${translate(locale, '$ US', 'USD')}/${resource}`;
   const denomination = chain === 'bitcoin' ? 100_000_000 : 1_000_000_000;
   const amount = (rate / denomination) * quote.usdPerCoin;
-  const converted = amount === 0 && rate > 0 ? '< 0,00000001 $ US' : dollars(amount);
+  const converted =
+    amount === 0 && rate > 0
+      ? translate(locale, '< 0,00000001 $ US', '< 0.00000001 USD')
+      : dollars(amount, locale);
   return `${converted}/${resource}`;
 }
 
@@ -205,30 +242,45 @@ export function formatTransactionFee(
   transaction: Tx,
   unit: FeeDisplayUnit,
   quote?: UsdQuote | null,
+  locale: Locale = 'fr',
 ): string {
-  if (unit === 'native') return formatFeeRate(transaction.chain, transaction.feeRate, unit);
+  if (unit === 'native')
+    return formatFeeRate(transaction.chain, transaction.feeRate, unit, undefined, locale);
   if (
     !hasUsableUsdQuote(quote) ||
     !validAmount(transaction.feeRate) ||
     !validAmount(transaction.size)
   ) {
-    return '— $ US';
+    return translate(locale, '— $ US', '— USD');
   }
   const denomination = transaction.chain === 'bitcoin' ? 100_000_000 : 1_000_000_000;
   const estimate = (transaction.feeRate / denomination) * transaction.size * quote.usdPerCoin;
   if (estimate === 0 && transaction.feeRate > 0 && transaction.size > 0) {
-    return '≈ < 0,00000001 $ US';
+    return translate(locale, '≈ < 0,00000001 $ US', '≈ < 0.00000001 USD');
   }
-  return validAmount(estimate) ? `≈ ${dollars(estimate)}` : '— $ US';
+  return validAmount(estimate)
+    ? `≈ ${dollars(estimate, locale)}`
+    : translate(locale, '— $ US', '— USD');
 }
 
-export function usdQuoteNote(quote?: UsdQuote | null, demo = false): string {
-  if (demo) return 'Démonstration : conversion en dollars indisponible, aucun cours fictif.';
+export function usdQuoteNote(quote?: UsdQuote | null, demo = false, locale: Locale = 'fr'): string {
+  if (demo)
+    return translate(
+      locale,
+      'Démonstration : conversion en dollars indisponible, aucun cours fictif.',
+      'Demo: dollar conversion is unavailable; no fictional exchange rate is used.',
+    );
   if (!hasUsableUsdQuote(quote)) {
-    return 'Conversion en dollars indisponible : aucun cours récent valide. Les frais natifs restent consultables.';
+    return translate(
+      locale,
+      'Conversion en dollars indisponible : aucun cours récent valide. Les frais natifs restent consultables.',
+      'Dollar conversion unavailable: no valid recent exchange rate. Native fees remain available.',
+    );
   }
   const ageSeconds = Math.max(0, Math.floor((Date.now() - quote.observedAt) / 1_000));
   const age = ageSeconds < 60 ? `${ageSeconds} s` : `${Math.floor(ageSeconds / 60)} min`;
-  const time = new Date(quote.observedAt).toLocaleTimeString('fr-CH');
+  const time = new Date(quote.observedAt).toLocaleTimeString(languageTag(locale));
+  if (locale === 'en')
+    return `Coinbase rate${quote.status === 'stale' ? ' retained' : ''}, observed at ${time} (${age} ago). Conversion uses the observed rate, not the historical confirmation rate.`;
   return `Cours Coinbase${quote.status === 'stale' ? ' conservé' : ''}, relevé à ${time} (il y a ${age}). Conversion au cours relevé, pas au cours historique de confirmation.`;
 }

@@ -1,3 +1,4 @@
+import { languageTag, useI18n } from '../i18n';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { Snapshot } from '../../shared/model';
 import {
@@ -29,6 +30,16 @@ type InfoBillboardProps = {
   top?: boolean;
 };
 
+const englishPageLabels: Record<string, string> = {
+  Mempool: 'Mempool',
+  Frais: 'Fees',
+  Bloc: 'Block',
+  Valeur: 'Value',
+  Voyageurs: 'Travelers',
+  Comparaison: 'Comparison',
+  Flux: 'Flow',
+};
+
 const pages = ['Mempool', 'Frais', 'Bloc', 'Valeur', 'Voyageurs'] as const;
 const bitcoinPages = [...pages, 'Comparaison', 'Flux'] as const;
 const ethereumPages = [...pages, 'Flux'] as const;
@@ -53,9 +64,12 @@ export const InfoBillboard = memo(function InfoBillboard({
   theme,
   top = true,
 }: InfoBillboardProps) {
+  const { locale, t } = useI18n();
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
   const bitcoin = snapshot.chain === 'bitcoin';
   const pageLabels = bitcoin ? bitcoinPages : ethereumPages;
   const pageCount = pageLabels.length;
+  const pageLabel = (label: string) => t(label, englishPageLabels[label] ?? label);
   const [page, setPage] = useState(0);
   const pageIndex = page < pageCount ? page : 0;
   const [rotationEnabled, setRotationEnabled] = useState(true);
@@ -98,14 +112,24 @@ export const InfoBillboard = memo(function InfoBillboard({
         snapshot.observedAt);
   const quote = demo ? undefined : snapshot.usdQuote;
   const usableQuote = useUsableUsdQuote(quote);
-  const feeAmount = formatMedianTransactionFee(snapshot.chain, median, feeDisplayUnit, quote);
-  const feeParts = feeAmount.match(/^(≈\s*)?(.+?)\s(BTC|ETH|\$ US)$/);
+  const feeAmount = formatMedianTransactionFee(
+    snapshot.chain,
+    median,
+    feeDisplayUnit,
+    quote,
+    locale,
+  );
+  const feeParts = feeAmount.match(/^(≈\s*)?(.+?)\s(BTC|ETH|\$ US|USD)$/);
   const latest = snapshot.status === 'unavailable' ? undefined : snapshot.blocks[0];
-  const blockValue = latestBlockValueDisplay(snapshot);
-  const comparison = useMemo(() => candidateComparisonDisplay(snapshot), [snapshot]);
+  const blockValue = latestBlockValueDisplay(snapshot, locale);
+  const comparison = useMemo(
+    () => candidateComparisonDisplay(snapshot, locale),
+    [snapshot, locale],
+  );
+  // Page identifiers stay stable; only their visible labels are localized.
   const comparisonPage = pageLabels[pageIndex] === 'Comparaison';
   const flowPage = pageLabels[pageIndex] === 'Flux';
-  const flow = providerFlowDisplay(snapshot);
+  const flow = providerFlowDisplay(snapshot, Date.now(), locale);
   const flowRates = flow.history.map(
     (point) => (point.enteredCount * 1_000) / (point.observedAt - point.fromObservedAt),
   );
@@ -118,63 +142,83 @@ export const InfoBillboard = memo(function InfoBillboard({
     )
     .join(' ');
   const sourceLabel = demo
-    ? 'Simulation'
+    ? t('Simulation', 'Simulation')
     : snapshot.status === 'ok'
-      ? 'Direct'
+      ? t('Direct', 'Live')
       : snapshot.status === 'stale'
-        ? 'Ancien relevé'
-        : 'Indisponible';
+        ? t('Ancien relevé', 'Old observation')
+        : t('Indisponible', 'Unavailable');
 
   const information: [BillboardPage, ...BillboardPage[]] = [
     {
-      value: number(mempool.total),
+      value: n(mempool.total),
       unit: mempool.total === null ? '' : 'transactions',
-      label: mempool.total === null ? 'Compteur non fourni' : 'Mempool du fournisseur',
+      label:
+        mempool.total === null
+          ? t('Compteur non fourni', 'Count not provided')
+          : t('Mempool du fournisseur', 'Provider mempool'),
       lines:
         mempool.pending !== null && mempool.queued !== null
-          ? [`Pending : ${number(mempool.pending)}`, `Queued : ${number(mempool.queued)}`]
-          : [`Échantillon : ${number(sampleSize)} tx`],
+          ? [
+              t(`Pending : ${n(mempool.pending)}`, `Pending: ${n(mempool.pending)}`),
+              t(`Queued : ${n(mempool.queued)}`, `Queued: ${n(mempool.queued)}`),
+            ]
+          : [t(`Échantillon : ${n(sampleSize)} tx`, `Sample: ${n(sampleSize)} tx`)],
       note: mempool.note,
     },
     {
       value: feeParts?.[2] ?? feeAmount,
       unit: feeParts?.[3] ?? '',
-      label: 'Frais médians / tx',
+      label: t('Frais médians / tx', 'Median fees / tx'),
       lines: [
-        medianTransactionFeeScopeLabel(median),
+        medianTransactionFeeScopeLabel(median, locale),
         feeDisplayUnit === 'usd' && !usableQuote
-          ? 'Cours indisponible'
+          ? t('Cours indisponible', 'Exchange rate unavailable')
           : completeFees
-            ? 'Proposition hors coinbase'
+            ? t('Proposition hors coinbase', 'Proposal excluding coinbase')
             : bitcoin
-              ? 'Coût estimé'
-              : 'Limite de gas déclarée',
+              ? t('Coût estimé', 'Estimated cost')
+              : t('Limite de gas déclarée', 'Declared gas limit'),
       ],
-      note: `${medianTransactionFeeNote(snapshot.chain, median.sampleSize, demo, median.scope)}${
+      note: `${medianTransactionFeeNote(snapshot.chain, median.sampleSize, demo, median.scope, locale)}${
         feeObservedAt === undefined
           ? ''
-          : ` Relevé à ${new Date(feeObservedAt).toLocaleTimeString('fr-CH')}.`
-      }${completeFees && nodeTemplate ? ` Source : ${nodeTemplate.source}.` : ''}${
+          : t(
+              ` Relevé à ${new Date(feeObservedAt).toLocaleTimeString(languageTag(locale))}.`,
+              ` Observed at ${new Date(feeObservedAt).toLocaleTimeString(languageTag(locale))}.`,
+            )
+      }${completeFees && nodeTemplate ? t(` Source : ${nodeTemplate.source}.`, ` Source: ${nodeTemplate.source}.`) : ''}${
         nodeTemplate && !completeFees
-          ? ' Médiane complète non fournie : calcul sur les seuls détails reçus.'
+          ? t(
+              ' Médiane complète non fournie : calcul sur les seuls détails reçus.',
+              ' Complete median not provided: calculated from received details only.',
+            )
           : ''
-      }${feeDisplayUnit === 'usd' ? ` ${usdQuoteNote(quote, demo)}` : ''}`,
+      }${feeDisplayUnit === 'usd' ? ` ${usdQuoteNote(quote, demo, locale)}` : ''}`,
       estimated: feeParts?.[1] !== undefined,
       smallValue: feeDisplayUnit === 'native',
     },
     {
       value: latest?.height.toString() ?? '—',
-      unit: 'numéro du bloc',
-      label: demo ? 'Bloc simulé' : 'Dernier bloc observé',
+      unit: t('numéro du bloc', 'block number'),
+      label: demo
+        ? t('Bloc simulé', 'Simulated block')
+        : t('Dernier bloc observé', 'Latest observed block'),
       lines: latest
         ? [
-            `${number(latest.txCount)} transactions`,
-            `Occupation : ${number((latest.used / latest.capacity) * 100, 1)} %`,
+            `${n(latest.txCount)} transactions`,
+            t(
+              `Occupation : ${n((latest.used / latest.capacity) * 100, 1)} %`,
+              `Capacity used: ${n((latest.used / latest.capacity) * 100, 1)}%`,
+            ),
           ]
-        : ['Aucun bloc disponible'],
+        : [t('Aucun bloc disponible', 'No block available')],
       note: demo
-        ? 'Bloc synthétique de démonstration.'
-        : 'Dernier bloc reçu de la source. Observé ne signifie pas finalisé ; le prochain départ n’a pas d’échéance garantie.',
+        ? t('Bloc synthétique de démonstration.', 'Synthetic demo block.')
+        : t(
+            'Dernier bloc reçu de la source. Observé ne signifie pas finalisé ; le prochain départ n’a pas d’échéance garantie.',
+            'Latest block received from the source. Observed does not mean finalized; there is no guaranteed deadline for the next departure.',
+          ),
     },
     {
       value: blockValue.value,
@@ -182,34 +226,51 @@ export const InfoBillboard = memo(function InfoBillboard({
       label: blockValue.label,
       lines: blockValue.available
         ? [
-            blockValue.usd ?? 'Conversion $ indisponible',
-            bitcoin ? 'Hors coinbase · rendu inclus' : 'Hors tokens · hors internes',
+            blockValue.usd ?? t('Conversion $ indisponible', 'USD conversion unavailable'),
+            bitcoin
+              ? t('Hors coinbase · rendu inclus', 'Excludes coinbase · includes change')
+              : t('Hors tokens · hors internes', 'Excludes tokens · internal transfers'),
           ]
-        : [demo ? 'Total réel non simulé' : 'Total non fourni'],
+        : [
+            demo
+              ? t('Total réel non simulé', 'Real total not simulated')
+              : t('Total non fourni', 'Total not provided'),
+          ],
       note: blockValue.note,
       estimated: blockValue.approximate,
     },
     {
-      value: number(activity.boarded),
-      unit: 'à bord',
-      label: 'Voyageurs visibles',
+      value: n(activity.boarded),
+      unit: t('à bord', 'on board'),
+      label: t('Voyageurs visibles', 'Visible travelers'),
       lines: [
-        `${number(activity.walking)} vers le wagon`,
-        `${number(activity.waiting)} sur le quai`,
+        t(`${n(activity.walking)} vers le wagon`, `${n(activity.walking)} heading to wagon`),
+        t(`${n(activity.waiting)} sur le quai`, `${n(activity.waiting)} on platform`),
       ],
       note: nodeTemplate
-        ? `Comptage des voyageurs individuels de la scène uniquement, avec jusqu’à ${number(sampleSize)} détails reçus. Le candidat complet propose ${number(nodeTemplate.transactionCount)} transactions hors coinbase ; le second wagon reste une estimation. Une place à bord ne prouve aucune inclusion.`
-        : 'Comptage des voyageurs de la scène uniquement. Les deux wagons projettent les prochains blocs ; une place à bord ne prouve aucune inclusion.',
+        ? t(
+            `Comptage des voyageurs individuels de la scène uniquement, avec jusqu’à ${n(sampleSize)} détails reçus. Le candidat complet propose ${n(nodeTemplate.transactionCount)} transactions hors coinbase ; le second wagon reste une estimation. Une place à bord ne prouve aucune inclusion.`,
+            `Counts individual travelers in the scene only, with up to ${n(sampleSize)} received details. The complete candidate proposes ${n(nodeTemplate.transactionCount)} transactions excluding coinbase; the second wagon remains an estimate. A place on board proves no inclusion.`,
+          )
+        : t(
+            'Comptage des voyageurs de la scène uniquement. Les deux wagons projettent les prochains blocs ; une place à bord ne prouve aucune inclusion.',
+            'Counts only travelers in the scene. Both wagons project future blocks; a place on board proves no inclusion.',
+          ),
     },
   ];
   if (bitcoin)
     information.push({
       value: comparison.value,
       unit: comparison.available
-        ? `${comparison.candidateShare === null ? 'part indéfinie' : '% du candidat'} · #${number(comparison.comparison.blockHeight)}`
+        ? `${comparison.candidateShare === null ? t('part indéfinie', 'undefined share') : t('% du candidat', '% of candidate')} · #${n(comparison.comparison.blockHeight)}`
         : '',
-      label: comparison.available ? 'Candidat retrouvé' : 'En attente d’un bilan',
-      lines: ['Candidat préalable', 'et bloc vérifié nécessaires'],
+      label: comparison.available
+        ? t('Candidat retrouvé', 'Candidate matched')
+        : t('En attente d’un bilan', 'Waiting for comparison'),
+      lines: [
+        t('Candidat préalable', 'Previous candidate'),
+        t('et bloc vérifié nécessaires', 'and verified block required'),
+      ],
       note: comparison.note,
     });
   information.push({
@@ -221,10 +282,10 @@ export const InfoBillboard = memo(function InfoBillboard({
         ? [flow.average]
         : [
             snapshot.eventFlow
-              ? 'En attente de données mesurées'
+              ? t('En attente de données mesurées', 'Waiting for measured data')
               : flow.state === 'warming'
-                ? 'Second relevé nécessaire'
-                : 'Inventaires complets requis',
+                ? t('Second relevé nécessaire', 'Second observation required')
+                : t('Inventaires complets requis', 'Complete inventories required'),
           ],
     note: flow.note,
   });
@@ -240,7 +301,7 @@ export const InfoBillboard = memo(function InfoBillboard({
   return (
     <section
       className={`info-billboard info-billboard--${snapshot.chain}${top ? ' info-billboard--top' : ''}${!rotating || reducedMotion ? ' info-billboard--still' : ''}`}
-      aria-label={`Panneau d’informations ${chainName}`}
+      aria-label={t(`Panneau d’informations ${chainName}`, `${chainName} information board`)}
       data-page={pageLabels[pageIndex]}
       data-auto-rotating={rotating}
       data-status={snapshot.status}
@@ -255,7 +316,7 @@ export const InfoBillboard = memo(function InfoBillboard({
         <span>{bitcoin ? 'BTC' : 'ETH'}</span>
       </header>
       <div className="info-billboard-screen" key={pageIndex} title={current.note}>
-        <p className="info-billboard-page">{pageLabels[pageIndex]}</p>
+        <p className="info-billboard-page">{pageLabel(pageLabels[pageIndex]!)}</p>
         {flowPage && <p className="info-billboard-flow-kind">{flow.kindLabel}</p>}
         <p className={`info-billboard-value info-billboard-value--${valueSize}`}>
           {current.estimated && <span className="info-billboard-estimate">≈ </span>}
@@ -272,8 +333,14 @@ export const InfoBillboard = memo(function InfoBillboard({
                 role="img"
                 aria-label={
                   flow.kind === 'events' && !bitcoin
-                    ? 'Débit moyen des notifications pending du fournisseur, historique d’environ une minute'
-                    : 'Débit moyen des ajouts observés du fournisseur, historique d’environ une minute'
+                    ? t(
+                        'Débit moyen des notifications pending du fournisseur, historique d’environ une minute',
+                        'Average rate of the provider’s pending notifications, approximately one minute of history',
+                      )
+                    : t(
+                        'Débit moyen des ajouts observés du fournisseur, historique d’environ une minute',
+                        'Average rate of additions observed by the provider, approximately one minute of history',
+                      )
                 }
                 data-flow-history-count={flow.history.length}
               >
@@ -293,7 +360,9 @@ export const InfoBillboard = memo(function InfoBillboard({
           </div>
         ) : comparisonPage && comparison.available ? (
           <div className="info-billboard-comparison">
-            <p className="info-comparison-scope">Complet · hors coinbase</p>
+            <p className="info-comparison-scope">
+              {t('Complet · hors coinbase', 'Complete · excluding coinbase')}
+            </p>
             <dl className="info-comparison-counts">
               {comparison.categories.map((category) => (
                 <div
@@ -306,7 +375,7 @@ export const InfoBillboard = memo(function InfoBillboard({
                     <span aria-hidden="true">{category.shortLabel}</span>
                     <span className="visually-hidden">{category.label}</span>
                   </dt>
-                  <dd>{number(category.count)}</dd>
+                  <dd>{n(category.count)}</dd>
                 </div>
               ))}
             </dl>
@@ -320,14 +389,20 @@ export const InfoBillboard = memo(function InfoBillboard({
         )}
       </div>
       <div className="info-billboard-footer">
-        <nav className="info-billboard-navigation" aria-label={`Rubriques ${chainName}`}>
+        <nav
+          className="info-billboard-navigation"
+          aria-label={t(`Rubriques ${chainName}`, `${chainName} sections`)}
+        >
           {pageLabels.map((label, index) => (
             <button
               key={label}
               type="button"
-              aria-label={`Afficher ${label.toLowerCase()} · ${chainName}`}
+              aria-label={t(
+                `Afficher ${label.toLowerCase()} · ${chainName}`,
+                `Show ${pageLabel(label).toLowerCase()} · ${chainName}`,
+              )}
               aria-pressed={pageIndex === index}
-              title={label}
+              title={pageLabel(label)}
               onClick={() => {
                 setPage(index);
                 setRotationEnabled(false);
@@ -340,13 +415,22 @@ export const InfoBillboard = memo(function InfoBillboard({
         <button
           className="info-billboard-rotation"
           type="button"
-          aria-label={`${rotationEnabled ? 'Arrêter' : 'Activer'} le défilement du panneau ${chainName}`}
+          aria-label={t(
+            `${rotationEnabled ? 'Arrêter' : 'Activer'} le défilement du panneau ${chainName}`,
+            `${rotationEnabled ? 'Stop' : 'Enable'} rotation of the ${chainName} board`,
+          )}
           aria-pressed={rotationEnabled}
-          title={rotationEnabled ? 'Arrêter le défilement' : 'Défiler toutes les 4 secondes'}
+          title={
+            rotationEnabled
+              ? t('Arrêter le défilement', 'Stop rotation')
+              : t('Défiler toutes les 4 secondes', 'Rotate every 4 seconds')
+          }
           onClick={() => setRotationEnabled((enabled) => !enabled)}
         >
           <Icon name={rotationEnabled ? 'pause' : 'play'} size={12} />
-          <span>{rotating ? '4 s' : rotationEnabled ? 'Pause' : 'Fixe'}</span>
+          <span>
+            {rotating ? '4 s' : rotationEnabled ? t('Pause', 'Paused') : t('Fixe', 'Pinned')}
+          </span>
         </button>
       </div>
       <p
@@ -358,7 +442,7 @@ export const InfoBillboard = memo(function InfoBillboard({
           flow.source && flow.observedAt !== null ? (
             <>
               <time dateTime={new Date(flow.observedAt).toISOString()}>
-                {new Date(flow.observedAt).toLocaleTimeString('fr-CH')}
+                {new Date(flow.observedAt).toLocaleTimeString(languageTag(locale))}
               </time>{' '}
               · {flow.source}
             </>
@@ -367,18 +451,24 @@ export const InfoBillboard = memo(function InfoBillboard({
           )
         ) : comparisonPage && comparison.available ? (
           <>
-            {comparison.stale ? 'Ancien bilan conservé · ' : ''}
+            {comparison.stale
+              ? t('Ancien bilan conservé · ', 'Previous comparison retained · ')
+              : ''}
             {comparison.comparison.candidateSource} ·{' '}
             <time dateTime={new Date(comparison.comparison.candidateObservedAt).toISOString()}>
-              {new Date(comparison.comparison.candidateObservedAt).toLocaleTimeString('fr-CH')}
+              {new Date(comparison.comparison.candidateObservedAt).toLocaleTimeString(
+                languageTag(locale),
+              )}
             </time>
           </>
         ) : (
           <>
             {sourceLabel}
-            {pageIndex === 0 && mempool.status === 'stale' ? ' · compteur ancien' : ''}
+            {pageIndex === 0 && mempool.status === 'stale'
+              ? t(' · compteur ancien', ' · old count')
+              : ''}
             {pageIndex === 1 && feeDisplayUnit === 'usd' && usableQuote && quote?.status === 'stale'
-              ? ' · cours conservé'
+              ? t(' · cours conservé', ' · retained exchange rate')
               : ''}
           </>
         )}
