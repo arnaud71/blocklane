@@ -10,9 +10,9 @@ Le propriétaire conserve la décision de fusion et de publication. Un hébergem
 
 ## À configurer après création du dépôt distant
 
-Le dépôt privé [arnaud71/blocklane](https://github.com/arnaud71/blocklane) a été créé le 16 octobre 2026 sur le compte personnel arnaud71, séparément d’onchainfinity. Aucun code n’y a encore été poussé. GitHub a refusé l’activation des règles de branche avec HTTP 403 : les protections d’un dépôt privé nécessitent GitHub Pro avec l’offre actuelle. Avant le premier envoi, activer une offre compatible ou obtenir du propriétaire un choix explicite sur la visibilité ou une exception aux protections requises par `AGENTS.md`. La fusion automatique reste désactivée.
+Le dépôt public [arnaud71/blocklane](https://github.com/arnaud71/blocklane) appartient au compte personnel arnaud71, séparément d’onchainfinity. Le propriétaire a autorisé sa publication publique le 16 octobre 2026, après le refus GitHub HTTP 403 des protections sur l’offre privée. Les règles de `main` sont actives avant le premier envoi du code : aucun acteur de contournement, PR et contrôles obligatoires, interdiction de force-push et de suppression. La création initiale de la branche est exemptée des seuls checks qui ne peuvent pas encore exister ; les mises à jour exigent ensuite leurs résultats à jour. La fusion automatique reste désactivée. Les alertes de dépendances, la détection des secrets, la protection au push et le signalement privé de vulnérabilités sont activés.
 
-Les contrôles obligatoires préparés sont `Lint, types, tests, build et navigateur` et `audit`. L’audit s’exécute pour toutes les PR : un filtrage par chemins le laisserait en attente pour les autres changements. Prévoir une PR obligatoire, des checks à jour, les conversations résolues, aucun contournement administrateur, aucun force-push et aucune suppression de `main`. Un compte personnel seul utilise zéro approbation formelle obligatoire pour permettre la revue sans exiger sa propre approbation ; les contrôles et la PR restent requis.
+Les contrôles obligatoires configurés sont `Lint, types, tests, build et navigateur` et `audit`. L’audit s’exécute pour toutes les PR : un filtrage par chemins le laisserait en attente pour les autres changements. Prévoir une PR obligatoire, des checks à jour, les conversations résolues, aucun contournement administrateur, aucun force-push et aucune suppression de `main`. Un compte personnel seul utilise zéro approbation formelle obligatoire pour permettre la revue sans exiger sa propre approbation ; les contrôles et la PR restent requis.
 
 1. Publier le dépôt et protéger `main` : PR obligatoire, contrôles CI obligatoires, historique sans force-push, suppression de branche protégée interdite.
 2. Activer Dependabot et ses alertes, ainsi que la détection et le signalement privé de secrets/vulnérabilités lorsque l'offre du dépôt le permet.
@@ -23,7 +23,7 @@ Les contrôles obligatoires préparés sont `Lint, types, tests, build et naviga
 7. Configurer une alerte de service et une alerte de source ancienne/indisponible. Le simple HTTP 200 du serveur ne prouve pas que les données sont fraîches.
 8. Vérifier l'automatisation de maintenance Codex dans l'application et son accès au projet.
 
-Les workflows du dépôt sont préparés ; ils ne configurent pas automatiquement ces paramètres GitHub ni l'hébergement.
+Les workflows du dépôt ne configurent pas automatiquement les règles GitHub. Les réglages ci-dessus ont été appliqués séparément ; vérifier leur maintien sur [GitHub](https://github.com/arnaud71/blocklane/settings/rules). L’hébergement reste une opération distincte.
 
 Les tests ont repris à la demande du propriétaire après leur suspension ponctuelle. Les résultats propres à chaque changement, ainsi que leurs limites, figurent dans [validation.md](validation.md).
 

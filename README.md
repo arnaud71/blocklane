@@ -140,7 +140,7 @@ npm audit --omit=dev --audit-level=high
 
 `check` regroupe lint, TypeScript strict, tests unitaires et compilation. Les tests navigateur couvrent les parcours avec données contrôlées ; ils ne dépendent pas de la disponibilité des API publiques. La CI répète ces contrôles sur les propositions de changement. Dependabot ouvre des propositions hebdomadaires ; aucune fusion ni publication automatique n'est configurée.
 
-Conserver `package-lock.json`, utiliser `npm ci`, travailler sur des branches `codex/...`, passer par une PR et mettre à jour [CHANGELOG.md](CHANGELOG.md). Les versions suivent SemVer ; une publication validée reçoit un tag `vX.Y.Z`. La CI et les protections de branche ne deviennent actives qu'après publication dans un dépôt GitHub et configuration de ses règles.
+Conserver `package-lock.json`, utiliser `npm ci`, travailler sur des branches `codex/...`, passer par une PR et mettre à jour [CHANGELOG.md](CHANGELOG.md). Les versions suivent SemVer ; une publication validée reçoit un tag `vX.Y.Z`. La CI et les protections de `main` sont configurées dans le dépôt GitHub ; les futures modifications passent par leurs contrôles obligatoires et une PR.
 
 ## Mesurer la scène localement
 
@@ -174,7 +174,7 @@ Configurer `TRUSTED_PROXY_IPS` avec l'adresse du proxy réellement vue par le se
 
 Recommandation initiale : **un petit serveur Linux ou une plateforme de conteneurs, un seul service Node et des fournisseurs de données remplaçables**. Sans base de données, Redis ni infrastructure blockchain à administrer au départ. Une infrastructure HEG peut héberger le même conteneur. Les options, leurs compromis et les conditions d'évolution figurent dans [docs/architecture.md](docs/architecture.md).
 
-Ce dépôt contient le socle applicatif et les procédures. La mise en ligne publique, le domaine, TLS, les comptes fournisseurs, les alertes et les règles de branche restent à configurer dans l'environnement retenu. Aucune disponibilité de production n'est promise par cette version initiale.
+Le code est publié sur [arnaud71/blocklane](https://github.com/arnaud71/blocklane), avec protections de `main` et contrôles CI obligatoires. La mise en ligne de l’application, le domaine, TLS, les comptes fournisseurs et les alertes d’hébergement restent à configurer dans l’environnement retenu. Aucune disponibilité de production n'est promise par cette version initiale.
 
 ## Maintenance
 

@@ -8,7 +8,7 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 - L’audit de dépendances s’exécute sur toutes les PR, afin de pouvoir devenir un contrôle obligatoire sans laisser les changements ordinaires en attente.
 - Le cache généré TypeScript `*.tsbuildinfo` est exclu de Git. Les journaux `.local` et ce cache sont aussi exclus du contexte Docker ; les secrets et artefacts locaux restent exclus.
-- Dépôt privé dédié créé sur arnaud71 ; la procédure de première publication documente le refus des protections privées par l’offre GitHub actuelle et le choix restant au propriétaire.
+- Dépôt public dédié sur arnaud71, avec autorisation explicite du propriétaire après le refus des protections sur l’offre privée. Règles de main, contrôles obligatoires, alertes de dépendances, détection/protection des secrets et signalement privé des vulnérabilités configurés avant le premier push.
 
 ### Vraies arrivées Bitcoin dans la scène — 16 octobre 2026
 

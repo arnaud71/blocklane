@@ -22,7 +22,7 @@ La version initiale n'ajoute pas d'outil d'analytics ni de cookie publicitaire. 
 
 ## Vulnérabilités et incident
 
-Tant qu'aucun dépôt distant ni contact de sécurité n'est configuré, communiquer le problème en privé au propriétaire du projet. Après publication GitHub, activer le signalement privé de vulnérabilités et afficher le canal retenu ici. Ne pas ouvrir une issue publique contenant un secret ou une procédure d'exploitation non corrigée.
+Pour signaler une vulnérabilité, utiliser le [canal privé GitHub de BlockLane](https://github.com/arnaud71/blocklane/security/advisories/new), activé sur le dépôt public arnaud71/blocklane. Ne pas ouvrir une issue publique contenant un secret ou une procédure d’exploitation non corrigée. Les alertes de dépendances, la détection des secrets et la protection au push sont activées ; elles ne remplacent pas la revue et le contrôle de l’historique avant publication.
 
 Fournir la version affectée, le comportement observé, des étapes minimales de reproduction et l'impact, sans donnée sensible. Les mainteneurs évaluent l'exposition, préparent le correctif, le vérifient et organisent la livraison et la communication. Aucun délai de réponse contractuel n'est défini par cette version initiale.
 
