@@ -79,6 +79,12 @@ export function useSnapshot(chain: ChainId, mode: 'live' | 'demo') {
     () => (current ? assessFreshness(current, !!error, clock) : null),
     [current, error, clock],
   );
+  useEffect(() => {
+    if (!snapshot || snapshot.status !== 'unavailable' || current?.status === 'unavailable') return;
+    // A rejected observation cannot become live again just because the clock catches up.
+    // Preserve a newer response if it arrived between this render and the effect.
+    setData((previous) => (previous === current ? snapshot : previous));
+  }, [current, snapshot]);
   return {
     snapshot,
     expiredBlockTemplate:

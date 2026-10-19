@@ -9,10 +9,17 @@ import {
 const TEMPLATE_MAX_AGE_MS = 30_000;
 const POOL_MAX_AGE_MS = 60_000;
 const SNAPSHOT_MAX_AGE_MS = 120_000;
+// Server and browser clocks can differ slightly; accept at most five seconds of future skew.
+const SNAPSHOT_CLOCK_SKEW_TOLERANCE_MS = 5_000;
 
 /** Schedule only the next data boundary; a long pending request must not postpone expiration. */
 export function nextSnapshotFreshnessDeadline(snapshot: Snapshot, now: number): number | null {
-  if (snapshot.mode !== 'live' || snapshot.status === 'unavailable') return null;
+  if (
+    snapshot.mode !== 'live' ||
+    snapshot.status === 'unavailable' ||
+    snapshot.observedAt - now > SNAPSHOT_CLOCK_SKEW_TOLERANCE_MS
+  )
+    return null;
   const deadlines = [snapshot.observedAt + SNAPSHOT_MAX_AGE_MS + 1];
   if (snapshot.blockTemplate)
     deadlines.push(snapshot.blockTemplate.observedAt + TEMPLATE_MAX_AGE_MS + 1);
@@ -37,7 +44,8 @@ export function nextSnapshotFreshnessDeadline(snapshot: Snapshot, now: number): 
 /** A disconnected browser must apply the same expiration as the server cache. */
 export function assessFreshness(snapshot: Snapshot, failed: boolean, now: number): Snapshot {
   if (snapshot.mode === 'demo' || snapshot.status === 'unavailable') return snapshot;
-  if (now - snapshot.observedAt > SNAPSHOT_MAX_AGE_MS) {
+  const future = snapshot.observedAt - now > SNAPSHOT_CLOCK_SKEW_TOLERANCE_MS;
+  if (future || now - snapshot.observedAt > SNAPSHOT_MAX_AGE_MS) {
     return {
       ...snapshot,
       status: 'unavailable',
@@ -57,7 +65,9 @@ export function assessFreshness(snapshot: Snapshot, failed: boolean, now: number
       transactions: [],
       blocks: [],
       inclusions: [],
-      message: 'Dernières données trop anciennes. Affichage suspendu en attendant la source.',
+      message: future
+        ? 'Horodatage incohérent. Affichage suspendu en attendant une nouvelle observation.'
+        : 'Dernières données trop anciennes. Affichage suspendu en attendant la source.',
     };
   }
   const templateExpired =

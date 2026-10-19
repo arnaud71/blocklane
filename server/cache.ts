@@ -25,6 +25,8 @@ interface CacheEntry {
   snapshot?: Snapshot;
   nextRefreshAt: number;
   attemptedAt: number;
+  lastClockAt?: number;
+  clockEpoch: number;
   error?: string;
   inFlight?: Promise<void>;
 }
@@ -46,8 +48,8 @@ export class SnapshotService implements SnapshotReader {
   private readonly eventFlows: EventFlowReader | null;
   private disposed = false;
   private readonly cache: Record<ChainId, CacheEntry> = {
-    bitcoin: { nextRefreshAt: 0, attemptedAt: 0 },
-    ethereum: { nextRefreshAt: 0, attemptedAt: 0 },
+    bitcoin: { nextRefreshAt: 0, attemptedAt: 0, clockEpoch: 0 },
+    ethereum: { nextRefreshAt: 0, attemptedAt: 0, clockEpoch: 0 },
   };
 
   constructor(options: SnapshotServiceOptions = {}) {
@@ -86,11 +88,13 @@ export class SnapshotService implements SnapshotReader {
       .then((quote) => (quote === null ? null : usdQuoteSchema.parse(quote)))
       .catch(() => null);
     const entry = this.cache[chain];
-    if (!entry.inFlight && this.now() >= entry.nextRefreshAt) {
-      entry.attemptedAt = this.now();
-      entry.nextRefreshAt = this.now() + CACHE_TTL_MS;
+    const time = this.clock(entry);
+    if (!entry.inFlight && time >= entry.nextRefreshAt) {
+      entry.attemptedAt = time;
+      entry.nextRefreshAt = time + CACHE_TTL_MS;
+      const clockEpoch = entry.clockEpoch;
       // Defer execution until after assignment, including providers that throw synchronously.
-      entry.inFlight = Promise.resolve().then(() => this.refresh(chain, entry));
+      entry.inFlight = Promise.resolve().then(() => this.refresh(chain, entry, clockEpoch));
     }
     const [, usdQuote] = await Promise.all([entry.inFlight, quotePromise]);
     const snapshot = this.current(chain, entry);
@@ -136,10 +140,31 @@ export class SnapshotService implements SnapshotReader {
     this.eventFlows?.dispose();
   }
 
-  private async refresh(chain: ChainId, entry: CacheEntry): Promise<void> {
+  /** A wall-clock rollback starts a new cache period without releasing an active refresh. */
+  private clock(entry: CacheEntry): number {
+    const time = this.now();
+    if (entry.lastClockAt !== undefined && time < entry.lastClockAt) {
+      delete entry.snapshot;
+      entry.nextRefreshAt = time;
+      entry.attemptedAt = time;
+      entry.clockEpoch += 1;
+      entry.error = 'Horloge serveur modifiée. Une nouvelle observation réseau est nécessaire.';
+    }
+    entry.lastClockAt = time;
+    return time;
+  }
+
+  private async refresh(chain: ChainId, entry: CacheEntry, clockEpoch: number): Promise<void> {
     try {
       const snapshot = snapshotSchema.parse(await this.providers[chain]());
-      if (snapshot.chain !== chain || snapshot.mode !== 'live' || snapshot.status !== 'ok') {
+      const time = this.clock(entry);
+      if (
+        clockEpoch !== entry.clockEpoch ||
+        snapshot.observedAt > time ||
+        snapshot.chain !== chain ||
+        snapshot.mode !== 'live' ||
+        snapshot.status !== 'ok'
+      ) {
         throw new UpstreamError('invalid');
       }
       entry.snapshot = snapshot;
@@ -150,17 +175,22 @@ export class SnapshotService implements SnapshotReader {
           ? 'Le fournisseur Ethereum ne pointe pas vers le réseau principal Ethereum. Vérifier la configuration serveur.'
           : 'Le fournisseur ne répond pas ou ses données sont invalides. Nouvelle tentative automatique après le délai de cache.';
     } finally {
-      entry.nextRefreshAt = this.now() + CACHE_TTL_MS;
+      entry.nextRefreshAt = this.clock(entry) + CACHE_TTL_MS;
       delete entry.inFlight;
     }
   }
 
   private current(chain: ChainId, entry: CacheEntry): Snapshot {
-    if (entry.snapshot && this.now() - entry.snapshot.observedAt <= MAX_STALE_MS) {
+    const time = this.clock(entry);
+    if (
+      entry.snapshot &&
+      entry.snapshot.observedAt <= time &&
+      time - entry.snapshot.observedAt <= MAX_STALE_MS
+    ) {
       const snapshot =
         entry.snapshot.poolFlow &&
-        (this.now() < entry.snapshot.poolFlow.observedAt ||
-          this.now() - entry.snapshot.poolFlow.observedAt > POOL_FLOW_MAX_AGE_MS)
+        (time < entry.snapshot.poolFlow.observedAt ||
+          time - entry.snapshot.poolFlow.observedAt > POOL_FLOW_MAX_AGE_MS)
           ? { ...entry.snapshot, poolFlow: null }
           : entry.snapshot;
       if (!entry.error) return snapshot;

@@ -332,6 +332,80 @@ test('old offline data is retired separately in each network pane', async ({ pag
   }
 });
 
+test('future Ethereum data remains unavailable until a fresh retry while Bitcoin stays live', async ({
+  page,
+}) => {
+  const at = Date.parse('2026-10-19T08:00:00Z');
+  await page.clock.install({ time: at });
+  await page.clock.pauseAt(at + 100);
+  await page.unroute('**/api/snapshot?*');
+  let phase: 'future' | 'failure' | 'fresh' = 'future';
+  let clockAt = at;
+  let failedEthereumRequests = 0;
+  let bitcoinObservedAt = 0;
+  const requestedModes: string[] = [];
+  await page.route('**/api/snapshot?*', async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const chain: ChainId = params.get('chain') === 'ethereum' ? 'ethereum' : 'bitcoin';
+    requestedModes.push(params.get('mode') ?? '');
+    if (chain === 'ethereum' && phase === 'failure') {
+      await route.fulfill({ status: 503, json: { error: 'CONTROLLED_FAILURE' } });
+      failedEthereumRequests += 1;
+      return;
+    }
+    const observedAt = chain === 'ethereum' && phase === 'future' ? at + 60_000 : clockAt;
+    await route.fulfill({ json: liveSnapshot(chain, observedAt) });
+    if (chain === 'bitcoin') bitcoinObservedAt = observedAt;
+  });
+  await page.goto('/');
+  await expect(pane(page, 'ethereum').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Source indisponible',
+  );
+  await expect(pane(page, 'ethereum').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(0);
+  await expect(pane(page, 'bitcoin').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Données en direct',
+  );
+  await expect(pane(page, 'bitcoin').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Direct', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+
+  await page.getByRole('button', { name: 'Mettre l’animation en pause', exact: true }).click();
+  phase = 'failure';
+  clockAt = at + 65_000;
+  await page.clock.fastForward(65_000);
+  await expect.poll(() => failedEthereumRequests).toBeGreaterThan(0);
+  await expect.poll(() => bitcoinObservedAt).toBe(clockAt);
+  await expect(pane(page, 'ethereum').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Source indisponible',
+  );
+  await expect(pane(page, 'ethereum').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(0);
+  await expect(pane(page, 'bitcoin').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Données en direct',
+  );
+  phase = 'fresh';
+  await pane(page, 'ethereum').getByRole('button', { name: 'Réessayer', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(pane(page, 'ethereum').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Données en direct',
+  );
+  await expect(pane(page, 'ethereum').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(1);
+  await expect(pane(page, 'bitcoin').getByRole('status')).toHaveAttribute(
+    'aria-label',
+    'Données en direct',
+  );
+  await expect(pane(page, 'bitcoin').locator('canvas[data-renderer="canvas-2d"]')).toHaveCount(1);
+  expect(requestedModes.every((mode) => mode === 'live')).toBe(true);
+  await inspectFirstTraveler(page, 'ethereum');
+  await expect(page.getByTestId('info-panel')).not.toContainText('Source indisponible');
+});
+
 test('selected transaction follows exact proof and remains explicitly historical when its source expires', async ({
   page,
 }) => {
