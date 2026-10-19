@@ -41,7 +41,15 @@ describe('shared provider flow cache', () => {
     expect(freshHead.poolFlow).toBeNull();
     expect(snapshotSchema.safeParse(freshHead).success).toBe(true);
     time = now - 1;
-    expect((await service.get('bitcoin', 'live')).poolFlow).toBeNull();
+    const corrected = await service.get('bitcoin', 'live');
+    expect(corrected).toMatchObject({ status: 'unavailable', mode: 'live' });
+    expect(corrected.poolFlow ?? null).toBeNull();
+    expect(corrected.transactions).toEqual([]);
+    expect(corrected.blocks).toEqual([]);
+    expect(corrected.poolObservation ?? null).toBeNull();
+    expect(corrected.blockTemplate ?? null).toBeNull();
+    expect(corrected.candidateComparison ?? null).toBeNull();
+    expect(corrected.eventFlow ?? null).toBeNull();
     expect((await service.get('bitcoin', 'demo')).poolFlow ?? null).toBeNull();
   });
 });

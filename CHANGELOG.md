@@ -4,6 +4,12 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ## À venir
 
+### Clock rollback recovery — 19 October 2026
+
+- A server clock moving backwards invalidates its previous live snapshot and restarts collection without waiting for the old cache deadline. Work already in flight stays shared, but a result started before the correction cannot become a new observation.
+- The browser rejects live observations more than five seconds ahead of its clock and keeps retired data unavailable until a new valid response arrives. Small server/browser clock differences remain tolerated. A failed refresh never switches to demonstration mode.
+- The three-second shared cache, 120-second maximum snapshot age, provider choices and response limits are unchanged. See the [maintenance review](docs/maintenance-2026-10-19.md) for checks, runtime advisories and verification limits.
+
 ### Préparation du dépôt GitHub — 16 octobre 2026
 
 - L’audit de dépendances s’exécute sur toutes les PR, afin de pouvoir devenir un contrôle obligatoire sans laisser les changements ordinaires en attente.
