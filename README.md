@@ -22,7 +22,7 @@ La rubrique **Flux** des panneaux du haut privilégie les événements reçus pa
 
 ## Démarrer
 
-Prérequis : Node.js **24 LTS** et npm. La branche 24 est une version maintenue de Node ; consulter le [calendrier officiel](https://nodejs.org/en/about/previous-releases) avant une migration.
+Runtime requirement: **Node.js 24.22.1 or newer in the 24.x LTS line**, with npm. The checked-in `.nvmrc` selects the verified security release; with nvm, run `nvm install` and `nvm use` before installing dependencies. Earlier Node 24 versions are rejected by the existing strict engine policy. See the [security maintenance review](docs/maintenance-2026-10-26.md).
 
 ```sh
 npm ci
