@@ -1,5 +1,9 @@
 # Exploitation et maintenance
 
+## Runtime security baseline — 26 October 2026
+
+Use Node **24.22.1 or newer within 24.x**. `.nvmrc` pins the tested security patch, both CI workflows read that file, and all Docker stages select `node:24.22.1-bookworm-slim`. The existing strict npm engine policy rejects earlier versions during local and CI dependency installation. See the [maintenance review](maintenance-2026-10-26.md) for advisories, verification and deployment limits. When advancing the baseline, update `.nvmrc`, the package/lockfile engine floor and all Docker stages together, then run the required checks. Rebuild approved images with `--pull` and record their resolved digests before an authorized release; a repository change does not patch an existing service.
+
 Automatisation enregistrée le 14 octobre 2026 : `maintenance-hebdomadaire-blocklane`, attachée au chat du projet, active chaque lundi à 09 h (Europe/Zurich). Elle prépare des correctifs vérifiables, reste silencieuse en l'absence de changement utile et n'effectue aucune fusion ni publication. Pour les exécutions locales, garder le poste éveillé et l'application ouverte.
 
 ## Responsabilités
@@ -82,7 +86,7 @@ Une requête de cours est limitée à huit secondes et 16 Kio. Un ancien cours p
 
 1. Partir d'un commit revu avec CI verte et un espace de travail propre. Vérifier le changelog et la version `package.json` / lockfile.
 2. Exécuter les contrôles prévus et compiler depuis le lockfile avec `npm ci`. Les tests navigateur utilisent des données contrôlées ; compléter par un test direct de lecture des fournisseurs avant la publication.
-3. Construire l'image conteneur et noter le commit, la version Node, le digest de l'image de base résolue et le digest de l'image produite. Le tag de base `node:24-bookworm-slim` reçoit des mises à jour ; conserver les digests de la livraison pour la reproductibilité opérationnelle.
+3. Build the container image with `--pull` and record the commit, Node version, resolved base-image digest and produced-image digest. The `node:24.22.1-bookworm-slim` tag pins the Node patch but still receives operating-system rebuilds; retain release digests for operational reproducibility.
 4. Lancer l'image dans un environnement de préproduction avec les mêmes variables non secrètes. Vérifier santé, deux chaînes, anciens instantanés, erreurs, fichiers statiques et fonctionnement sans FairOnChain.
 5. Conserver l'image actuellement déployée et un export protégé de sa configuration, sans écrire les secrets dans Git.
 6. Présenter la version et les vérifications au propriétaire ; déployer seulement avec l'autorisation appropriée.

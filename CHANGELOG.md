@@ -4,6 +4,12 @@ Le projet suit le versionnement sémantique. Les dates utilisent le calendrier E
 
 ## À venir
 
+### Node security baseline — 26 October 2026
+
+- Require Node **24.22.1 or newer within 24.x**, following the official 21 October security release. The existing strict engine policy rejects older installations.
+- Select the tested patch through `.nvmrc` in local development and both CI workflows; pin all three Docker stages to `24.22.1-bookworm-slim`. Keep the lockfile engine requirement synchronized without changing npm dependency versions.
+- Record the [advisories, checks and release limits](docs/maintenance-2026-10-26.md). Applying this repository change does not upgrade an existing installation or deployment.
+
 ### Préparation du dépôt GitHub — 16 octobre 2026
 
 - L’audit de dépendances s’exécute sur toutes les PR, afin de pouvoir devenir un contrôle obligatoire sans laisser les changements ordinaires en attente.
