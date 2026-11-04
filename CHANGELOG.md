@@ -4,6 +4,13 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Text-safe responsive layout — 4 November 2026
+
+- Information boards grow with translated labels, large values and wrapped source names; value, unit, status and navigation occupy separate rows without clipping. Narrow Flow and Comparison views stack their details.
+- Provider-wide queue captions and coverage notices wrap fully instead of using fixed-height rows, ellipses or a mobile line clamp. Departure controls stay in normal flow and can wrap without covering their label.
+- Content-sized header/footer tracks preserve text when font preferences increase. Both scenes retain at least 120 pixels of height; short windows can scroll vertically to reach all information and controls. The illustrations still fill the remaining desktop space.
+- Layout-only change: provider selection, data contracts, animation timing and sample limits are unchanged. Browser regression checks use controlled data in both languages, including long sources and increased small-text sizes.
+
 ### French/English interface and English documentation — 16 October 2026
 
 - Repository Markdown documentation translated fully into English, retaining historical decisions, limits, sources and validation qualifications.

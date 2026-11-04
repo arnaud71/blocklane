@@ -1,4 +1,23 @@
-# Verification status — 16 October 2026
+# Verification status
+
+## Text-safe responsive layout — 4 November 2026
+
+Information boards use natural-height rows for translated labels, values, units, controls and provenance. Provider-wide queue captions and coverage notices wrap fully. The outer layout reserves content-sized header/footer rows and at least 120 pixels for the scenes; shorter windows scroll vertically instead of hiding text. Compact laptop spacing preserves the existing requirement that the illustrated areas occupy more than half of a normal desktop viewport.
+
+Validation used Node **24.22.2** with the existing lockfile and unchanged dependencies:
+
+- `npm run check`: ESLint, strict TypeScript, **784 tests across 64 files**, and the production build passed.
+- `npm run format:check` and `git diff --check` passed.
+- Full `npm run test:e2e` campaign: **168 desktop/mobile Chromium scenarios passed**, two workers, zero retries, **4.5 minutes**, against the isolated local preview. Log: `/private/tmp/blocklane-layout-final-e2e.log`; results: `/private/tmp/blocklane-layout-final-results/`.
+- The four new layout scenarios passed again against the application actually served on port 5173 in **10.0 seconds**. Log: `/private/tmp/blocklane-layout-applied-e2e.log`; results: `/private/tmp/blocklane-layout-applied-results/`.
+
+The new scenarios exercise every available information-board section in French and English at **1280 × 720** and **320 × 640**, with large schema-valid values, complete comparison counts, dated event flow, and long provenance including an unbroken identifier. Text-range checks detect cropping and overlap, require the displayed data to remain visible, check queue/coverage and header/footer text, and repeat with small text enlarged to 14 pixels. Keyboard navigation and reduced motion are exercised with a controlled clock. Automated snapshots are fixtures and contact no real provider.
+
+Desktop/mobile screenshots were inspected. An additional manual Chromium capture used a **1709 × 1009** viewport at **2× device scale**, with the browser's actual minimum font size set to **24 pixels**; the displayed Mempool and Travelers boards, queue captions and controls stayed readable. This is additional evidence for that configuration, not an exhaustive accessibility or browser-compatibility claim. Physical mobile devices and the hosted Sites prototype were not tested by this change.
+
+Intermediate checks found a laptop density regression, corrected through compact margins and padding. An older Flow assertion required exactly equal board heights; it now checks that the actual chart stays visible above its controls, allowing the requested text-driven growth. The Bitcoin pointer test now scrolls the canvas into view and clicks a painted interior point: tracing showed that its former fractional hair-edge coordinate was truncated in a native click event. The actual pointer click and exact transaction-ID assertions remain. Four unrelated trace-close errors came from concurrent runs sharing an output directory; the final full run used its own directory and had no such error.
+
+The JavaScript bundle remains **566.94 kB minified / 172.27 kB gzip**; Vite's existing warning above 500 kB remains visible. No performance improvement, upstream availability or hosted release is claimed. Provider configuration, sampling limits, inclusion semantics, animation timing, Node requirements and the manifest/lockfile are unchanged. The correction is applied locally on `codex/layout-unclipped-text`; no merge, push or deployment is included.
 
 ## Browser language, FR/EN interface and English documentation — 16 October 2026
 

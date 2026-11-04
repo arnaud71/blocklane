@@ -389,11 +389,12 @@ a:hover {
   height: 100dvh;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  overflow: hidden;
+  grid-template-rows: max-content minmax(min-content, 1fr) max-content;
+  overflow: auto;
 }
 .immersion-topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 22px;
   padding: 8px 17px;
@@ -466,7 +467,7 @@ a:hover {
 }
 main.immersion-main {
   max-width: none;
-  min-height: 0;
+  min-height: min-content;
   margin: 0;
   padding: 0;
   position: relative;
@@ -477,19 +478,19 @@ main.immersion-main {
   --global-queue-height: 92px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--campus-width) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) var(--global-queue-height) auto;
+  grid-template-rows: auto minmax(120px, 1fr) minmax(var(--global-queue-height), auto) auto;
   width: 100%;
-  height: 100%;
+  align-self: stretch;
   min-height: 0;
 }
 .chain-pane {
   --chain-accent: #e8a362;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) var(--global-queue-height) auto;
+  grid-template-rows: auto minmax(120px, 1fr) minmax(var(--global-queue-height), auto) auto;
   grid-row: 1 / -1;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
   position: relative;
   background: #234a3b;
 }
@@ -501,6 +502,7 @@ main.immersion-main {
   --chain-accent: #b4a7f0;
 }
 .chain-heading {
+  grid-column: 1;
   grid-row: 1;
   padding: 11px 17px 10px;
   background: #102a29;
@@ -508,6 +510,7 @@ main.immersion-main {
 }
 .chain-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -516,12 +519,16 @@ main.immersion-main {
   height: 27px;
 }
 .chain-title h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: 17px;
   font-weight: 550;
   color: #e4efe3;
 }
 .chain-title .data-status {
+  max-width: 100%;
+  white-space: normal;
   margin-left: auto;
   font-size: 11px;
 }
@@ -558,7 +565,11 @@ main.immersion-main {
   white-space: nowrap;
 }
 .chain-pane .scene-stage {
+  grid-column: 1;
   grid-row: 2;
+  /* The illustrations fill the available track; their intrinsic SVG height
+     must not force the text-aware grid beyond the viewport. */
+  contain: size;
   min-width: 0;
   min-height: 0;
   max-height: none;
@@ -566,13 +577,15 @@ main.immersion-main {
   background: #234a3b;
 }
 .chain-pane .stale-warning {
-  position: absolute;
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  position: relative;
   z-index: 4;
-  bottom: calc(var(--global-queue-height) + 22px);
-  left: 0;
-  right: 0;
+  margin: 0;
 }
 .chain-coverage {
+  grid-column: 1;
   grid-row: 4;
   margin: 0;
   padding: 5px 13px;
@@ -580,6 +593,7 @@ main.immersion-main {
   background: #163b2d;
   font-size: 9px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 @supports (grid-template-rows: subgrid) {
   .chain-pane {
@@ -608,9 +622,8 @@ main.immersion-main {
   position: relative;
 }
 .chain-departure-line {
-  position: relative;
-  padding-right: 88px;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 7px;
   margin: 7px 0 0;
@@ -618,15 +631,15 @@ main.immersion-main {
   font-size: 11px;
 }
 .chain-departure-label {
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .chain-departure-label-compact {
   display: none;
 }
 .chain-transaction-controls {
-  position: absolute;
-  top: 0;
-  right: 0;
+  max-width: 100%;
+  margin-left: auto;
 }
 .chain-departure-line .departure-timer {
   font-size: 13px;
@@ -854,7 +867,17 @@ main.immersion-main {
     font-size: 21px;
   }
   .chain-heading {
-    padding: 6px 13px;
+    padding: 4px 13px;
+  }
+  .chain-departure-line {
+    margin-top: 2px;
+  }
+  .twin-streets {
+    --global-queue-height: 80px;
+  }
+  .global-queue {
+    padding-block: 3px;
+    gap: 2px;
   }
   .chain-title h2 {
     font-size: 15px;
@@ -969,7 +992,6 @@ main.immersion-main {
   }
   .chain-departure-line {
     margin-top: 0;
-    padding-right: 34px;
   }
   .chain-departure-label-full {
     position: absolute;
@@ -1029,10 +1051,6 @@ main.immersion-main {
   .chain-coverage {
     font-size: 9px;
     padding: 3px 7px;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
   }
   .immersion-controls {
     padding: 4px 7px;
