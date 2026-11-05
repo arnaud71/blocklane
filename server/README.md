@@ -1,5 +1,25 @@
 # Read-only API and adapters
 
+## Ethereum activity categories
+
+`Tx.tokens` recognizes the reviewed Ethereum-mainnet USDT and USDC contracts, preserving transfer intent/approval/generic interaction versus validated Transfer-log execution evidence. Amounts stay exact base-unit strings; use each registry entry's decimals and symbol. The optional exact-latest-block `tokenTransfers` array has separate reports per token. Both tokens share **one** fixed-address `eth_getLogs` request and a combined 4,096-event/eight-second/two-MiB budget; errors are unavailable, while a complete empty response is zero for each token. No raw calldata, log body, participant address or provider URL is exposed. The original USDT collection below is generalized by this section.
+
+`Tx.protocols` is optional and contains up to two unique records:
+
+```ts
+{
+  protocolId: 'uniswap' | 'aave';
+  operation: 'interaction' | 'execute' | 'supply' | 'withdraw' | 'borrow' | 'repay' | 'liquidation';
+  evidence: 'call' | 'demo';
+}
+```
+
+`execute` belongs to the reviewed Uniswap Universal Routers; Aave operation labels belong to the reviewed V3 Ethereum Core Pool. Unknown/malformed method shapes remain generic interactions. Neither the UNI/AAVE governance token nor a similarly named contract is a protocol entry point. Direct calls, even included calls with recognized calldata, are not proof of successful execution.
+
+`Snapshot.protocolCalls` is optional/nullable and contains up to two exact-head reports with `protocolId`, `blockHash`, `blockHeight`, `source`, `observedAt`, `method: 'block-calls' | 'simulation'` and `transactionCount`. Counts use unique direct calls from the complete validated latest block, before the existing transaction sample is applied. This adds no network request. Zero is meaningful only with a valid report; unknown remains absent/null. No successful-swap/loan count, execution receipt or protocol amount is supplied. Reports cannot exceed complete block transaction counts or contradict sampled included-call membership.
+
+Registries: [`tokenContracts.ts`](../shared/tokenContracts.ts), [`protocolContracts.ts`](../shared/protocolContracts.ts), [`activityHouses.ts`](../shared/activityHouses.ts). Source identities, excluded entry points and evidence limits are recorded in [architecture.md](../docs/architecture.md). All category memberships attach to an existing transaction hash: one passenger can have several badges, and counts from different houses must not be added together. No new query argument or visitor-selected upstream destination is accepted.
+
 `server/index.ts` starts the native Node 24 HTTP server. Importing `createApp` from `server/app.ts` constructs the server without opening a port, for tests or another entry point. `npm start` uses `tsx` and loads `.env` when present.
 
 ## Shared event streams

@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ACTIVITY_HOUSES, HOUSE_IDS } from '../../shared/activityHouses';
 import {
   createPassengerCanvasRenderer,
   hitTestCanvasPassenger,
+  canvasPassengerAnchor,
   type CanvasPassenger,
   type CanvasPassengerFrame,
 } from '../../src/lib/passengerCanvas';
+import { PASSENGER_VISUAL_SCALE } from '../../src/lib/passengerVisual';
 
 interface PaintEvent {
   type: 'fill' | 'stroke' | 'image';
@@ -99,6 +102,104 @@ const drawsBadge = (events: PaintEvent[]) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe('USDT Canvas passenger badge and category highlighting', () => {
+  it('enlarges body and head picking with the figure while preserving mirrored foot anchors and world clips', () => {
+    for (const mirrored of [false, true]) {
+      const person = passenger(1);
+      person.offsetY = 7;
+      person.pose.headScale = 0.8;
+      const scene = frame([person]);
+      scene.view.mirrored = mirrored;
+      const anchor = canvasPassengerAnchor(scene, viewport, person);
+      const outward = mirrored ? -1 : 1;
+      // This point lies beyond the previous 13-unit body edge, inside the enlarged body.
+      expect(
+        hitTestCanvasPassenger(
+          scene,
+          viewport,
+          anchor.x + outward * 14,
+          anchor.y - 15 * PASSENGER_VISUAL_SCALE,
+        ),
+      ).toBe(person);
+      expect(canvasPassengerAnchor(scene, viewport, person)).toEqual(anchor);
+      person.pose.headScale = 2.5;
+      const edge = { x: anchor.x + outward * 16.2, y: anchor.y - 22 * PASSENGER_VISUAL_SCALE };
+      expect(hitTestCanvasPassenger(scene, viewport, edge.x, edge.y)).toBe(person);
+      expect(
+        hitTestCanvasPassenger(scene, viewport, anchor.x + outward * 25, edge.y),
+      ).toBeUndefined();
+      person.clips = [{ x: person.pose.x - 10, y: person.pose.y - 55, width: 20, height: 65 }];
+      expect(hitTestCanvasPassenger(scene, viewport, edge.x, edge.y)).toBeUndefined();
+      expect(
+        hitTestCanvasPassenger(scene, viewport, anchor.x, anchor.y - 22 * PASSENGER_VISUAL_SCALE),
+      ).toBe(person);
+    }
+  });
+
+  it('draws every recognized category once on a single traveler with the original fee shirt and consistent hit area', () => {
+    const canvases = canvasDocument();
+    const renderer = createPassengerCanvasRenderer();
+    const person = passenger(1, true);
+    person.pose.tx.tokens!.push({
+      tokenId: 'usdc',
+      operation: 'transfer',
+      evidence: 'call',
+      amount: '2000000',
+    });
+    person.pose.tx.protocols = [
+      { protocolId: 'uniswap', operation: 'execute', evidence: 'call' },
+      { protocolId: 'aave', operation: 'supply', evidence: 'call' },
+    ];
+    const scene = frame([person]);
+    const events: PaintEvent[] = [];
+    renderer.draw(context(events), scene, viewport);
+    for (const id of HOUSE_IDS) {
+      const color = ACTIVITY_HOUSES[id].color;
+      expect(
+        canvases.filter((canvas) =>
+          canvas.events.some((event) => event.type === 'fill' && event.style === color),
+        ),
+      ).toHaveLength(1);
+    }
+    expect(scene.passengers).toHaveLength(1);
+    expect(person.color).toBe('#ef9a42');
+    expect(hitTestCanvasPassenger(scene, viewport, person.pose.x - 3, 60)).toBe(person);
+    const count = canvases.length;
+    renderer.draw(context(), scene, viewport);
+    expect(canvases).toHaveLength(count);
+    renderer.dispose();
+  });
+
+  it('refreshes a warmed static raster when USDC and protocol badges arrive and when protocol highlighting changes', () => {
+    const canvases = canvasDocument();
+    const renderer = createPassengerCanvasRenderer();
+    const people = Array.from({ length: 8 }, (_, index) => passenger(index));
+    const scene = frame(people);
+    renderer.draw(context(), scene, viewport);
+    renderer.draw(context(), scene, viewport);
+    const oldImages = canvases.filter((canvas) => canvas.width > 20 && canvas.height > 20);
+    people[0]!.pose.tx.tokens = [
+      { tokenId: 'usdc', operation: 'transfer', evidence: 'call', amount: '1' },
+    ];
+    people[0]!.pose.tx.protocols = [{ protocolId: 'aave', operation: 'borrow', evidence: 'call' }];
+    const highlighted: PaintEvent[] = [];
+    renderer.draw(context(highlighted), { ...scene, highlightHouseId: 'aave' }, viewport);
+    expect(
+      highlighted.some(
+        (event) => event.type === 'stroke' && event.style === ACTIVITY_HOUSES.aave.color,
+      ),
+    ).toBe(true);
+    expect(oldImages.some((canvas) => canvas.width === 0)).toBe(true);
+    const ordinary: PaintEvent[] = [];
+    renderer.draw(context(ordinary), scene, viewport);
+    expect(
+      ordinary.some(
+        (event) => event.type === 'stroke' && event.style === ACTIVITY_HOUSES.aave.color,
+      ),
+    ).toBe(false);
+    expect(people).toHaveLength(8);
+    renderer.dispose();
+  });
+
   it('uses one cached badge glyph and preserves fee colour and pointer selection', () => {
     const canvases = canvasDocument();
     const renderer = createPassengerCanvasRenderer();

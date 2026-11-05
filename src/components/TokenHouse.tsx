@@ -1,14 +1,16 @@
-import { memo, type RefObject } from 'react';
+import { memo, useId, type RefObject, type CSSProperties } from 'react';
 import type { Snapshot } from '../../shared/model';
-import { hasTokenActivity, TOKEN_CONTRACTS } from '../../shared/tokenContracts';
+import { TOKEN_CONTRACTS, type TokenId } from '../../shared/tokenContracts';
+import { ACTIVITY_HOUSES, hasHouseActivity, type HouseId } from '../../shared/activityHouses';
 import { useI18n, languageTag } from '../i18n';
-import { USDT_HOUSE_RECT } from '../lib/streetGeometry';
+import { HOUSE_RECTS } from '../lib/streetGeometry';
 import { number } from '../lib/format';
 import { formatTokenAmount } from '../lib/tokenDisplay';
 import './TokenHouse.css';
 
-/** One category gateway; its clock and passengers belong to the shared scene. */
+/** Category landmarks share the scene's animation clock and never create passengers. */
 export const TokenHouse = memo(function TokenHouse({
+  houseId = 'usdt',
   projectX,
   mirrored,
   doorProgress,
@@ -17,6 +19,7 @@ export const TokenHouse = memo(function TokenHouse({
   onBrowse,
   triggerRef,
 }: {
+  houseId?: HouseId;
   projectX: (x: number) => number;
   mirrored: boolean;
   doorProgress: number;
@@ -26,24 +29,38 @@ export const TokenHouse = memo(function TokenHouse({
   triggerRef: RefObject<SVGGElement | null>;
 }) {
   const { t } = useI18n();
-  const { x, y, width, height } = USDT_HOUSE_RECT;
-  const left = projectX(x);
-  const right = projectX(x + width);
-  const center = (left + right) / 2;
-  const displayWidth = right - left;
+  const house = ACTIVITY_HOUSES[houseId];
+  const token = house.kind === 'token';
+  const family = token ? 'token' : 'dapp';
+  const kindDescriptionId = useId();
+  const { x, y, width, height } = HOUSE_RECTS[houseId];
+  // Expand the quay, not its buildings. Keep the visual door centered on the
+  // projected route while bounding the facade on wide desktop viewports.
+  const center = projectX(x + width / 2);
+  const displayWidth = Math.min(84, projectX(x + width) - projectX(x));
+  const left = center - displayWidth / 2,
+    right = center + displayWidth / 2;
   const doorWidth = displayWidth * 0.34;
+  const badgeWidth = Math.min(62, displayWidth - 4);
+  const symbolSize = Math.min(4, displayWidth * 0.1);
   const progress = Number.isFinite(doorProgress) ? Math.min(1, Math.max(0, doorProgress)) : 0;
   const readable = mirrored ? `translate(${2 * center} 0) scale(-1 1)` : undefined;
   return (
     <g
       ref={triggerRef}
-      className={`token-house${active ? ' token-house--active' : ''}`}
+      className={`token-house token-house--${family} token-house--${houseId}${active ? ' token-house--active' : ''}`}
+      style={{ '--house-color': house.color } as CSSProperties}
       role="button"
       tabIndex={0}
-      aria-label={t('Maison USDT : parcourir les transactions', 'USDT house: browse transactions')}
+      aria-label={t(
+        `Maison ${house.label} : parcourir les transactions`,
+        `${house.label} house: browse transactions`,
+      )}
       aria-expanded={expanded}
+      aria-describedby={kindDescriptionId}
       data-passenger-controls="true"
-      data-token-house="usdt"
+      data-token-house={houseId}
+      data-house-kind={family}
       data-token-house-active={active}
       onClick={onBrowse}
       onKeyDown={(event) => {
@@ -55,22 +72,56 @@ export const TokenHouse = memo(function TokenHouse({
     >
       <title>
         {t(
-          'USDT sur Ethereum : transactions reconnues dans notre échantillon. Ouvrir la liste et les observations du dernier bloc.',
-          'USDT on Ethereum: recognized transactions in our sample. Open the list and latest block observations.',
+          `${house.label} sur Ethereum : activité reconnue dans notre échantillon. Ouvrir la liste et les observations datées.`,
+          `${house.label} on Ethereum: recognized activity in our sample. Open the list and dated observations.`,
         )}
       </title>
+      <desc id={kindDescriptionId}>
+        {token
+          ? t(
+              'Token : actif numérique suivi via son contrat de jeton.',
+              'Token: digital asset tracked through its token contract.',
+            )
+          : t(
+              'dApp : application décentralisée suivie via ses contrats de protocole.',
+              'dApp: decentralized application tracked through its protocol contracts.',
+            )}
+      </desc>
       <g aria-hidden="true">
         <rect
           className="token-house-focus"
           x={left - 2}
-          y={y - 10}
+          y={y - 22}
           width={displayWidth + 2}
-          height={height + 13}
+          height={height + 25}
           rx="5"
         />
+        <rect
+          className="token-house-kind-sign"
+          x={center - badgeWidth / 2}
+          y={y - 20}
+          width={badgeWidth}
+          height="11"
+          rx={token ? 5.5 : 1.5}
+        />
+        <text
+          className="token-house-kind-label"
+          x={center}
+          y={y - 12}
+          textAnchor="middle"
+          transform={readable}
+          fontSize={Math.min(8.5, (badgeWidth - 3) / 3.5)}
+          fontWeight="800"
+        >
+          {token ? 'TOKEN' : 'DAPP'}
+        </text>
         <path
           className="token-house-roof"
-          d={`M${left} ${y + 5}L${center} ${y - 8}L${right} ${y + 5}Z`}
+          d={
+            token
+              ? `M${left} ${y + 5}L${center} ${y - 8}L${right} ${y + 5}Z`
+              : `M${left} ${y + 5}V${y - 2}H${right}V${y + 5}Z`
+          }
         />
         <rect
           className="token-house-body"
@@ -78,7 +129,7 @@ export const TokenHouse = memo(function TokenHouse({
           y={y + 5}
           width={displayWidth}
           height={height - 5}
-          rx="2"
+          rx={token ? 5 : 1.5}
         />
         <rect
           className="token-house-sign"
@@ -93,12 +144,41 @@ export const TokenHouse = memo(function TokenHouse({
           y={y + 18}
           textAnchor="middle"
           transform={readable}
-          fontSize={Math.min(13, (displayWidth - 7) / 3)}
+          fontSize={Math.min(13, (displayWidth - 7) / Math.max(3, house.label.length * 0.62))}
           fontWeight="700"
           fill="#e4fff3"
         >
-          USDT
+          {house.label}
         </text>
+        {houseId === 'uniswap' && (
+          <text
+            x={center}
+            y={y + 2}
+            textAnchor="middle"
+            transform={readable}
+            fontSize="9"
+            fill="#ffd9ed"
+          >
+            ⇄
+          </text>
+        )}
+        <g
+          className="token-house-kind-symbol"
+          transform={`translate(${left + displayWidth * 0.83} ${y + 32}) scale(${symbolSize / 4})`}
+        >
+          {token ? (
+            <>
+              <ellipse cx="0" cy="1.7" rx="3.4" ry="1.7" />
+              <ellipse cx="0" cy="-0.8" rx="3.4" ry="1.7" />
+              <path d="M-3.4-.8v2.5M3.4-.8v2.5" />
+            </>
+          ) : (
+            <>
+              <rect x="-3.5" y="-3" width="7" height="6" rx=".6" />
+              <path d="M-3.5-1h7M-1.8.5h1M.8.5h1M-1.8 1.8h3.6" />
+            </>
+          )}
+        </g>
         <circle
           className="token-house-lamp"
           cx={left + displayWidth * 0.17}
@@ -140,35 +220,63 @@ export const TokenHouse = memo(function TokenHouse({
   );
 });
 
-export function TokenHouseSummary({ snapshot }: { snapshot: Snapshot }) {
+export function TokenHouseSummary({
+  snapshot,
+  houseId = 'usdt',
+}: {
+  snapshot: Snapshot;
+  houseId?: HouseId;
+}) {
   const { locale, t } = useI18n();
-  const report =
-    snapshot.status === 'unavailable'
-      ? undefined
-      : snapshot.tokenTransfers?.find(
-          (entry) =>
-            entry.tokenId === 'usdt' &&
-            entry.blockHash.toLowerCase() === snapshot.blocks[0]?.hash.toLowerCase() &&
-            entry.blockHeight === snapshot.blocks[0]?.height &&
-            entry.observedAt <= Date.now(),
-        );
-  // A successful report is immutable for this exact block, even during a long slot gap.
+  const house = ACTIVITY_HOUSES[houseId];
+  const token = house.kind === 'token';
+  const tokenId: TokenId | undefined =
+    houseId === 'usdt' || houseId === 'usdc' ? houseId : undefined;
+  const usable = snapshot.status !== 'unavailable';
+  const current = (entry: { blockHash: string; blockHeight: number; observedAt: number }) =>
+    usable &&
+    entry.blockHash.toLowerCase() === snapshot.blocks[0]?.hash.toLowerCase() &&
+    entry.blockHeight === snapshot.blocks[0]?.height &&
+    entry.observedAt <= Date.now();
+  const tokenReport = tokenId
+    ? snapshot.tokenTransfers?.find((entry) => entry.tokenId === tokenId && current(entry))
+    : undefined;
+  const protocolReport = !tokenId
+    ? snapshot.protocolCalls?.find((entry) => entry.protocolId === houseId && current(entry))
+    : undefined;
+  const report = tokenReport ?? protocolReport;
   const stale = snapshot.mode === 'live' && snapshot.status === 'stale';
-  const pending =
-    snapshot.status === 'unavailable'
-      ? null
-      : snapshot.transactions.filter((tx) => tx.status === 'pending' && hasTokenActivity(tx))
-          .length;
+  const pending = usable
+    ? snapshot.transactions.filter((tx) => tx.status === 'pending' && hasHouseActivity(tx, houseId))
+        .length
+    : null;
   const date = report ? new Date(report.observedAt) : null;
+  const href = tokenId
+    ? `https://etherscan.io/token/${TOKEN_CONTRACTS[tokenId].address}`
+    : houseId === 'uniswap'
+      ? 'https://developers.uniswap.org/docs/protocols/universal-router/overview'
+      : 'https://aave.com/docs/aave-v3/smart-contracts/pool';
   return (
     <section
       className="token-house-summary"
-      aria-label={t('Observations USDT', 'USDT observations')}
+      aria-label={t(`Observations ${house.label}`, `${house.label} observations`)}
+      data-house-summary={houseId}
       data-token-report={
         report ? (stale ? 'stale' : snapshot.mode === 'demo' ? 'demo' : 'ok') : 'unavailable'
       }
     >
-      <strong>USDT · Ethereum</strong>
+      <strong>{house.label} · Ethereum</strong>
+      <p className="token-house-kind-description">
+        <span className={`house-kind-pill house-kind-pill--${token ? 'token' : 'dapp'}`}>
+          {token ? 'TOKEN' : 'dApp'}
+        </span>{' '}
+        {token
+          ? t('Actif numérique · contrat de jeton', 'Digital asset · token contract')
+          : t(
+              'Application décentralisée · contrats de protocole',
+              'Decentralized application · protocol contracts',
+            )}
+      </p>
       <p className="token-house-scope">
         {t(
           'Échantillon limité, sans total mondial du mempool.',
@@ -186,27 +294,38 @@ export function TokenHouseSummary({ snapshot }: { snapshot: Snapshot }) {
         </div>
         <div>
           <dt>
-            {t(
-              'Transactions avec transfert · dernier bloc confirmé',
-              'Transactions with transfers · latest confirmed block',
-            )}
+            {tokenId
+              ? t(
+                  'Transactions avec transfert · dernier bloc confirmé',
+                  'Transactions with transfers · latest confirmed block',
+                )
+              : t(
+                  'Appels inclus aux contrats reconnus · dernier bloc',
+                  'Included calls to recognized contracts · latest block',
+                )}
           </dt>
           <dd data-token-block-transactions="true">
             {report ? number(report.transactionCount, 0, locale) : '—'}
           </dd>
         </div>
-        <div>
-          <dt>{t('Événements Transfer · même bloc', 'Transfer events · same block')}</dt>
-          <dd data-token-block-events="true">
-            {report ? number(report.transferCount, 0, locale) : '—'}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('Quantité transférée · même bloc', 'Amount transferred · same block')}</dt>
-          <dd data-token-block-amount="true">
-            {report ? `${formatTokenAmount(report.amount, locale)} USDT` : '—'}
-          </dd>
-        </div>
+        {tokenId && (
+          <>
+            <div>
+              <dt>{t('Événements Transfer · même bloc', 'Transfer events · same block')}</dt>
+              <dd data-token-block-events="true">
+                {tokenReport ? number(tokenReport.transferCount, 0, locale) : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt>{t('Quantité transférée · même bloc', 'Amount transferred · same block')}</dt>
+              <dd data-token-block-amount="true">
+                {tokenReport
+                  ? `${formatTokenAmount(tokenReport.amount, locale, tokenId)} ${house.label}`
+                  : '—'}
+              </dd>
+            </div>
+          </>
+        )}
       </dl>
       <p className="token-house-report-status">
         {report
@@ -214,8 +333,15 @@ export function TokenHouseSummary({ snapshot }: { snapshot: Snapshot }) {
             ? t('Simulation explicite.', 'Explicit simulation.')
             : stale
               ? t('Observation ancienne.', 'Stale observation.')
-              : t('Journaux du bloc observés.', 'Block logs observed.')
-          : t('Transferts du dernier bloc indisponibles.', 'Latest block transfers unavailable.')}
+              : tokenId
+                ? t('Journaux du bloc observés.', 'Block logs observed.')
+                : t(
+                    'Appels du bloc observés, résultat non vérifié.',
+                    'Block calls observed; execution result unverified.',
+                  )
+          : tokenId
+            ? t('Transferts du dernier bloc indisponibles.', 'Latest block transfers unavailable.')
+            : t('Appels du dernier bloc indisponibles.', 'Latest block calls unavailable.')}
         {report && (
           <>
             {' '}
@@ -226,17 +352,42 @@ export function TokenHouseSummary({ snapshot }: { snapshot: Snapshot }) {
         )}
       </p>
       <p>
+        {tokenId
+          ? t(
+              'Une autorisation n’est pas un transfert. Un appel en attente exprime une intention ; seuls les journaux Transfer attestent un transfert exécuté. Les appels indirects en attente peuvent ne pas être reconnus.',
+              'An approval is not a transfer. A pending call expresses intent; only Transfer logs evidence an executed transfer. Indirect pending calls may not be recognized.',
+            )
+          : t(
+              'Le compteur du bloc porte sur les appels directs aux contrats reconnus, y compris ceux qui ont échoué. Une inclusion ne prouve pas un échange, un dépôt ou un emprunt réussi. Les appels indirects peuvent ne pas être reconnus ; les transferts du jeton UNI ou AAVE ne sont pas ces opérations.',
+              'The block counter covers direct calls to recognized contracts, including failed calls. Inclusion does not prove a successful swap, supply or borrow. Indirect calls may not be recognized; UNI or AAVE token transfers are not these operations.',
+            )}
+      </p>
+      {!tokenId && (
+        <p>
+          {houseId === 'uniswap'
+            ? t(
+                'Périmètre : versions reconnues du Universal Router sur Ethereum.',
+                'Scope: recognized Universal Router versions on Ethereum.',
+              )
+            : t(
+                'Périmètre : Pool principal Aave V3 Ethereum Core, hors autres marchés et versions.',
+                'Scope: Aave V3 Ethereum Core Pool, excluding other markets and versions.',
+              )}
+        </p>
+      )}
+      <p>
         {t(
-          'Une autorisation n’est pas un transfert. Un appel en attente exprime une intention ; seuls les journaux Transfer attestent un transfert exécuté. Les appels indirects en attente peuvent ne pas être reconnus.',
-          'An approval is not a transfer. A pending call expresses intent; only Transfer logs evidence an executed transfer. Indirect pending calls may not be recognized.',
+          'Une transaction peut concerner plusieurs maisons : un seul voyageur, plusieurs étiquettes. Ces compteurs ne s’additionnent pas.',
+          'One transaction can involve several houses: one traveler, several labels. These counters must not be added together.',
         )}
       </p>
-      <a
-        href={`https://etherscan.io/token/${TOKEN_CONTRACTS.usdt.address}`}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {t('Contrat USDT Ethereum vérifié', 'Verified Ethereum USDT contract')}
+      <a href={href} target="_blank" rel="noreferrer">
+        {tokenId
+          ? t(
+              `Contrat ${house.label} Ethereum vérifié`,
+              `Verified Ethereum ${house.label} contract`,
+            )
+          : t('Contrats et périmètre reconnus', 'Recognized contracts and scope')}
       </a>
     </section>
   );

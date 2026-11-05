@@ -57,7 +57,11 @@ async function inspect(page: Page, chain: ChainId, tx: Tx) {
     })
     .focus();
   await page.keyboard.press('Enter');
-  await dialog(page, chain).getByRole('combobox').selectOption(tx.id);
+  await dialog(page, chain)
+    .getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    })
+    .selectOption(tx.id);
   return dialog(page, chain).locator('.passenger-canvas-browser-description');
 }
 async function close(page: Page, chain: ChainId) {

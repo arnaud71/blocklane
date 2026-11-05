@@ -158,7 +158,9 @@ test('current low-fee waiters stay accessible and details open by keyboard with 
   await browse.focus();
   await page.keyboard.press('Enter');
   const browser = page.getByRole('dialog', { name: 'Transactions observées Ethereum' });
-  const selector = browser.getByRole('combobox');
+  const selector = browser.getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
   await expect(selector).toBeFocused();
   await expect(selector).toBeEnabled();
   await expect(selector.locator('option')).toHaveCount(waitingCount);

@@ -137,7 +137,11 @@ test('Escape closes the transaction browser first then the information panel and
   await browse.focus();
   await page.keyboard.press('Enter');
   const browser = page.getByRole('dialog', { name: 'Transactions observées Bitcoin' });
-  await expect(browser.getByRole('combobox')).toBeFocused();
+  await expect(
+    browser.getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    }),
+  ).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(browser).toHaveCount(0);
   await expect(browse).toBeFocused();

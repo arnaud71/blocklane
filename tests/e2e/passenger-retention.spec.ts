@@ -168,8 +168,16 @@ test('a Bitcoin recommendation increase keeps a pending traveler aboard when blo
   await browse.focus();
   await page.keyboard.press('Enter');
   const browser = page.getByRole('dialog', { name: 'Transactions observées Bitcoin' });
-  await expect(browser.getByRole('combobox')).toBeFocused();
-  await expect(browser.getByRole('combobox')).toHaveValue(tx.id);
+  await expect(
+    browser.getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    }),
+  ).toBeFocused();
+  await expect(
+    browser.getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    }),
+  ).toHaveValue(tx.id);
   await expect(browser.locator('.passenger-canvas-browser-description')).toContainText(
     'en attente dans la source. à bord du wagon illustratif',
   );
@@ -227,8 +235,16 @@ test('a partial refresh preserves boarded travelers on both chains and marks the
     await page.keyboard.press('Enter');
     const browser = page.getByRole('dialog', { name: `Transactions observées ${chainName}` });
     // Retention stays inspectable, with an explicit unknown current pool status.
-    await expect(browser.getByRole('combobox')).toBeEnabled();
-    await expect(browser.getByRole('combobox')).toHaveValue(transaction(chain).id);
+    await expect(
+      browser.getByRole('combobox', {
+        name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+      }),
+    ).toBeEnabled();
+    await expect(
+      browser.getByRole('combobox', {
+        name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+      }),
+    ).toHaveValue(transaction(chain).id);
     await expect(browser.locator(`option[value="${transaction(chain).id}"]`)).toContainText(
       'dernière observation · statut actuel inconnu',
     );
@@ -305,7 +321,9 @@ test('keeps the fixed historical budget inspectable before bounded grouping of o
     await page.getByRole('button', { name: `Parcourir les transactions ${chainName}` }).focus();
     await page.keyboard.press('Enter');
     const browser = page.getByRole('dialog', { name: `Transactions observées ${chainName}` });
-    const selector = browser.getByRole('combobox');
+    const selector = browser.getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    });
     await expect(selector).toBeFocused();
     await expect(selector.locator('option')).toHaveCount(PENDING_SAMPLE_LIMIT + historicalCount);
     await expect(

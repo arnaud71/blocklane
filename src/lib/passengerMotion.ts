@@ -23,9 +23,10 @@ import {
   historicalQueueLayout,
   historicalQueuePosition,
   networkBoxArrivalPath,
-  tokenHouseArrivalPath,
-  TOKEN_HOUSE_CLEARANCE_Y,
-  USDT_HOUSE_RECT,
+  houseArrivalPath,
+  ordinaryEthereumArrivalPath,
+  houseAwareQuayPath,
+  HOUSE_RECTS,
   networkBoxBoardingPath,
   NETWORK_BOX_RECT,
   NETWORK_FLOW_LANES,
@@ -35,7 +36,14 @@ import {
   type StreetPoint,
   type WagonKind,
 } from './streetGeometry';
-import { hasTokenActivity } from '../../shared/tokenContracts';
+import { HOUSE_IDS, primaryHouseId, type HouseId } from '../../shared/activityHouses';
+import {
+  MIN_HEAD_SCALE,
+  MAX_HEAD_SCALE,
+  PASSENGER_HEADROOM,
+  PASSENGER_HALF_WIDTH,
+} from './passengerVisual';
+export { MIN_HEAD_SCALE, MAX_HEAD_SCALE } from './passengerVisual';
 import { capacityForSnapshot, transactionBlockSize } from './blockCapacity';
 import {
   bitcoinArrivalObservation,
@@ -78,9 +86,7 @@ const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
 const MAX_ARRIVAL_STAGGER_MS = 1_500;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-export const MIN_HEAD_SCALE = 0.8;
-export const MAX_HEAD_SCALE = 2.5;
-const GEOMETRY_VERSION = 'outer-platform-token-house-v21';
+const GEOMETRY_VERSION = 'outer-platform-larger-passengers-v24';
 export const TOKEN_HOUSE_DOOR_LEAD_MS = 200;
 const TOKEN_HOUSE_DOOR_OPEN_MS = 80;
 const TOKEN_HOUSE_DOOR_HOLD_MS = 150;
@@ -169,6 +175,8 @@ interface Passenger {
   networkDoorLeadMs?: number;
   /** Captured once at admission so queue reflows cannot reopen the contract doorway. */
   tokenHouseDoor?: { openingAt: number; passageAt: number; closingAt: number };
+  /** Captured origin survives metadata changes and never creates a second traveler. */
+  houseId?: HouseId;
 }
 
 interface PassengerAdmission {
@@ -248,6 +256,7 @@ export interface PassengerMotionState {
 
 export interface PassengerPose {
   tx: Tx;
+  houseId?: HouseId;
   nonceDependency?: EthereumNonceDependency;
   arrivalKind?: PassengerArrivalKind;
   lastObservedAt?: number;
@@ -301,6 +310,7 @@ export interface PassengerFrame {
   /** Contract arrivals share the animation clock; activity never implies execution. */
   usdtHouseDoorProgress: number;
   usdtHouseActive: boolean;
+  houses: Record<HouseId, { active: boolean; doorProgress: number }>;
   waitingArchiveCount: number;
   waitingArchiveTrackedCount: number;
   waitingArchiveUnknownCount: number;
@@ -1483,15 +1493,8 @@ function alignWaitingQueue(
     ) {
       const path =
         passenger.phase === 'arriving'
-          ? passenger.tx.chain === 'ethereum' &&
-            point.x + MAX_HEAD_SCALE * 8 >= USDT_HOUSE_RECT.x &&
-            point.y < TOKEN_HOUSE_CLEARANCE_Y
-            ? [
-                point,
-                { x: point.x, y: TOKEN_HOUSE_CLEARANCE_Y },
-                { x: target.x, y: TOKEN_HOUSE_CLEARANCE_Y },
-                target,
-              ]
+          ? passenger.tx.chain === 'ethereum'
+            ? houseAwareQuayPath(point, target)
             : [point, target]
           : platformPath(point, target);
       const remaining = Math.max(300, passenger.phaseStartedAt + passenger.durationMs - now);
@@ -1763,12 +1766,14 @@ function admitPassengers(
       admission.arrivalKind === 'late-inclusion' &&
       admission.tx.status === 'confirmed' &&
       admission.tx.blockHash !== undefined;
-    const tokenHouse =
+    const houseId =
       !initialStock &&
       !archived &&
       admission.tx.chain === 'ethereum' &&
-      admission.tx.status === 'pending' &&
-      hasTokenActivity(admission.tx, 'usdt');
+      admission.tx.status === 'pending'
+        ? primaryHouseId(admission.tx)
+        : undefined;
+    const tokenHouse = houseId !== undefined;
     const path = initialStock
       ? [queue]
       : archived
@@ -1776,13 +1781,9 @@ function admitPassengers(
         : lateInclusion
           ? networkBoxArrivalPath()
           : tokenHouse
-            ? tokenHouseArrivalPath(queueIndex, queueLayout)
-            : admission.tx.chain === 'ethereum' && queue.y < TOKEN_HOUSE_CLEARANCE_Y
-              ? [
-                  { ...arrivalStart(queueIndex, queueLayout), y: TOKEN_HOUSE_CLEARANCE_Y },
-                  { x: queue.x, y: TOKEN_HOUSE_CLEARANCE_Y },
-                  queue,
-                ]
+            ? houseArrivalPath(houseId, queueIndex, queueLayout)
+            : admission.tx.chain === 'ethereum'
+              ? ordinaryEthereumArrivalPath(queueIndex, queueLayout)
               : [arrivalStart(queueIndex, queueLayout), queue];
     const passageAt =
       now + arrivalIndex * arrivalSpacing + (tokenHouse ? TOKEN_HOUSE_DOOR_LEAD_MS : 0);
@@ -1798,6 +1799,7 @@ function admitPassengers(
             ? 'token-house'
             : 'new-observation',
       queueIndex,
+      houseId,
       queueZone: 'active',
       queuePoint: queue,
       queueReserved: true,
@@ -2115,6 +2117,10 @@ function prepareForDeparture(
         passenger.arrivalKind === 'late-inclusion' && passenger.phase === 'arriving';
       const fromTokenHouse =
         passenger.arrivalKind === 'token-house' && passenger.phase === 'arriving';
+      const sourceHouse = passenger.houseId ? HOUSE_RECTS[passenger.houseId] : undefined;
+      const houseClearance = sourceHouse
+        ? sourceHouse.y + sourceHouse.height + PASSENGER_HEADROOM
+        : 0;
       const networkDoorLeadMs = fromNetwork
         ? NETWORK_DOOR_BEFORE_PASSAGE_MS * networkTimingScale
         : 0;
@@ -2161,10 +2167,11 @@ function prepareForDeparture(
                 ...passenger.tokenHouseDoor,
                 passageAt: passageStartedAt,
                 closingAt:
-                  point.y < TOKEN_HOUSE_CLEARANCE_Y &&
-                  point.x + MAX_HEAD_SCALE * 8 >= USDT_HOUSE_RECT.x
+                  sourceHouse &&
+                  point.y < houseClearance &&
+                  point.x + PASSENGER_HALF_WIDTH >= sourceHouse.x
                     ? passageStartedAt +
-                      ((passageDeadline - passageStartedAt) * (TOKEN_HOUSE_CLEARANCE_Y - point.y)) /
+                      ((passageDeadline - passageStartedAt) * (houseClearance - point.y)) /
                         Math.max(1, pathGeometry(path).distance) +
                       TOKEN_HOUSE_DOOR_HOLD_MS
                     : passenger.tokenHouseDoor.closingAt,
@@ -3259,6 +3266,7 @@ function passengerPose(passenger: Passenger, elapsedMs: number): PassengerPose {
     tx: passenger.tx,
     nonceDependency: passenger.nonceDependency,
     arrivalKind: passenger.arrivalKind,
+    houseId: passenger.houseId,
     lastObservedAt: passenger.lastObservedAt,
     poolState: passenger.poolState,
     poolObservedAt: passenger.poolObservedAt,
@@ -3363,25 +3371,29 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
   let preparationPassengerCount = 0;
   let networkDoorProgress = 0;
   let networkActive = false;
-  let usdtHouseDoorProgress = 0;
-  let usdtHouseActive = false;
+  const houses = Object.fromEntries(
+    HOUSE_IDS.map((id) => [id, { active: false, doorProgress: 0 }]),
+  ) as PassengerFrame['houses'];
   let passengers = state.passengers.map((passenger, index): PassengerPose => {
     if (passenger.presentInSample) counts[passenger.phase] += 1;
     else if (passenger.phase === 'parked') counts.parked += 1;
     else counts.retiring += 1;
     if (passenger.departureIncluded) preparationPassengerCount += 1;
-    usdtHouseDoorProgress = Math.max(
-      usdtHouseDoorProgress,
-      passengerTokenHouseDoorProgress(passenger, state.elapsedMs),
-    );
+    const houseId = passenger.houseId;
+    if (houseId)
+      houses[houseId].doorProgress = Math.max(
+        houses[houseId].doorProgress,
+        passengerTokenHouseDoorProgress(passenger, state.elapsedMs),
+      );
     const tokenDoor = passenger.tokenHouseDoor;
     if (
       (passenger.phase === 'arriving' || passenger.phase === 'preparing') &&
+      houseId &&
       tokenDoor &&
       state.elapsedMs >= tokenDoor.openingAt &&
       state.elapsedMs < tokenDoor.closingAt + TOKEN_HOUSE_DOOR_CLOSE_MS
     )
-      usdtHouseActive = true;
+      houses[houseId].active = true;
     networkDoorProgress = Math.max(
       networkDoorProgress,
       passengerNetworkDoorProgress(passenger, state.elapsedMs),
@@ -3443,8 +3455,9 @@ export function passengerFrame(state: PassengerMotionState): PassengerFrame {
     preparationPassengerCount,
     networkDoorProgress,
     networkActive,
-    usdtHouseDoorProgress,
-    usdtHouseActive,
+    houses,
+    usdtHouseDoorProgress: houses.usdt.doorProgress,
+    usdtHouseActive: houses.usdt.active,
     waitingArchiveCount: state.waitingArchiveCount,
     waitingArchiveTrackedCount: state.waitingArchiveTransactions.size,
     waitingArchiveUnknownCount: state.waitingArchiveUnknownCount,

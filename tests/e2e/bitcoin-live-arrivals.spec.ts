@@ -145,7 +145,9 @@ async function openTraveler(page: Page, tx: Tx) {
     .getByRole('button', { name: 'Parcourir les transactions Bitcoin', exact: true })
     .focus();
   await page.keyboard.press('Enter');
-  const selector = browser(page).getByRole('combobox');
+  const selector = browser(page).getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
   await expect(selector.locator('option')).toHaveCount(2);
   await selector.selectOption(tx.id);
   return browser(page).locator('.passenger-canvas-browser-description');

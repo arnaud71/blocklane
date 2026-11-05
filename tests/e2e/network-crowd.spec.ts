@@ -207,7 +207,9 @@ test('une cohorte réseau se distingue dans les pixels sur les deux chaînes, re
     await trigger.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: `Transactions observées ${name(chain)}` });
-    const selector = dialog.getByRole('combobox');
+    const selector = dialog.getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    });
     await expect(selector.locator('option:not([value=""])')).toHaveCount(COUNT);
     await selector.selectOption(hash(chain, 1));
     await page.keyboard.press('Tab');

@@ -57,7 +57,11 @@ async function inspectFirstTraveler(page: Page, chain: ChainId = 'bitcoin') {
   const browser = page.getByRole('dialog', {
     name: `Transactions observées ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
   });
-  await expect(browser.getByRole('combobox')).toBeFocused();
+  await expect(
+    browser.getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    }),
+  ).toBeFocused();
   await browser.getByRole('button', { name: 'Afficher les détails', exact: true }).focus();
   await page.keyboard.press('Enter');
   await browser.getByRole('button', { name: 'Fermer les transactions', exact: true }).focus();
@@ -98,7 +102,13 @@ test('both bounded live scenes share the viewport and chain focus never hides a 
     const browser = page.getByRole('dialog', {
       name: `Transactions observées ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
     });
-    await expect(browser.getByRole('combobox').locator('option')).toHaveCount(PENDING_SAMPLE_LIMIT);
+    await expect(
+      browser
+        .getByRole('combobox', {
+          name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+        })
+        .locator('option'),
+    ).toHaveCount(PENDING_SAMPLE_LIMIT);
     await browser.getByRole('button', { name: 'Fermer les transactions', exact: true }).click();
   }
   await expect(page.getByTestId('info-panel')).toHaveCount(0);

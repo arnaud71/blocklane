@@ -97,9 +97,15 @@ async function openTraveler(page: Page, tx: Tx) {
       })
       .focus();
     await page.keyboard.press('Enter');
-    await expect(dialog.getByRole('combobox')).toBeFocused();
+    await expect(
+      dialog.getByRole('combobox', {
+        name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+      }),
+    ).toBeFocused();
   }
-  const selector = dialog.getByRole('combobox');
+  const selector = dialog.getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
   await expect(selector.locator(`option[value="${tx.id}"]`)).toHaveCount(1);
   await selector.selectOption(tx.id);
   return dialog.locator('.passenger-canvas-browser-description');
@@ -459,7 +465,11 @@ test('a real block departure carries only exact proved IDs and leaves unproved r
   await expect(firstWagon(page, 'ethereum')).toHaveAttribute('data-moving', 'false');
   await expect(await openTraveler(page, waiting)).toContainText('en attente dans la source');
   await expect(
-    browser(page).getByRole('combobox').locator(`option[value="${included.id}"]`),
+    browser(page)
+      .getByRole('combobox', {
+        name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+      })
+      .locator(`option[value="${included.id}"]`),
   ).toHaveCount(0);
   await closeBrowser(page);
   await page.getByRole('button', { name: 'Mettre l’animation en pause' }).click();
@@ -484,9 +494,17 @@ test('a real block departure carries only exact proved IDs and leaves unproved r
   await expect(firstWagon(page).getByRole('img')).toHaveAttribute('data-transaction-count', '0');
   await page.getByRole('button', { name: 'Masquer le panneau d’informations' }).click();
   await page.getByRole('button', { name: 'Parcourir les transactions Bitcoin' }).click();
-  await expect(browser(page).getByRole('combobox')).toBeDisabled();
   await expect(
-    browser(page).getByRole('combobox').locator(`option[value="${waiting.id}"]`),
+    browser(page).getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    }),
+  ).toBeDisabled();
+  await expect(
+    browser(page)
+      .getByRole('combobox', {
+        name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+      })
+      .locator(`option[value="${waiting.id}"]`),
   ).toHaveCount(0);
   await closeBrowser(page);
   await page.screenshot({

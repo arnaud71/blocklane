@@ -5,6 +5,7 @@ import {
   tokenBlockTransfersSchema,
   tokenAmountSchema,
 } from './tokenContracts.js';
+import { protocolActivitySchema, protocolBlockCallsSchema } from './protocolContracts.js';
 
 export const chainIdSchema = z.enum(['bitcoin', 'ethereum']);
 export type ChainId = z.infer<typeof chainIdSchema>;
@@ -549,6 +550,7 @@ export const transactionSchema = z
     ethereum: ethereumTransactionSchema.optional(),
     /** Compact, server-classified token intents or observed execution evidence. */
     tokens: z.array(tokenActivitySchema).max(MAX_TOKEN_ACTIVITIES).optional(),
+    protocols: z.array(protocolActivitySchema).max(2).optional(),
     kind: z.enum(['transfer', 'contract']),
     value: z.string().max(100),
   })
@@ -585,6 +587,19 @@ export const transactionSchema = z
           message: 'Invalid token transaction',
         });
     }
+    if (
+      transaction.protocols !== undefined &&
+      (transaction.chain !== 'ethereum' ||
+        transaction.kind !== 'contract' ||
+        transaction.protocols.filter((activity) => activity.evidence === 'call').length > 1 ||
+        new Set(transaction.protocols.map((activity) => activity.protocolId)).size !==
+          transaction.protocols.length)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['protocols'],
+        message: 'Invalid protocol transaction',
+      });
   });
 export type Tx = z.infer<typeof transactionSchema>;
 
@@ -658,6 +673,8 @@ export const snapshotSchema = z
       .max(MAX_TOKEN_ACTIVITIES)
       .nullable()
       .optional(),
+    /** Complete direct-call counts to reviewed entry points; never an execution receipt. */
+    protocolCalls: z.array(protocolBlockCallsSchema).max(2).nullable().optional(),
     transactions: z.array(transactionSchema).max(MAX_TRANSACTIONS),
     blocks: z.array(blockSchema).max(MAX_BLOCKS),
     /** Bounded replay journal; its historical blocks need not appear in blocks. */
@@ -665,6 +682,57 @@ export const snapshotSchema = z
     message: z.string().max(700).optional(),
   })
   .superRefine((snapshot, context) => {
+    const protocolReports = snapshot.protocolCalls ?? [];
+    const latestProtocolBlock = snapshot.blocks[0];
+    if (
+      protocolReports.length > 0 &&
+      (snapshot.chain !== 'ethereum' ||
+        snapshot.status === 'unavailable' ||
+        latestProtocolBlock === undefined ||
+        new Set(protocolReports.map((report) => report.protocolId)).size !==
+          protocolReports.length ||
+        protocolReports.some(
+          (report) =>
+            report.blockHash !== latestProtocolBlock.hash ||
+            report.blockHeight !== latestProtocolBlock.height ||
+            report.observedAt > snapshot.observedAt ||
+            report.transactionCount > latestProtocolBlock.txCount ||
+            (snapshot.mode === 'demo') !== (report.method === 'simulation'),
+        ) ||
+        protocolReports.reduce((sum, report) => sum + report.transactionCount, 0) >
+          latestProtocolBlock.txCount)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['protocolCalls'],
+        message: 'Invalid protocol block counts',
+      });
+    for (const tx of snapshot.transactions)
+      for (const activity of tx.protocols ?? [])
+        if ((snapshot.mode === 'demo') !== (activity.evidence === 'demo'))
+          context.addIssue({
+            code: 'custom',
+            path: ['transactions'],
+            message: 'Invalid protocol provenance',
+          });
+    for (const report of protocolReports) {
+      const sampled = new Set(
+        snapshot.transactions
+          .filter(
+            (tx) =>
+              tx.status === 'confirmed' &&
+              tx.blockHash?.toLowerCase() === report.blockHash.toLowerCase() &&
+              tx.protocols?.some((activity) => activity.protocolId === report.protocolId),
+          )
+          .map((tx) => tx.id.toLowerCase()),
+      );
+      if (sampled.size > report.transactionCount)
+        context.addIssue({
+          code: 'custom',
+          path: ['protocolCalls'],
+          message: 'Sampled protocol calls exceed complete counts',
+        });
+    }
     const tokenReports = snapshot.tokenTransfers ?? [];
     const latestTokenBlock = snapshot.blocks[0];
     if (

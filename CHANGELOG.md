@@ -4,6 +4,29 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Slightly larger individual travelers — 5 November 2026
+
+- Enlarge individual Canvas passengers by 12% around their foot anchors, including shirts, transaction-scaled heads, category badges and status indicators. Preserve the head-size ratios that represent transaction resources, fee colors, foot anchors, native capacities and transaction counts.
+- Coordinate pointer picking, stationary/departure raster envelopes and facade clearances with the larger drawing, retaining existing memory/surface limits and world-space wagon clips. No extra passenger DOM nodes, provider calls, dependencies or animation timers are introduced.
+
+### Token and dApp landmarks — 5 November 2026
+
+- Distinguish USDT/USDC token houses with pitched roofs, rounded facades, coin symbols and TOKEN signs; Uniswap/Aave dApps use flat roofs, angular facades, application-window symbols and DAPP signs. Preserve each project's color, compact lowered footprint and shared-clock door position.
+- Add readable token/dApp badges and French/English explanations to the accessible transaction summary, plus screen-reader descriptions on every house. Classification derives from the existing registry; data, filters, counts and passenger identities are unchanged.
+
+### Clear main passage and slimmer houses — 5 November 2026
+
+- Move all four Ethereum activity houses down by 90 scene units and reduce their width from 28 to 18 units, inset from the outer edge. Bound projected facade width so houses stay compact even on wide desktops. The main lateral arrival passage remains clear above the first roof, and houses occupy less of the platform width.
+- Doorways, passenger routes and clearance checks use the same updated geometry. Preserve shared-clock animation, category identity, keyboard shortcuts and data semantics; no provider, dependency or sample-limit change.
+
+### USDC, Uniswap and Aave activity houses — 5 November 2026
+
+- Add a blue USDC agency, pink Uniswap exchange and purple Aave credit house beside the existing green USDT house on the outer Ethereum quay. Each has its own shared-clock door/light, accessible shortcut and category filter; French/English text distinguishes their scopes.
+- Recognize native Ethereum USDC through Circle's reviewed contract. A single bounded optional Transfer-log request now covers USDT and USDC together, partitioning exact amounts, unique transactions and event counts by token without multiplying requests or the global 4,096-event budget.
+- Identify direct calls to the reviewed Universal Router deployments and Aave V3 Ethereum Core Pool. Separate complete latest-block included-call counts from the pending sample. These counts include calls whose execution outcome is unknown; they are not successful-swap or successful-loan counts. UNI/AAVE token transfers and indirect calls through unlisted entry points are outside protocol-call classification.
+- Keep one passenger per transaction with multiple category badges; category counts overlap and must not be added. Capture one deterministic house origin at admission, preserving initial stock, historical identities, later classification upgrades and late network-origin inclusions. Route arrivals around every facade while keeping native capacity and fee-based shirts unchanged.
+- Extend additive validated metadata, explicit demo coverage, stale/unavailable handling and adversarial/browser tests. No dependency, provider, key, database, service or passenger-limit increase is introduced. Contract identities and limitations are documented in the architecture and API guide.
+
 ### USDT contract house on Ethereum — 5 November 2026
 
 - Recognize USDT by the reviewed Ethereum-mainnet contract `0xdac17f958d2ee523a2206206994597c13d831ec7`, rather than a token name or symbol. The Ethereum quay gains an accessible USDT house and a cached green badge; fee-based shirt colors, resource sizes and transaction limits retain their meaning. [Tether's published contract](https://tether.to/en/supported-protocols/).

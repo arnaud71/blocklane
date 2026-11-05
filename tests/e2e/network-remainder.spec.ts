@@ -158,7 +158,9 @@ async function openBrowser(page: Page, chain: ChainId) {
     .focus();
   await page.keyboard.press('Enter');
   await expect(browser(page, chain)).toBeVisible();
-  return browser(page, chain).getByRole('combobox');
+  return browser(page, chain).getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
 }
 
 async function expectNoIndividual(page: Page, chain: ChainId) {

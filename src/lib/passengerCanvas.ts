@@ -1,6 +1,14 @@
-import { hasTokenActivity, type TokenId } from '../../shared/tokenContracts';
+import type { TokenId } from '../../shared/tokenContracts';
+import {
+  ACTIVITY_HOUSES,
+  HOUSE_IDS,
+  hasHouseActivity,
+  transactionHouseIds,
+  type HouseId,
+} from '../../shared/activityHouses';
 import { MAX_HEAD_SCALE, MIN_HEAD_SCALE, type PassengerPose } from './passengerMotion';
 import { isPassengerMoving, stablePassengerHash } from './passengerPresentation';
+import { PASSENGER_VISUAL_SCALE } from './passengerVisual';
 
 export interface CanvasClip {
   x: number;
@@ -31,6 +39,7 @@ export interface CanvasPassengerFrame {
   view: CanvasSceneView;
   departure?: CanvasDepartureLayer;
   highlightTokenId?: TokenId;
+  highlightHouseId?: HouseId;
 }
 
 export interface CanvasDepartureLayer {
@@ -139,23 +148,21 @@ export function hitTestCanvasPassenger(
     }
     const y = viewY - (passenger.offsetY ?? 0);
     if (passenger.clips && !passenger.clips.some((clip) => containsClip(clip, x, y))) continue;
+    const localX = (x - passenger.pose.x) / PASSENGER_VISUAL_SCALE;
+    const localY = (y - passenger.pose.y) / PASSENGER_VISUAL_SCALE;
     const headScale = passengerHeadScale(passenger.pose);
     if (
-      containsClip(
-        { x: passenger.pose.x - 12, y: passenger.pose.y - 33, width: 25, height: 40, radius: 5 },
-        x,
-        y,
-      ) ||
+      containsClip({ x: -12, y: -33, width: 25, height: 40, radius: 5 }, localX, localY) ||
       containsClip(
         {
-          x: passenger.pose.x - 6 * headScale,
-          y: passenger.pose.y + HEAD_CENTER_Y - 7 * headScale,
+          x: -6 * headScale,
+          y: HEAD_CENTER_Y - 7 * headScale,
           width: 12 * headScale,
           height: 12 * headScale,
           radius: 2 * headScale,
         },
-        x,
-        y,
+        localX,
+        localY,
       )
     ) {
       return passenger;
@@ -196,6 +203,7 @@ interface StaticPassengerRun {
   selectedId?: string;
   highlightedId?: string;
   highlightTokenId?: TokenId;
+  highlightHouseId?: HouseId;
   appearances: readonly CanvasPassengerAppearance[];
   seen: boolean;
   attempted: boolean;
@@ -307,6 +315,60 @@ function paintShirt(context: CanvasRenderingContext2D, color: string): void {
 }
 
 const iconPainters: Record<string, SpritePainter> = {
+  usdc(context) {
+    context.fillStyle = ACTIVITY_HOUSES.usdc.color;
+    context.beginPath();
+    context.arc(0, -12.5, 3.8, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = '#fff';
+    context.lineWidth = 0.9;
+    context.beginPath();
+    context.arc(0.2, -12.5, 2, 0.65, Math.PI * 2 - 0.65);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(-2.8, -14.2);
+    context.lineTo(-2.8, -10.8);
+    context.moveTo(2.8, -14.2);
+    context.lineTo(2.8, -10.8);
+    context.stroke();
+  },
+  uniswap(context) {
+    context.fillStyle = ACTIVITY_HOUSES.uniswap.color;
+    context.beginPath();
+    context.arc(0, -12.5, 3.8, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = '#fff';
+    context.lineWidth = 0.85;
+    context.beginPath();
+    context.moveTo(-2.3, -13.8);
+    context.lineTo(2, -13.8);
+    context.lineTo(0.8, -15);
+    context.moveTo(2.3, -11.2);
+    context.lineTo(-2, -11.2);
+    context.lineTo(-0.8, -10);
+    context.stroke();
+  },
+  aave(context) {
+    context.fillStyle = ACTIVITY_HOUSES.aave.color;
+    context.beginPath();
+    context.arc(0, -12.5, 3.8, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#fff';
+    context.beginPath();
+    context.arc(0, -13, 2.1, Math.PI, 0);
+    context.lineTo(2.1, -10.2);
+    context.lineTo(0.8, -10.9);
+    context.lineTo(0, -10.2);
+    context.lineTo(-0.8, -10.9);
+    context.lineTo(-2.1, -10.2);
+    context.closePath();
+    context.fill();
+    context.fillStyle = ACTIVITY_HOUSES.aave.color;
+    context.beginPath();
+    context.arc(-0.8, -13, 0.4, 0, Math.PI * 2);
+    context.arc(0.8, -13, 0.4, 0, Math.PI * 2);
+    context.fill();
+  },
   usdt(context) {
     // A compact vector Tether mark stays legible without a downloadable font.
     context.fillStyle = '#26a17b';
@@ -371,6 +433,9 @@ const iconPainters: Record<string, SpritePainter> = {
 };
 
 const iconBounds: Record<string, readonly [number, number, number, number]> = {
+  usdc: [-5, -17, 10, 10],
+  uniswap: [-5, -17, 10, 10],
+  aave: [-5, -17, 10, 10],
   usdt: [-5, -17, 10, 10],
   shadow: [-8, -3, 16, 8],
   contract: [4, -13, 7, 9],
@@ -382,7 +447,7 @@ interface CanvasPassengerAppearance {
   kind: PassengerPose['tx']['kind'];
   status: PassengerPose['tx']['status'];
   sourceObserved: boolean;
-  usdt: boolean;
+  houseMask: number;
 }
 
 /** Capture metadata as values so an in-place upgrade cannot reuse an older raster. */
@@ -391,7 +456,7 @@ function passengerAppearance(passenger: CanvasPassenger): CanvasPassengerAppeara
     kind: passenger.pose.tx.kind,
     status: passenger.pose.tx.status,
     sourceObserved: passenger.pose.sourceObserved,
-    usdt: hasTokenActivity(passenger.pose.tx, 'usdt'),
+    houseMask: houseAppearanceMask(passenger.pose.tx),
   };
 }
 
@@ -404,7 +469,14 @@ function samePassengerAppearance(
     appearance?.kind === pose.tx.kind &&
     appearance.status === pose.tx.status &&
     appearance.sourceObserved === pose.sourceObserved &&
-    appearance.usdt === hasTokenActivity(pose.tx, 'usdt')
+    appearance.houseMask === houseAppearanceMask(pose.tx)
+  );
+}
+
+function houseAppearanceMask(tx: CanvasPassenger['pose']['tx']): number {
+  return HOUSE_IDS.reduce(
+    (mask, id, index) => (hasHouseActivity(tx, id) ? mask | (1 << index) : mask),
+    0,
   );
 }
 
@@ -563,7 +635,7 @@ export function createPassengerCanvasRenderer(): {
     mirrored: boolean,
     selectedId?: string,
     highlightedId?: string,
-    highlightTokenId?: TokenId,
+    highlightHouseId?: HouseId,
   ): void {
     const { pose, interactive } = passenger;
     if (!Number.isFinite(pose.x) || !Number.isFinite(pose.y) || pose.opacity <= 0) return;
@@ -575,9 +647,11 @@ export function createPassengerCanvasRenderer(): {
     drawTrail(context, pose);
     context.save();
     context.translate(pose.x, pose.y);
+    context.scale(PASSENGER_VISUAL_SCALE, PASSENGER_VISUAL_SCALE);
     context.globalAlpha = Math.max(0, Math.min(1, pose.opacity));
-    if (highlightTokenId && hasTokenActivity(pose.tx, highlightTokenId)) {
-      context.strokeStyle = '#7ce1bd';
+    if (highlightHouseId && hasHouseActivity(pose.tx, highlightHouseId)) {
+      context.strokeStyle =
+        highlightHouseId === 'usdt' ? '#7ce1bd' : ACTIVITY_HOUSES[highlightHouseId].color;
       context.lineWidth = 1.4;
       context.beginPath();
       context.ellipse(0, 2, 9, 4, 0, 0, Math.PI * 2);
@@ -621,10 +695,14 @@ export function createPassengerCanvasRenderer(): {
     context.fill();
     context.restore();
     if (pose.tx.kind === 'contract') paintSprite(context, iconFor('contract'));
-    if (hasTokenActivity(pose.tx, 'usdt')) {
-      const badge = iconFor('usdt');
+    const badges = transactionHouseIds(pose.tx);
+    for (const [index, id] of badges.entries()) {
+      context.save();
+      context.translate((index - (badges.length - 1) / 2) * 7, 0);
+      const badge = iconFor(id);
       if (badge) paintSprite(context, badge);
-      else iconPainters.usdt?.(context);
+      else iconPainters[id]?.(context);
+      context.restore();
     }
     if ((pose.sourceObserved || !interactive) && pose.tx.status === 'confirmed') {
       paintSprite(context, iconFor('confirmed'));
@@ -746,6 +824,7 @@ export function createPassengerCanvasRenderer(): {
         cached.selectedId === selected &&
         cached.highlightedId === highlighted &&
         cached.highlightTokenId === frame.highlightTokenId &&
+        cached.highlightHouseId === frame.highlightHouseId &&
         sameClips(cached.clips, first.clips) &&
         cached.passengers.every((previous, index) => {
           const current = frame.passengers[start + index]!;
@@ -766,6 +845,7 @@ export function createPassengerCanvasRenderer(): {
           selectedId: selected,
           highlightedId: highlighted,
           highlightTokenId: frame.highlightTokenId,
+          highlightHouseId: frame.highlightHouseId,
           appearances: frame.passengers.slice(start, end).map(passengerAppearance),
           seen: true,
           attempted: false,
@@ -781,17 +861,23 @@ export function createPassengerCanvasRenderer(): {
       let bottom = -Infinity;
       for (const passenger of run.passengers) {
         const headScale = passengerHeadScale(passenger.pose);
-        left = Math.min(left, passenger.pose.x + Math.min(-16, HEAD_SPRITE_BOUNDS.x * headScale));
+        // Either street mirror can put the wider side of a hair sprite on the left.
+        const halfWidth =
+          PASSENGER_VISUAL_SCALE *
+          Math.max(
+            16,
+            Math.abs(HEAD_SPRITE_BOUNDS.x) * headScale,
+            Math.abs(HEAD_SPRITE_BOUNDS.x + HEAD_SPRITE_BOUNDS.width) * headScale,
+          );
+        left = Math.min(left, passenger.pose.x - halfWidth);
         top = Math.min(
           top,
-          passenger.pose.y + Math.min(-42, HEAD_CENTER_Y + HEAD_SPRITE_BOUNDS.y * headScale),
+          passenger.pose.y +
+            PASSENGER_VISUAL_SCALE *
+              Math.min(-42, HEAD_CENTER_Y + HEAD_SPRITE_BOUNDS.y * headScale),
         );
-        right = Math.max(
-          right,
-          passenger.pose.x +
-            Math.max(16, (HEAD_SPRITE_BOUNDS.x + HEAD_SPRITE_BOUNDS.width) * headScale),
-        );
-        bottom = Math.max(bottom, passenger.pose.y + 8);
+        right = Math.max(right, passenger.pose.x + halfWidth);
+        bottom = Math.max(bottom, passenger.pose.y + 8 * PASSENGER_VISUAL_SCALE);
       }
       // Preserve the output pixel grid, including fractional DPR, projection and mirroring.
       left = (Math.floor(left * density + originX) - originX) / density;
@@ -825,7 +911,7 @@ export function createPassengerCanvasRenderer(): {
                 frame.view.mirrored,
                 selected,
                 highlighted,
-                frame.highlightTokenId,
+                frame.highlightHouseId ?? frame.highlightTokenId,
               );
             run.sprite = {
               canvas,
@@ -939,7 +1025,7 @@ export function createPassengerCanvasRenderer(): {
                 frame.view.mirrored,
                 selectedId,
                 highlightedId,
-                frame.highlightTokenId,
+                frame.highlightHouseId ?? frame.highlightTokenId,
               );
           index = end;
           const next = frame.passengers[index];

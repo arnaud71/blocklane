@@ -124,8 +124,14 @@ async function setupScenario(page: Page, reducedMotion: boolean) {
 async function openBrowser(page: Page) {
   await page.getByRole('button', { name: 'Parcourir les transactions Ethereum' }).focus();
   await page.keyboard.press('Enter');
-  await expect(browser(page).getByRole('combobox')).toBeFocused();
-  return browser(page).getByRole('combobox');
+  await expect(
+    browser(page).getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    }),
+  ).toBeFocused();
+  return browser(page).getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
 }
 
 async function assertHistoricalWaiters(page: Page, included: Tx, unproved: Tx) {
