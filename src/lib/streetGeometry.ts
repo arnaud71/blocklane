@@ -38,12 +38,12 @@ export const HISTORY_QUEUE_START = PENDING_SAMPLE_LIMIT * 2;
 /** The unobserved network is a source of late discoveries, never a local pool count. */
 export const NETWORK_BOX_RECT = { x: 434, y: 28, width: 26, height: 88 } as const;
 export const NETWORK_VESTIBULE_Y = 140;
-/** A contract landmark on the Ethereum quay, separate from the network station. */
+/** Slim outer-quay houses sit below the main arrival passage and network station. */
 export const HOUSE_RECTS = {
-  usdt: { x: 432, y: 158, width: 28, height: 42 },
-  usdc: { x: 432, y: 268, width: 28, height: 42 },
-  uniswap: { x: 432, y: 378, width: 28, height: 42 },
-  aave: { x: 432, y: 488, width: 28, height: 42 },
+  usdt: { x: 440, y: 248, width: 18, height: 42 },
+  usdc: { x: 440, y: 358, width: 18, height: 42 },
+  uniswap: { x: 440, y: 468, width: 18, height: 42 },
+  aave: { x: 440, y: 578, width: 18, height: 42 },
 } as const;
 export const USDT_HOUSE_RECT = HOUSE_RECTS.usdt;
 /** Clear even the largest head below the house before crossing towards the active queue. */

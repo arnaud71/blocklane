@@ -4,6 +4,11 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Clear main passage and slimmer houses — 5 November 2026
+
+- Move all four Ethereum activity houses down by 90 scene units and reduce their width from 28 to 18 units, inset from the outer edge. Bound projected facade width so houses stay compact even on wide desktops. The main lateral arrival passage remains clear above the first roof, and houses occupy less of the platform width.
+- Doorways, passenger routes and clearance checks use the same updated geometry. Preserve shared-clock animation, category identity, keyboard shortcuts and data semantics; no provider, dependency or sample-limit change.
+
 ### USDC, Uniswap and Aave activity houses — 5 November 2026
 
 - Add a blue USDC agency, pink Uniswap exchange and purple Aave credit house beside the existing green USDT house on the outer Ethereum quay. Each has its own shared-clock door/light, accessible shortcut and category filter; French/English text distinguishes their scopes.

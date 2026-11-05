@@ -31,10 +31,12 @@ export const TokenHouse = memo(function TokenHouse({
   const { t } = useI18n();
   const house = ACTIVITY_HOUSES[houseId];
   const { x, y, width, height } = HOUSE_RECTS[houseId];
-  const left = projectX(x),
-    right = projectX(x + width);
-  const center = (left + right) / 2,
-    displayWidth = right - left;
+  // Expand the quay, not its buildings. Keep the visual door centered on the
+  // projected route while bounding the facade on wide desktop viewports.
+  const center = projectX(x + width / 2);
+  const displayWidth = Math.min(84, projectX(x + width) - projectX(x));
+  const left = center - displayWidth / 2,
+    right = center + displayWidth / 2;
   const doorWidth = displayWidth * 0.34;
   const progress = Number.isFinite(doorProgress) ? Math.min(1, Math.max(0, doorProgress)) : 0;
   const readable = mirrored ? `translate(${2 * center} 0) scale(-1 1)` : undefined;

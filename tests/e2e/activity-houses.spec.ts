@@ -166,6 +166,17 @@ test('four houses share existing travelers, keep overlapping categories and rest
   await expect(page.locator('[data-token-house]')).toHaveCount(4);
   await expect(page.locator('.chain-pane[data-chain="bitcoin"] [data-token-house]')).toHaveCount(0);
   const bounds = await Promise.all(HOUSE_IDS.map((id) => house(page, id).boundingBox()));
+  const ethereum = page.locator('.chain-pane[data-chain="ethereum"]');
+  const entrance = await ethereum
+    .locator('.street-scene text')
+    .filter({ hasText: /^(ARRIVÉES|ENTRÉE)$/ })
+    .boundingBox();
+  expect(bounds[0]!.y).toBeGreaterThan(entrance!.y + entrance!.height);
+  const network = await ethereum.locator('.network-remainder-body').boundingBox();
+  for (const id of HOUSE_IDS) {
+    const body = await house(page, id).locator('.token-house-body').boundingBox();
+    expect(body!.width).toBeLessThan(network!.width);
+  }
   for (let index = 1; index < bounds.length; index++)
     expect(bounds[index]!.y).toBeGreaterThan(bounds[index - 1]!.y + bounds[index - 1]!.height);
   await page.screenshot({ path: testInfo.outputPath('four-houses-scene.png'), fullPage: true });

@@ -211,11 +211,12 @@ describe('Identified USDT contract arrivals', () => {
     expect(passengerFrame(state).passengers[0]!.opacity).toBe(1);
   });
 
-  it('brings other Ethereum observations below the house before joining the first queue row', () => {
+  it('keeps the main arrival passage straight above the lowered houses', () => {
     const state = reconcilePassengerMotion(emptyScene(), snapshot([transaction(9, false)]));
     const person = passengerFrame(state).passengers[0]!;
     expect(person.arrivalKind).toBe('new-observation');
-    expect(state.passengers[0]!.path[0]!.y).toBe(TOKEN_HOUSE_CLEARANCE_Y);
+    expect(state.passengers[0]!.path[0]!.y).toBe(queuePosition(0).y);
+    expect(queuePosition(0).y + 8).toBeLessThan(USDT_HOUSE_RECT.y - 8);
     expect(state.passengers[0]!.path.at(-1)).toEqual(queuePosition(0));
     expect(passengerFrame(state).usdtHouseActive).toBe(false);
   });

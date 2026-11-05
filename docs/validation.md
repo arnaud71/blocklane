@@ -1,5 +1,13 @@
 # Verification status
 
+## Lower, slimmer houses and a clear main passage — 5 November 2026
+
+All four Ethereum houses move down by 90 scene units, narrow from 28 to 18 units and sit inside the outer edge. Projected facade width is capped at 84 units, so desktop platform expansion no longer stretches houses. The visual door remains centered on the projected motion doorway. The main first-row arrival now crosses directly above the first roof; door departures and later rows continue using facade clearance routes. Bitcoin geometry and all data/provider semantics remain unchanged.
+
+`npm run check` passed with Node **24.22.2**, unchanged dependencies and lockfile: ESLint, strict TypeScript, **896 tests across 71 files**, and the production build. Formatting and whitespace checks passed. Existing motion checks now assert the reopened direct first-row path rather than the former detour. Browser checks additionally require the arrival label to stay above the first house and every facade to be narrower than the network cabinet, across desktop/mobile profiles. The initial wide-desktop assertion exposed unbounded projection despite narrower canonical geometry; capping facade width fixes that behavior while keeping the assertion intact.
+
+The final full browser campaign passed **196 desktop/mobile scenarios with zero retries**, four workers, **2.5 minutes**. Log: `/private/tmp/blocklane-house-layout-e2e-final.log`; screenshots/traces: `/private/tmp/blocklane-house-layout-e2e-final-results/`. Desktop and mobile captures were visually inspected for the main passage, spacing and readable category names. Keyboard shortcuts remain available alongside the narrow illustrations. The scene's geometry version changes to avoid reusing captured pre-change routes during development refresh. No dependency audit was needed for this layout-only change; the existing Vite large-chunk warning remains visible. Local verification is separate from merge or deployment.
+
 ## USDC, Uniswap and Aave houses — 5 November 2026
 
 Three additional Ethereum houses extend the existing USDT landmark. One hash remains one passenger even when several categories apply. Stablecoin Transfer logs support executed-token-transfer totals; Uniswap/Aave reports instead count included direct calls to reviewed entry points from the complete already-read block, without claiming execution success. Their disjoint destinations permit only one live protocol-call classification per transaction, and their summed counts cannot exceed the block's transaction count. The combined token log read preserves one shared request and its global event/transport budgets.
