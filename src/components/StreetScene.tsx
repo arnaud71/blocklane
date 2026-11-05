@@ -1,5 +1,6 @@
 import {
   memo,
+  createRef,
   useEffect,
   useId,
   useMemo,
@@ -45,6 +46,7 @@ import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib
 import { PassengerCanvas } from './PassengerCanvas';
 import { NetworkRemainder } from './NetworkRemainder';
 import { TokenHouse } from './TokenHouse';
+import { HOUSE_IDS, type HouseId } from '../../shared/activityHouses';
 import { ProviderFlowArrivals } from './ProviderFlowArrivals';
 import { confirmedBlockRemainder } from '../lib/networkRemainder';
 import type { CanvasClip, CanvasPassengerFrame } from '../lib/passengerCanvas';
@@ -784,9 +786,20 @@ export const StreetScene = memo(function StreetScene({
   const id = useId().replace(/:/g, '');
   const nodeTemplate = activeBitcoinBlockTemplate(snapshot);
   const viewport = useRef<HTMLDivElement>(null);
-  const tokenHouseRef = useRef<SVGGElement>(null);
-  const [tokenBrowseRequest, setTokenBrowseRequest] = useState(0);
-  const [tokenHighlight, setTokenHighlight] = useState(false);
+  const houseRefs = useMemo(
+    () => ({
+      usdt: createRef<SVGGElement>(),
+      usdc: createRef<SVGGElement>(),
+      uniswap: createRef<SVGGElement>(),
+      aave: createRef<SVGGElement>(),
+    }),
+    [],
+  );
+  const [houseBrowseRequest, setHouseBrowseRequest] = useState<{
+    sequence: number;
+    houseId: HouseId;
+  }>();
+  const [houseHighlight, setHouseHighlight] = useState<HouseId | null>(null);
   const [viewWidth, setViewWidth] = useState(SCENE_WIDTH - VIEW_START_X);
   useEffect(() => {
     const element = viewport.current;
@@ -1000,7 +1013,7 @@ export const StreetScene = memo(function StreetScene({
     });
     return {
       view: { startX: VIEW_START_X, width: viewWidth, height: SCENE_HEIGHT, mirrored },
-      highlightTokenId: tokenHighlight ? 'usdt' : undefined,
+      highlightHouseId: houseHighlight ?? undefined,
       departure: moving
         ? {
             passengers: departurePassengers,
@@ -1037,7 +1050,7 @@ export const StreetScene = memo(function StreetScene({
     feeLabel,
     viewWidth,
     mirrored,
-    tokenHighlight,
+    houseHighlight,
   ]);
   const boardedCount = motion.passengers.filter((pose) => pose.inWagon).length;
   const historicalQuayCount = motion.passengers.filter(
@@ -1163,17 +1176,25 @@ export const StreetScene = memo(function StreetScene({
                 doorProgress={motion.networkDoorProgress}
                 active={motion.networkActive}
               />
-              {snapshot.chain === 'ethereum' && (
-                <TokenHouse
-                  projectX={projectX}
-                  mirrored={mirrored}
-                  doorProgress={motion.usdtHouseDoorProgress}
-                  active={motion.usdtHouseActive}
-                  expanded={tokenHighlight}
-                  triggerRef={tokenHouseRef}
-                  onBrowse={() => setTokenBrowseRequest((request) => request + 1)}
-                />
-              )}
+              {snapshot.chain === 'ethereum' &&
+                HOUSE_IDS.map((houseId) => (
+                  <TokenHouse
+                    key={houseId}
+                    houseId={houseId}
+                    projectX={projectX}
+                    mirrored={mirrored}
+                    doorProgress={motion.houses[houseId].doorProgress}
+                    active={motion.houses[houseId].active}
+                    expanded={houseHighlight === houseId}
+                    triggerRef={houseRefs[houseId]}
+                    onBrowse={() =>
+                      setHouseBrowseRequest((request) => ({
+                        sequence: (request?.sequence ?? 0) + 1,
+                        houseId,
+                      }))
+                    }
+                  />
+                ))}
               <ProviderFlowArrivals
                 snapshot={snapshot}
                 projectX={projectX}
@@ -1338,9 +1359,9 @@ export const StreetScene = memo(function StreetScene({
             onSelect={onSelect}
             chain={snapshot.chain}
             tokenSnapshot={snapshot.chain === 'ethereum' ? snapshot : undefined}
-            tokenBrowseRequest={tokenBrowseRequest}
-            tokenBrowseReturnRef={tokenHouseRef}
-            onTokenFilterChange={setTokenHighlight}
+            houseBrowseRequest={houseBrowseRequest}
+            houseBrowseReturnRefs={houseRefs}
+            onHouseFilterChange={setHouseHighlight}
           />
         </div>
       </div>

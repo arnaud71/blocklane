@@ -1,4 +1,5 @@
 import { translate, type Locale } from '../i18n/locale';
+import { ACTIVITY_HOUSES } from '../../shared/activityHouses';
 import type { PassengerPose } from './passengerMotion';
 import { passengerStatus } from './passengerStatus';
 
@@ -186,7 +187,10 @@ export function passengerDescription(
     (pose.inHandoff
       ? t('à bord pendant le transfert', 'aboard during transfer')
       : pose.phase === 'arriving' && pose.arrivalKind === 'token-house'
-        ? t('arrivée illustrée depuis la maison USDT', 'illustrated arrival from the USDT house')
+        ? t(
+            `arrivée illustrée depuis la maison ${ACTIVITY_HOUSES[pose.houseId ?? 'usdt'].label}`,
+            `illustrated arrival from the ${ACTIVITY_HOUSES[pose.houseId ?? 'usdt'].label} house`,
+          )
         : (locale === 'fr' ? phaseLabels : englishPhaseLabels)[pose.phase]) +
     '.' +
     (pose.arrivalKind === 'initial-stock'
@@ -201,8 +205,8 @@ export function passengerDescription(
           )
         : pose.arrivalKind === 'token-house'
           ? t(
-              ' Nouvelle activité USDT identifiée dans cet échantillon Ethereum ; la maison illustre le contrat, sans prouver son exécution ni son inclusion. Cet instant ne date pas son arrivée réelle dans le mempool.',
-              ' Newly identified USDT activity in this Ethereum sample; the house illustrates the contract, without proving execution or inclusion. This time does not date its actual arrival in the mempool.',
+              ` Nouvelle activité ${ACTIVITY_HOUSES[pose.houseId ?? 'usdt'].label} identifiée dans cet échantillon Ethereum ; la maison illustre le contrat, sans prouver son exécution ni son inclusion. Cet instant ne date pas son arrivée réelle dans le mempool.`,
+              ` Newly identified ${ACTIVITY_HOUSES[pose.houseId ?? 'usdt'].label} activity in this Ethereum sample; the house illustrates the contract, without proving execution or inclusion. This time does not date its actual arrival in the mempool.`,
             )
           : pose.arrivalKind === 'late-inclusion'
             ? t(

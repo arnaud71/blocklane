@@ -6,6 +6,8 @@ import {
   type Snapshot,
   type Tx,
 } from '../shared/model.js';
+import { TOKEN_CONTRACTS, type TokenId } from '../shared/tokenContracts.js';
+import { PROTOCOL_CONTRACTS, type ProtocolId } from '../shared/protocolContracts.js';
 
 function seededRandom(seed: number): () => number {
   let state = seed >>> 0;
@@ -52,22 +54,35 @@ export function generateDemoSnapshot(
   // demo requests opt in here; no live-provider path can call this enrichment.
   if (!bitcoin && options.includeTokens)
     transactions.forEach((transaction, index) => {
-      if (index % 7 !== 0) return;
+      if (index % 7 !== 0 && index % 11 !== 0 && index % 13 !== 0 && index % 17 !== 5) return;
       transaction.kind = 'contract';
       transaction.tokens = [
-        {
-          tokenId: 'usdt',
-          operation: index % 21 === 0 ? 'approval' : 'transfer',
-          evidence: 'demo',
-          amount: (BigInt(index + 1) * 1_234_567n).toString(),
-        },
+        ...(index % 7 === 0
+          ? [
+              {
+                tokenId: 'usdt',
+                operation: index % 21 === 0 ? 'approval' : 'transfer',
+                evidence: 'demo',
+                amount: (BigInt(index + 1) * 1_234_567n).toString(),
+              } as const,
+            ]
+          : []),
+        ...(index % 11 === 0
+          ? [
+              {
+                tokenId: 'usdc',
+                operation: 'transfer',
+                evidence: 'demo',
+                amount: (BigInt(index + 1) * 987_654n).toString(),
+              } as const,
+            ]
+          : []),
       ];
+      if (index % 13 === 0)
+        transaction.protocols = [{ protocolId: 'uniswap', operation: 'execute', evidence: 'demo' }];
+      else if (index % 17 === 5)
+        transaction.protocols = [{ protocolId: 'aave', operation: 'supply', evidence: 'demo' }];
     });
-  const simulatedTransfers = transactions.flatMap((tx) =>
-    tx.status === 'confirmed'
-      ? (tx.tokens ?? []).filter((activity) => activity.operation === 'transfer')
-      : [],
-  );
   return snapshotSchema.parse({
     chain,
     mode: 'demo',
@@ -86,21 +101,39 @@ export function generateDemoSnapshot(
     blocks,
     ...(!bitcoin && options.includeTokens
       ? {
-          tokenTransfers: [
-            {
-              tokenId: 'usdt',
+          tokenTransfers: (Object.keys(TOKEN_CONTRACTS) as TokenId[]).map((tokenId) => {
+            const transfers = transactions.flatMap((tx) =>
+              tx.status === 'confirmed'
+                ? (tx.tokens ?? []).filter(
+                    (activity) => activity.tokenId === tokenId && activity.operation === 'transfer',
+                  )
+                : [],
+            );
+            return {
+              tokenId,
               blockHash: blocks[0]!.hash,
               blockHeight: blocks[0]!.height,
-              source: 'Fictional USDT demonstration',
+              source: `Fictional ${TOKEN_CONTRACTS[tokenId].symbol} demonstration`,
               observedAt: Math.max(0, Math.floor(now)),
               method: 'simulation',
-              transactionCount: simulatedTransfers.length,
-              transferCount: simulatedTransfers.length,
-              amount: simulatedTransfers
-                .reduce((sum, tx) => sum + BigInt(tx.amount!), 0n)
-                .toString(),
-            },
-          ],
+              transactionCount: transfers.length,
+              transferCount: transfers.length,
+              amount: transfers.reduce((sum, tx) => sum + BigInt(tx.amount!), 0n).toString(),
+            };
+          }),
+          protocolCalls: (Object.keys(PROTOCOL_CONTRACTS) as ProtocolId[]).map((protocolId) => ({
+            protocolId,
+            blockHash: blocks[0]!.hash,
+            blockHeight: blocks[0]!.height,
+            source: 'Fictional protocol demonstration',
+            observedAt: Math.max(0, Math.floor(now)),
+            method: 'simulation',
+            transactionCount: transactions.filter(
+              (tx) =>
+                tx.status === 'confirmed' &&
+                tx.protocols?.some((activity) => activity.protocolId === protocolId),
+            ).length,
+          })),
         }
       : {}),
     message:

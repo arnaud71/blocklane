@@ -21,6 +21,8 @@ import {
 } from '../../shared/model.js';
 import type { ServerConfig } from '../config.js';
 import { TOKEN_CONTRACTS, type TokenActivity } from '../../shared/tokenContracts.js';
+import { PROTOCOL_CONTRACTS, type ProtocolActivity } from '../../shared/protocolContracts.js';
+import { ethereumProtocolCall, ethereumProtocolBlockCalls } from './ethereumProtocols.js';
 import {
   createEthereumDependencyTracker,
   ethereumNonceKey,
@@ -81,7 +83,10 @@ export const ethereumTransactionSchema = z
       context.addIssue({ code: 'custom', message: 'Priority fee exceeds the transaction fee cap' });
     }
   });
-type EthereumTransaction = z.infer<typeof ethereumTransactionSchema> & { tokens?: TokenActivity[] };
+type EthereumTransaction = z.infer<typeof ethereumTransactionSchema> & {
+  tokens?: TokenActivity[];
+  protocols?: ProtocolActivity[];
+};
 
 const blockFields = {
   hash: hashSchema.nullable(),
@@ -235,10 +240,12 @@ function parseEthereumPool(
         if (identifiers.size > MAX_POOL_TRANSACTIONS) throw new UpstreamError('too-large');
         if (category === 'pending') {
           const tokens = ethereumTokenCall(transaction);
+          const protocols = ethereumProtocolCall(transaction);
           pending.push({
             ...transaction,
             input: transaction.input.length > 2 ? '0x00' : '0x',
             ...(tokens === undefined ? {} : { tokens }),
+            ...(protocols === undefined ? {} : { protocols }),
           });
           pendingIds.add(transaction.hash.toLowerCase());
           pendingCount += 1;
@@ -415,11 +422,17 @@ function toTransactions(block: EthereumBlock, status: Tx['status'], limit: numbe
     status,
     ...(status === 'confirmed' ? { blockHash: block.hash!.toLowerCase() } : {}),
     kind:
-      tx.to === null || tx.input.length > 2 || tx.to.toLowerCase() === TOKEN_CONTRACTS.usdt.address
+      tx.to === null ||
+      tx.input.length > 2 ||
+      Object.values(TOKEN_CONTRACTS).some((token) => token.address === tx.to!.toLowerCase()) ||
+      Object.values(PROTOCOL_CONTRACTS).some((protocol) =>
+        protocol.addresses.some((address) => address === tx.to!.toLowerCase()),
+      )
         ? 'contract'
         : 'transfer',
     value: formatEther(BigInt(tx.value)),
     tokens: tx.tokens ?? ethereumTokenCall(tx),
+    protocols: tx.protocols ?? ethereumProtocolCall(tx),
     ...(tx.nonce === undefined
       ? {}
       : {
@@ -552,7 +565,7 @@ export function createEthereumProvider(
             [
               {
                 blockHash: latest.block.hash,
-                address: TOKEN_CONTRACTS.usdt.address,
+                address: Object.values(TOKEN_CONTRACTS).map((token) => token.address),
                 topics: [ERC20_TRANSFER_TOPIC],
               },
             ],
@@ -1180,10 +1193,19 @@ export function createEthereumProvider(
     const tokenObservation = currentTokenTransfers(latestObserved);
     if (tokenObservation !== null)
       confirmedTransactions = confirmedTransactions.map((transaction) => {
-        const transfer = tokenObservation.byTransaction.get(transaction.id);
-        return transfer === undefined
-          ? transaction
-          : { ...transaction, kind: 'contract', tokens: [transfer] };
+        const transfers = tokenObservation.activitiesByTransaction.get(transaction.id);
+        if (transfers === undefined) return transaction;
+        const transferredTokens = new Set(transfers.map((activity) => activity.tokenId));
+        return {
+          ...transaction,
+          kind: 'contract',
+          tokens: [
+            ...(transaction.tokens ?? []).filter(
+              (activity) => !transferredTokens.has(activity.tokenId),
+            ),
+            ...transfers,
+          ],
+        };
       });
     const transactions = [...pendingTransactions, ...confirmedTransactions].slice(
       0,
@@ -1281,7 +1303,12 @@ export function createEthereumProvider(
           )
         : null,
       latestBlockValue,
-      tokenTransfers: tokenObservation === null ? null : [tokenObservation.report],
+      tokenTransfers: tokenObservation === null ? null : tokenObservation.reports,
+      protocolCalls: ethereumProtocolBlockCalls(
+        { hash: latestBlock.hash, height: latestBlock.height, transactions: latest.transactions },
+        config.ethereumSource,
+        collectedAt,
+      ),
       feeRate:
         latest.baseFeePerGas === undefined
           ? null

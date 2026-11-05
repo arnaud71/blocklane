@@ -111,3 +111,20 @@
   margin-top: 4px;
   text-align: left;
 }
+
+.token-house-body {
+  fill: color-mix(in srgb, var(--house-color, #26a17b) 60%, #163a33);
+}
+.token-house-sign,
+.token-house-roof {
+  fill: color-mix(in srgb, var(--house-color, #26a17b) 32%, #102b26);
+}
+.token-house-door-leaf {
+  fill: color-mix(in srgb, var(--house-color, #26a17b) 80%, #d4eac8);
+}
+.token-house--active .token-house-body {
+  fill: var(--house-color, #26a17b);
+}
+.token-house--active .token-house-roof {
+  stroke: #fff2b7;
+}

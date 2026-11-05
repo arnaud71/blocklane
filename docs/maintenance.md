@@ -76,7 +76,17 @@ Bitcoin no longer displays a lateral collective group: check `bitcoinArrivals` a
 
 Ethereum's lateral collective group remains a signal outside the pending selection when the batch is first displayed; it does not count historical avatars or enter a wagon. Do not confuse it with newly discovered inclusions from the upper network station. A stable individual sample does not establish the absence of new transactions. A Bitcoin passenger displaced from the selection may remain among older observations within the existing bounds; removal or replacement must not change its status to confirmed.
 
-## Diagnosing USDT classification or unavailable block totals
+## Diagnosing multiple activity houses
+
+The Ethereum houses recognize USDT/USDC tokens separately from Uniswap/Aave protocol entry points. Recheck USDC against [Circle](https://developers.circle.com/stablecoins/usdc-contract-addresses), Universal Router versions against [Uniswap's mainnet deployments](https://github.com/Uniswap/universal-router/blob/main/deploy-addresses/mainnet.json), and the Aave V3 Core Pool proxy against [the address book](https://github.com/bgd-labs/aave-address-book/blob/main/src/AaveV3Ethereum.sol). Never infer protocol activity from a UNI/AAVE token transfer, a contract name or an address label.
+
+USDT and USDC share the optional fixed-address Transfer-log request, including its **combined** 4,096-event and two-MiB cap. A malformed member invalidates the combined result; do not split reads per visitor or silently raise the budget. Inspect token ID as well as hash, time and method, and never sum quantities of different tokens. Successful empty logs yield a separate zero for each token; absent data remains unavailable.
+
+For protocol houses, inspect `protocols` and `protocolCalls` separately from token logs. `block-calls` counts included direct calls from the complete already-read block, including calls that may have failed. It has no receipt/trace success claim and adds no RPC. The UI must say **included calls**, explicitly unverified execution, and identify Universal Router versus the Aave V3 Ethereum Core Pool scope. Other entry points, indirect pending calls and indirect protocol interactions may be missing. The pending count is still only the recognized sample. Do not add protocol quantities or use successful-trade language without a separately reviewed execution-proof contract.
+
+Verify one identity for transactions in several categories, distinct badge colors without modifying fee shirts, a single captured primary-house origin, and non-additive counters. Exercise every house route around all facades, normal lateral arrivals, queue reflows, pause, hidden tabs, speed, reduced motion and pointer/keyboard filters on desktop/mobile. Opening a house must not remove nonmatching passengers, lose historical selection or move existing passengers to a different origin. Run the required checks and record actual results in [validation.md](validation.md).
+
+## Diagnosing token classification or unavailable block totals
 
 USDT identity is fixed in `shared/tokenContracts.ts` to Ethereum mainnet, `0xdac17f958d2ee523a2206206994597c13d831ec7`, with six decimals. Recheck the address against [Tether's official list](https://tether.to/en/supported-protocols/) before changing the registry; a matching name or symbol is insufficient. No additional secret, endpoint or environment setting is required. Keep RPC URLs and provider errors out of logs, screenshots and reports.
 

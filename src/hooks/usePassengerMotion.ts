@@ -9,6 +9,7 @@ import {
   type PassengerFrame,
 } from '../lib/passengerMotion';
 import { DEFAULT_QUEUE_LAYOUT, type QueueLayout } from '../lib/streetGeometry';
+import { HOUSE_IDS } from '../../shared/activityHouses';
 
 interface PassengerMotionOptions {
   snapshot: Snapshot;
@@ -44,6 +45,11 @@ function sameVisibleFrame(previous: PassengerFrame, next: PassengerFrame): boole
     previous.networkActive === next.networkActive &&
     previous.usdtHouseActive === next.usdtHouseActive &&
     previous.usdtHouseDoorProgress === next.usdtHouseDoorProgress &&
+    HOUSE_IDS.every(
+      (id) =>
+        previous.houses[id].active === next.houses[id].active &&
+        previous.houses[id].doorProgress === next.houses[id].doorProgress,
+    ) &&
     previous.waitingArchiveCount === next.waitingArchiveCount &&
     previous.waitingArchiveTrackedCount === next.waitingArchiveTrackedCount &&
     previous.waitingArchiveUnknownCount === next.waitingArchiveUnknownCount &&

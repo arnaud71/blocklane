@@ -66,7 +66,9 @@ function liveSnapshot(chain: ChainId, stage: number, retained: Tx, included: Tx)
 async function openHistoricalTraveler(page: Page, tx: Tx, phase: string) {
   await page.getByRole('button', { name: 'Parcourir les transactions Bitcoin' }).focus();
   await page.keyboard.press('Enter');
-  const selector = browser(page).getByRole('combobox');
+  const selector = browser(page).getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
   await expect(selector).toBeFocused();
   await expect(selector.locator(`option[value="${tx.id}"]`)).toHaveCount(1);
   await expect(selector.locator(`option[value="${tx.id}"]`)).toContainText(

@@ -1,4 +1,5 @@
 import { PENDING_SAMPLE_LIMIT } from '../../shared/model';
+import { HOUSE_IDS, type HouseId } from '../../shared/activityHouses';
 
 /** Canonical right-platform geometry; the Bitcoin scene mirrors these coordinates at display. */
 export interface StreetPoint {
@@ -38,9 +39,15 @@ export const HISTORY_QUEUE_START = PENDING_SAMPLE_LIMIT * 2;
 export const NETWORK_BOX_RECT = { x: 434, y: 28, width: 26, height: 88 } as const;
 export const NETWORK_VESTIBULE_Y = 140;
 /** A contract landmark on the Ethereum quay, separate from the network station. */
-export const USDT_HOUSE_RECT = { x: 432, y: 148, width: 28, height: 42 } as const;
+export const HOUSE_RECTS = {
+  usdt: { x: 432, y: 158, width: 28, height: 42 },
+  usdc: { x: 432, y: 268, width: 28, height: 42 },
+  uniswap: { x: 432, y: 378, width: 28, height: 42 },
+  aave: { x: 432, y: 488, width: 28, height: 42 },
+} as const;
+export const USDT_HOUSE_RECT = HOUSE_RECTS.usdt;
 /** Clear even the largest head below the house before crossing towards the active queue. */
-export const TOKEN_HOUSE_CLEARANCE_Y = 238;
+export const TOKEN_HOUSE_CLEARANCE_Y = USDT_HOUSE_RECT.y + USDT_HOUSE_RECT.height + 48;
 /** Fan out only after clearing the cabinet, entirely above the active waiting area. */
 export const NETWORK_FLOW_LANES = [NETWORK_VESTIBULE_Y, 122, 104, 86] as const;
 export const NETWORK_FLOW_BRANCH_X = 410;
@@ -116,13 +123,50 @@ export function tokenHouseArrivalPath(
   queueIndex: number,
   layout: QueueLayout = DEFAULT_QUEUE_LAYOUT,
 ): StreetPoint[] {
+  return houseArrivalPath('usdt', queueIndex, layout);
+}
+
+/** Leave the doorway before turning inward; never walk past the next facade. */
+export function houseArrivalPath(
+  houseId: HouseId,
+  queueIndex: number,
+  layout: QueueLayout = DEFAULT_QUEUE_LAYOUT,
+): StreetPoint[] {
   const queue = queuePosition(queueIndex, layout);
+  const house = HOUSE_RECTS[houseId];
   const door = {
-    x: USDT_HOUSE_RECT.x + USDT_HOUSE_RECT.width / 2,
-    y: USDT_HOUSE_RECT.y + USDT_HOUSE_RECT.height,
+    x: house.x + house.width / 2,
+    y: house.y + house.height,
   };
-  const laneY = Math.max(TOKEN_HOUSE_CLEARANCE_Y, queue.y);
+  const laneY = house.y + house.height + 48;
   return [door, { x: door.x, y: laneY }, { x: queue.x, y: laneY }, queue];
+}
+
+/** A horizontal crossing fits the largest head/feet between neighboring houses. */
+export function houseClearanceY(y: number): number {
+  let lane = y;
+  for (const id of HOUSE_IDS) {
+    const house = HOUSE_RECTS[id];
+    if (lane + 8 > house.y - 8 && lane - 48 < house.y + house.height)
+      lane = house.y + house.height + 48;
+  }
+  return lane;
+}
+
+export function ordinaryEthereumArrivalPath(
+  queueIndex: number,
+  layout: QueueLayout = DEFAULT_QUEUE_LAYOUT,
+): StreetPoint[] {
+  const queue = queuePosition(queueIndex, layout);
+  const laneY = houseClearanceY(queue.y);
+  return [{ ...arrivalStart(queueIndex, layout), y: laneY }, { x: queue.x, y: laneY }, queue];
+}
+
+/** Reflow an in-progress outer arrival without cutting through a house. */
+export function houseAwareQuayPath(from: StreetPoint, target: StreetPoint): StreetPoint[] {
+  if (from.x + 20 < USDT_HOUSE_RECT.x) return [from, target];
+  const laneY = houseClearanceY(from.y);
+  return [from, { x: from.x, y: laneY }, { x: target.x, y: laneY }, target];
 }
 
 /** Separate physical places for unknown/absent historical observations on the same outer quay. */

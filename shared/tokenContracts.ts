@@ -11,9 +11,18 @@ export const TOKEN_CONTRACTS = {
     decimals: 6,
     color: '#26a17b',
   },
+  usdc: {
+    id: 'usdc',
+    chain: 'ethereum',
+    chainId: 1,
+    address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+    symbol: 'USDC',
+    decimals: 6,
+    color: '#2775ca',
+  },
 } as const;
 
-export const tokenIdSchema = z.enum(['usdt']);
+export const tokenIdSchema = z.enum(['usdt', 'usdc']);
 export type TokenId = z.infer<typeof tokenIdSchema>;
 export const MAX_TOKEN_TRANSFER_EVENTS = 4_096;
 export const MAX_TOKEN_ACTIVITIES = 4;

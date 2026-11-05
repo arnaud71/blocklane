@@ -4,6 +4,14 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### USDC, Uniswap and Aave activity houses — 5 November 2026
+
+- Add a blue USDC agency, pink Uniswap exchange and purple Aave credit house beside the existing green USDT house on the outer Ethereum quay. Each has its own shared-clock door/light, accessible shortcut and category filter; French/English text distinguishes their scopes.
+- Recognize native Ethereum USDC through Circle's reviewed contract. A single bounded optional Transfer-log request now covers USDT and USDC together, partitioning exact amounts, unique transactions and event counts by token without multiplying requests or the global 4,096-event budget.
+- Identify direct calls to the reviewed Universal Router deployments and Aave V3 Ethereum Core Pool. Separate complete latest-block included-call counts from the pending sample. These counts include calls whose execution outcome is unknown; they are not successful-swap or successful-loan counts. UNI/AAVE token transfers and indirect calls through unlisted entry points are outside protocol-call classification.
+- Keep one passenger per transaction with multiple category badges; category counts overlap and must not be added. Capture one deterministic house origin at admission, preserving initial stock, historical identities, later classification upgrades and late network-origin inclusions. Route arrivals around every facade while keeping native capacity and fee-based shirts unchanged.
+- Extend additive validated metadata, explicit demo coverage, stale/unavailable handling and adversarial/browser tests. No dependency, provider, key, database, service or passenger-limit increase is introduced. Contract identities and limitations are documented in the architecture and API guide.
+
 ### USDT contract house on Ethereum — 5 November 2026
 
 - Recognize USDT by the reviewed Ethereum-mainnet contract `0xdac17f958d2ee523a2206206994597c13d831ec7`, rather than a token name or symbol. The Ethereum quay gains an accessible USDT house and a cached green badge; fee-based shirt colors, resource sizes and transaction limits retain their meaning. [Tether's published contract](https://tether.to/en/supported-protocols/).

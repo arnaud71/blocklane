@@ -175,7 +175,11 @@ test('a red Ethereum waiter stays clickable after leaving the sample and reboard
   const browse = page.getByRole('button', { name: 'Parcourir les transactions Ethereum' });
   await browse.click();
   const browser = page.getByRole('dialog', { name: 'Transactions observées Ethereum' });
-  await browser.getByRole('combobox').selectOption(target.id);
+  await browser
+    .getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    })
+    .selectOption(target.id);
   await expect(browser.locator('.passenger-canvas-browser-description')).toContainText(
     'Frais inférieurs à la base fee Ethereum de référence',
   );
@@ -208,7 +212,9 @@ test('a red Ethereum waiter stays clickable after leaving the sample and reboard
 
   await browse.focus();
   await page.keyboard.press('Enter');
-  const selector = browser.getByRole('combobox');
+  const selector = browser.getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
   await expect(selector).toBeFocused();
   await selector.selectOption(target.id);
   await expect(selector.locator(`option[value="${target.id}"]`)).toContainText(
@@ -277,7 +283,11 @@ test('a retained Bitcoin selection remains historical until an exact inclusion j
   await expect.poll(() => fetched.has(1)).toBe(true);
   await page.getByRole('button', { name: 'Parcourir les transactions Bitcoin' }).click();
   const browser = page.getByRole('dialog', { name: 'Transactions observées Bitcoin' });
-  await browser.getByRole('combobox').selectOption(target.id);
+  await browser
+    .getByRole('combobox', {
+      name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+    })
+    .selectOption(target.id);
   await browser.getByRole('button', { name: 'Afficher les détails' }).click();
   await closeBrowserByKeyboard(page, 'bitcoin');
   const panel = page.getByTestId('info-panel');

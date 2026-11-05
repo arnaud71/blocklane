@@ -105,7 +105,9 @@ async function routeStages(page: Page, current: (stage: number) => Snapshot) {
 async function openTraveler(page: Page, tx: Tx) {
   await page.getByRole('button', { name: 'Parcourir les transactions Bitcoin' }).focus();
   await page.keyboard.press('Enter');
-  const selector = browser(page).getByRole('combobox');
+  const selector = browser(page).getByRole('combobox', {
+    name: /^(Transaction représentée dans la scène|Transaction shown in the scene)$/,
+  });
   await expect(selector).toBeFocused();
   await selector.selectOption(tx.id);
   return selector;

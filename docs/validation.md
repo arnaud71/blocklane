@@ -1,5 +1,22 @@
 # Verification status
 
+## USDC, Uniswap and Aave houses — 5 November 2026
+
+Three additional Ethereum houses extend the existing USDT landmark. One hash remains one passenger even when several categories apply. Stablecoin Transfer logs support executed-token-transfer totals; Uniswap/Aave reports instead count included direct calls to reviewed entry points from the complete already-read block, without claiming execution success. Their disjoint destinations permit only one live protocol-call classification per transaction, and their summed counts cannot exceed the block's transaction count. The combined token log read preserves one shared request and its global event/transport budgets.
+
+Verification with Node **24.22.2**, unchanged dependencies and lockfile:
+
+- `npm run check`: ESLint, strict TypeScript, **896 tests across 71 files**, and the production build passed.
+- `npm run format:check` and `git diff --check` passed.
+- Full browser campaign: **196 desktop/mobile Chromium scenarios passed**, four workers, zero retries, **2.4 minutes**. Log: `/private/tmp/blocklane-houses-e2e-final.log`; artifacts: `/private/tmp/blocklane-houses-e2e-final-results/`.
+- Focused adapter cases cover USDC/USDT log partitioning in the same transaction, canonical identity and spoofed metadata, strict action calldata, combined limits and independent optional failures. Shared-boundary cases cover mode, age, exact heads, unique categories and contradictory complete counts. Motion/Canvas cases cover all four doors, source continuity, category upgrades, caches, hit areas, pause/hidden/reduced motion and routes around every facade, including the network route's head/feet envelope.
+- The combined new-house and legacy USDT specifications additionally passed **three independent executions per scenario**, **84 passes with zero retries** in 19.6 seconds. Log: `/private/tmp/blocklane-houses-stress.log`.
+- Existing generic browser selectors were narrowed to the transaction selector's accessible French/English name after adding the separate House selector. Focus, identity, count, historical-status and animation assertions remain; timeouts and retries are not enlarged. The initial incomplete campaign and its traces are retained under `/private/tmp/blocklane-houses-e2e-results/`.
+
+Automated scenarios use controlled fixtures only. Desktop/mobile captures of all four houses and the French Aave summary were visually inspected. A separate manual API probe using the unchanged default provider returned valid live data. At block **26,350,452**, the token reports showed **46 transactions / 57 events / 69,678.017128 USDT** and **27 transactions / 43 events / 660,457.767607 USDC**; the complete block contained **two direct calls to reviewed Uniswap routers** and **zero to the reviewed Aave V3 Core Pool**. Those protocol counts are included calls, not successful operations. A later poll retained the same token totals for the exact same hash. No nonzero live Aave call or execution outcome was observed in this short probe; its classification and user flows are verified with fixtures.
+
+Provider omission, unlisted entry points, indirect protocol calls and unsampled details remain limitations. The token and protocol scopes differ, and counts across houses are not additive. No new provider, dependency, service, database, passenger budget, receipt/trace proof, load benchmark or real-device mobile test is claimed. The existing Vite large-chunk warning remains visible. Publication and merge status are separate from these local checks.
+
 ## USDT contract house — 5 November 2026
 
 The Ethereum scene adds the reviewed USDT category without increasing passenger limits or replacing any provider. Pending calls express intent; complete latest-block Transfer logs have their own hash, timestamp and availability. Amounts use exact base-unit strings and BigInt formatting. Invalid optional logs cannot turn a valid Ethereum response into an outage or a missing metric into zero. The shared boundary also rejects sampled executed-transfer evidence that exceeds its complete-block report.

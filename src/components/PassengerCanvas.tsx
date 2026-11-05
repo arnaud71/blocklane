@@ -27,8 +27,14 @@ import {
   type TransactionBrowserFilter,
 } from '../lib/transactionBrowser';
 import { number } from '../lib/format';
-import { hasTokenActivity } from '../../shared/tokenContracts';
-import { tokenActivityLabel } from '../lib/tokenDisplay';
+import { TOKEN_CONTRACTS } from '../../shared/tokenContracts';
+import {
+  ACTIVITY_HOUSES,
+  HOUSE_IDS,
+  transactionHouseIds,
+  type HouseId,
+} from '../../shared/activityHouses';
+import { protocolActivityLabel, tokenActivityLabel } from '../lib/tokenDisplay';
 import { TokenHouseSummary } from './TokenHouse';
 import './PassengerCanvas.css';
 
@@ -39,16 +45,16 @@ interface PassengerCanvasProps {
   onSelect: (transaction: Tx) => void;
   chain: ChainId;
   tokenSnapshot?: Snapshot;
-  tokenBrowseRequest?: number;
-  tokenBrowseReturnRef?: { current: SVGGElement | null };
-  onTokenFilterChange?: (active: boolean) => void;
+  houseBrowseRequest?: { sequence: number; houseId: HouseId };
+  houseBrowseReturnRefs?: Record<HouseId, { current: SVGGElement | null }>;
+  onHouseFilterChange?: (active: HouseId | null) => void;
 }
 
 interface TransactionOption {
   id: string;
   label: string;
   group: PassengerStatusGroup;
-  usdt: boolean;
+  houses: readonly HouseId[];
 }
 
 const MAX_BACKING_PIXELS = 4_000_000;
@@ -101,9 +107,9 @@ export function PassengerCanvas({
   onSelect,
   chain,
   tokenSnapshot,
-  tokenBrowseRequest = 0,
-  tokenBrowseReturnRef,
-  onTokenFilterChange,
+  houseBrowseRequest,
+  houseBrowseReturnRefs,
+  onHouseFilterChange,
 }: PassengerCanvasProps) {
   const { locale, t } = useI18n();
   const n = (value: number | null, digits = 0) => number(value, digits, locale);
@@ -119,7 +125,8 @@ export function PassengerCanvas({
   const [drawingAvailable, setDrawingAvailable] = useState(true);
   const [highlightedId, setHighlightedId] = useState<string>();
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [tokenOnly, setTokenOnly] = useState(false);
+  const [selectedHouse, setSelectedHouse] = useState<HouseId | null>(null);
+  const [lastHouse, setLastHouse] = useState<HouseId>('usdt');
   const returnFocusRef = useRef<HTMLElement | SVGElement | null>(null);
   const openedFromHouseRef = useRef(false);
   const browserRef = useRef<HTMLElement>(null);
@@ -127,7 +134,12 @@ export function PassengerCanvas({
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<TransactionBrowserFilter>('all');
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const tokenTriggerRef = useRef<HTMLButtonElement>(null);
+  const houseTriggerRefs = useRef<Record<HouseId, HTMLButtonElement | null>>({
+    usdt: null,
+    usdc: null,
+    uniswap: null,
+    aave: null,
+  });
   const selectRef = useRef<HTMLSelectElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const optionCache = useRef<readonly TransactionOption[]>([]);
@@ -140,18 +152,20 @@ export function PassengerCanvas({
   }, []);
 
   useEffect(() => {
-    if (tokenBrowseRequest === 0) return;
-    returnFocusRef.current = tokenBrowseReturnRef?.current ?? null;
+    if (!houseBrowseRequest) return;
+    const houseId = houseBrowseRequest.houseId;
+    returnFocusRef.current = houseBrowseReturnRefs?.[houseId].current ?? null;
     openedFromHouseRef.current = true;
-    setTokenOnly(true);
+    setSelectedHouse(houseId);
+    setLastHouse(houseId);
     setQuery('');
     setFilter('all');
     setBrowserOpen(true);
-  }, [tokenBrowseRequest, tokenBrowseReturnRef]);
+  }, [houseBrowseRequest, houseBrowseReturnRefs]);
 
   useEffect(() => {
-    onTokenFilterChange?.(browserOpen && tokenOnly);
-  }, [browserOpen, tokenOnly, onTokenFilterChange]);
+    onHouseFilterChange?.(browserOpen ? selectedHouse : null);
+  }, [browserOpen, selectedHouse, onHouseFilterChange]);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -273,9 +287,9 @@ export function PassengerCanvas({
         const status = passengerStatus(passenger.pose, locale);
         return {
           id: tx.id,
-          label: `${tx.id.slice(0, 12)}…${tx.id.slice(-6)} · ${feeText(passenger, locale)} · ${status.label}${tx.tokens?.length ? ` · USDT · ${tokenActivityLabel(tx.tokens[0]!, locale)}` : ''}`,
+          label: `${tx.id.slice(0, 12)}…${tx.id.slice(-6)} · ${feeText(passenger, locale)} · ${status.label}${(tx.tokens ?? []).map((activity) => ` · ${TOKEN_CONTRACTS[activity.tokenId].symbol} · ${tokenActivityLabel(activity, locale)}`).join('')}${(tx.protocols ?? []).map((activity) => ` · ${ACTIVITY_HOUSES[activity.protocolId].label} · ${protocolActivityLabel(activity, locale)}`).join('')}`,
           group: status.group,
-          usdt: hasTokenActivity(tx),
+          houses: transactionHouseIds(tx),
         };
       });
     const previous = optionCache.current;
@@ -287,7 +301,7 @@ export function PassengerCanvas({
           replacement?.id === option.id &&
           replacement.label === option.label &&
           replacement.group === option.group &&
-          replacement.usdt === option.usdt
+          replacement.houses.join(',') === option.houses.join(',')
         );
       })
     ) {
@@ -299,11 +313,13 @@ export function PassengerCanvas({
   const options = useMemo(
     () =>
       filterTransactionOptions(
-        tokenOnly ? allOptions.filter((option) => option.usdt) : allOptions,
+        selectedHouse
+          ? allOptions.filter((option) => option.houses.includes(selectedHouse))
+          : allOptions,
         query,
         filter,
       ),
-    [allOptions, query, filter, tokenOnly],
+    [allOptions, query, filter, selectedHouse],
   );
   const activeBrowseId = options.some((option) => option.id === browseId)
     ? browseId
@@ -325,7 +341,7 @@ export function PassengerCanvas({
       if (browserRef.current) browserRef.current.scrollTop = 0;
     } else if (selectRef.current && !selectRef.current.disabled) selectRef.current.focus();
     else searchRef.current?.focus();
-  }, [browserOpen, tokenBrowseRequest]);
+  }, [browserOpen, houseBrowseRequest]);
 
   const highlightedPassenger = highlightedId
     ? frame.passengers.find(
@@ -354,7 +370,7 @@ export function PassengerCanvas({
         else {
           returnFocusRef.current = triggerRef.current;
           openedFromHouseRef.current = false;
-          setTokenOnly(false);
+          setSelectedHouse(null);
           setBrowserOpen(true);
         }
       }}
@@ -369,35 +385,44 @@ export function PassengerCanvas({
   const browseControls = (
     <div className="passenger-canvas-browse-actions">
       {browseButton}
-      {chain === 'ethereum' && (
-        <button
-          ref={tokenTriggerRef}
-          type="button"
-          className={`passenger-canvas-browse passenger-canvas-browse--token${browseTarget ? ' passenger-canvas-browse--docked' : ''}`}
-          aria-label={t(
-            'Parcourir les transactions USDT sur Ethereum',
-            'Browse USDT transactions on Ethereum',
-          )}
-          aria-expanded={browserOpen && tokenOnly}
-          aria-controls={browserOpen ? controlsId : undefined}
-          onClick={() => {
-            if (browserOpen && tokenOnly) {
-              closeBrowser();
-              return;
-            }
-            returnFocusRef.current = tokenTriggerRef.current;
-            openedFromHouseRef.current = true;
-            setQuery('');
-            setFilter('all');
-            setTokenOnly(true);
-            setBrowserOpen(true);
-            browserRef.current?.focus();
-            if (browserRef.current) browserRef.current.scrollTop = 0;
-          }}
-        >
-          USDT
-        </button>
-      )}
+      {chain === 'ethereum' &&
+        HOUSE_IDS.map((houseId) => {
+          const house = ACTIVITY_HOUSES[houseId];
+          return (
+            <button
+              key={houseId}
+              ref={(element) => {
+                houseTriggerRefs.current[houseId] = element;
+              }}
+              type="button"
+              className={`passenger-canvas-browse passenger-canvas-browse--token${browseTarget ? ' passenger-canvas-browse--docked' : ''}`}
+              style={{ borderColor: house.color }}
+              aria-label={t(
+                `Parcourir les transactions ${house.label} sur Ethereum`,
+                `Browse ${house.label} transactions on Ethereum`,
+              )}
+              aria-expanded={browserOpen && selectedHouse === houseId}
+              aria-controls={browserOpen ? controlsId : undefined}
+              onClick={() => {
+                if (browserOpen && selectedHouse === houseId) {
+                  closeBrowser();
+                  return;
+                }
+                returnFocusRef.current = houseTriggerRefs.current[houseId];
+                openedFromHouseRef.current = true;
+                setQuery('');
+                setFilter('all');
+                setSelectedHouse(houseId);
+                setLastHouse(houseId);
+                setBrowserOpen(true);
+                browserRef.current?.focus();
+                if (browserRef.current) browserRef.current.scrollTop = 0;
+              }}
+            >
+              {house.label}
+            </button>
+          );
+        })}
     </div>
   );
 
@@ -474,21 +499,46 @@ export function PassengerCanvas({
                 {t('Fermer', 'Close')}
               </button>
             </div>
-            {tokenOnly && tokenSnapshot && <TokenHouseSummary snapshot={tokenSnapshot} />}
+            {selectedHouse && tokenSnapshot && (
+              <TokenHouseSummary snapshot={tokenSnapshot} houseId={selectedHouse} />
+            )}
             {chain === 'ethereum' && (
-              <label className="passenger-canvas-token-filter">
-                <input
-                  type="checkbox"
-                  checked={tokenOnly}
-                  onChange={(event) => setTokenOnly(event.target.checked)}
-                />
-                <span>
-                  {t(
-                    'USDT uniquement · voyageurs mis en évidence',
-                    'USDT only · highlighted passengers',
-                  )}
-                </span>
-              </label>
+              <>
+                <label htmlFor={`${controlsId}-house`}>{t('Maison', 'House')}</label>
+                <select
+                  id={`${controlsId}-house`}
+                  value={selectedHouse ?? 'all'}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === 'all') setSelectedHouse(null);
+                    else {
+                      const houseId = value as HouseId;
+                      setSelectedHouse(houseId);
+                      setLastHouse(houseId);
+                    }
+                  }}
+                >
+                  <option value="all">{t('Toutes les maisons', 'All houses')}</option>
+                  {HOUSE_IDS.map((houseId) => (
+                    <option key={houseId} value={houseId}>
+                      {ACTIVITY_HOUSES[houseId].label}
+                    </option>
+                  ))}
+                </select>
+                <label className="passenger-canvas-token-filter">
+                  <input
+                    type="checkbox"
+                    checked={selectedHouse !== null}
+                    onChange={(event) => setSelectedHouse(event.target.checked ? lastHouse : null)}
+                  />
+                  <span>
+                    {t(
+                      `${ACTIVITY_HOUSES[lastHouse].label} uniquement · voyageurs mis en évidence`,
+                      `${ACTIVITY_HOUSES[lastHouse].label} only · highlighted passengers`,
+                    )}
+                  </span>
+                </label>
+              </>
             )}
             <label htmlFor={`${controlsId}-search`}>
               {t('Rechercher une transaction', 'Search for a transaction')}

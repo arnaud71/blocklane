@@ -17,8 +17,10 @@ import {
 } from '../lib/feeDisplay';
 import { activeBitcoinBlockTemplate } from '../lib/passengerMotion';
 import { bitcoinArrivalObservation, passengerStatus } from '../lib/passengerStatus';
+import { TOKEN_CONTRACTS } from '../../shared/tokenContracts';
+import { ACTIVITY_HOUSES } from '../../shared/activityHouses';
 import { sourceName } from '../lib/sourceDescription';
-import { formatTokenAmount, tokenActivityLabel } from '../lib/tokenDisplay';
+import { formatTokenAmount, protocolActivityLabel, tokenActivityLabel } from '../lib/tokenDisplay';
 import { Icon } from './Icon';
 import './InfoPanel.css';
 
@@ -464,10 +466,10 @@ export function InfoPanel({
             {selectedTx.tokens?.map((activity) => (
               <Detail
                 key={activity.tokenId}
-                label={`USDT · ${tokenActivityLabel(activity, locale)}`}
+                label={`${TOKEN_CONTRACTS[activity.tokenId].symbol} · ${tokenActivityLabel(activity, locale)}`}
               >
                 {activity.amount !== undefined
-                  ? `${formatTokenAmount(activity.amount, locale)} USDT`
+                  ? `${formatTokenAmount(activity.amount, locale, activity.tokenId)} ${TOKEN_CONTRACTS[activity.tokenId].symbol}`
                   : '—'}
                 {activity.transferCount !== undefined && (
                   <>
@@ -484,6 +486,19 @@ export function InfoPanel({
                     </time>
                   </>
                 )}
+              </Detail>
+            ))}
+            {selectedTx.protocols?.map((activity) => (
+              <Detail
+                key={activity.protocolId}
+                label={`${ACTIVITY_HOUSES[activity.protocolId].label} · ${protocolActivityLabel(activity, locale)}`}
+              >
+                {activity.evidence === 'demo'
+                  ? t('Simulation explicite.', 'Explicit simulation.')
+                  : t(
+                      'Appel reconnu ; résultat d’exécution non vérifié, même après inclusion.',
+                      'Recognized call; execution result unverified, even after inclusion.',
+                    )}
               </Detail>
             ))}
           </dl>

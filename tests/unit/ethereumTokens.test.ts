@@ -5,6 +5,7 @@ import {
   ethereumTokenCall,
   parseEthereumTokenTransfers,
 } from '../../server/adapters/ethereumTokens.js';
+import { PROTOCOL_CONTRACTS } from '../../shared/protocolContracts.js';
 import type { Fetcher } from '../../server/network.js';
 import { CONFIRMED_SAMPLE_LIMIT } from '../../shared/model.js';
 import { MAX_TOKEN_TRANSFER_EVENTS, TOKEN_CONTRACTS } from '../../shared/tokenContracts.js';
@@ -339,6 +340,17 @@ describe('Optional per-head USDT log collection', () => {
         transferCount: 1,
         amount: '123456789',
       },
+      {
+        tokenId: 'usdc',
+        blockHash: blockHash(100),
+        blockHeight: 100,
+        source: config.ethereumSource,
+        observedAt: now,
+        method: 'eth_getLogs',
+        transactionCount: 0,
+        transferCount: 0,
+        amount: '0',
+      },
     ]);
     expect(snapshot.transactions[0]?.tokens).toEqual([
       {
@@ -360,7 +372,7 @@ describe('Optional per-head USDT log collection', () => {
         params: [
           {
             blockHash: blockHash(100),
-            address: TOKEN_CONTRACTS.usdt.address,
+            address: [TOKEN_CONTRACTS.usdt.address, TOKEN_CONTRACTS.usdc.address],
             topics: [ERC20_TRANSFER_TOPIC],
           },
         ],
@@ -484,5 +496,191 @@ describe('Optional per-head USDT log collection', () => {
       observedAt: now - 1_000,
     });
     expect(f.requests.filter((request) => request.method === 'eth_getLogs')).toHaveLength(2);
+  });
+});
+
+describe('Combined token and protocol observations', () => {
+  it('identifies USDC calls with exact amounts and canonical address only', () => {
+    const input = call();
+    expect(ethereumTokenCall({ to: TOKEN_CONTRACTS.usdc.address, input })).toEqual([
+      { tokenId: 'usdc', operation: 'transfer', evidence: 'call', amount: '123456789' },
+    ]);
+    expect(
+      ethereumTokenCall({
+        to: `0x${TOKEN_CONTRACTS.usdc.address.slice(2).toUpperCase()}`,
+        input: call('095ea7b3'),
+      })?.[0],
+    ).toMatchObject({ tokenId: 'usdc', operation: 'approval' });
+    expect(ethereumTokenCall({ to: TOKEN_CONTRACTS.usdc.address, input: '0x' })?.[0]).toEqual({
+      tokenId: 'usdc',
+      operation: 'interaction',
+      evidence: 'call',
+    });
+  });
+
+  it('partitions a shared response by token and keeps a multi-token transaction as one identity', async () => {
+    const f = fixture();
+    f.setLatest([transaction(1, { to: PROTOCOL_CONTRACTS.uniswap.addresses[0], input: '0x' })]);
+    f.setLogs([
+      transferLog(),
+      transferLog({ address: TOKEN_CONTRACTS.usdc.address, logIndex: '0x1', data: `0x${word(1)}` }),
+      transferLog({ address: TOKEN_CONTRACTS.usdc.address, logIndex: '0x2', data: `0x${word(2)}` }),
+    ]);
+    const result = await collectLogs(f);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]?.tokens).toEqual([
+      {
+        tokenId: 'usdt',
+        operation: 'transfer',
+        evidence: 'log',
+        amount: '123456789',
+        transferCount: 1,
+        observedAt: now,
+      },
+      {
+        tokenId: 'usdc',
+        operation: 'transfer',
+        evidence: 'log',
+        amount: '3',
+        transferCount: 2,
+        observedAt: now,
+      },
+    ]);
+    expect(result.transactions[0]?.protocols).toEqual([
+      { protocolId: 'uniswap', operation: 'interaction', evidence: 'call' },
+    ]);
+    expect(
+      result.tokenTransfers?.map(({ tokenId, transactionCount, transferCount, amount }) => ({
+        tokenId,
+        transactionCount,
+        transferCount,
+        amount,
+      })),
+    ).toEqual([
+      { tokenId: 'usdt', transactionCount: 1, transferCount: 1, amount: '123456789' },
+      { tokenId: 'usdc', transactionCount: 1, transferCount: 2, amount: '3' },
+    ]);
+    expect(f.requests.filter((request) => request.method === 'eth_getLogs')).toHaveLength(1);
+  });
+
+  it('keeps metadata and zero reports deterministic if provider log ordering changes', () => {
+    const logs = [
+      transferLog(),
+      transferLog({ address: TOKEN_CONTRACTS.usdc.address, logIndex: '0x1' }),
+    ];
+    const first = parseEthereumTokenTransfers(logs, completeBlock, 'Fixture', now);
+    const second = parseEthereumTokenTransfers([...logs].reverse(), completeBlock, 'Fixture', now);
+    expect([...first.activitiesByTransaction]).toEqual([...second.activitiesByTransaction]);
+    expect(first.reports).toEqual(second.reports);
+    const empty = parseEthereumTokenTransfers([], completeBlock, 'Fixture', now);
+    expect(empty.reports).toHaveLength(2);
+    expect(
+      empty.reports.every(
+        (report) =>
+          report.transactionCount === 0 && report.transferCount === 0 && report.amount === '0',
+      ),
+    ).toBe(true);
+  });
+
+  it('shares the total event bound and rejects all optional totals if either token contains an invalid event', async () => {
+    const f = fixture();
+    f.setLogs([
+      transferLog(),
+      transferLog({ address: TOKEN_CONTRACTS.usdc.address, logIndex: '0x1', removed: true }),
+    ]);
+    const invalid = await collectLogs(f);
+    expect(invalid.status).toBe('ok');
+    expect(invalid.tokenTransfers).toBeNull();
+    expect(() =>
+      parseEthereumTokenTransfers(
+        Array.from({ length: MAX_TOKEN_TRANSFER_EVENTS + 1 }, (_, index) =>
+          transferLog({
+            address: index % 2 ? TOKEN_CONTRACTS.usdc.address : TOKEN_CONTRACTS.usdt.address,
+            logIndex: quantity(index),
+          }),
+        ),
+        completeBlock,
+        'Fixture',
+        now,
+      ),
+    ).toThrow();
+    expect(() =>
+      parseEthereumTokenTransfers(
+        [transferLog(), transferLog({ address: TOKEN_CONTRACTS.usdc.address })],
+        completeBlock,
+        'Fixture',
+        now,
+      ),
+    ).toThrow();
+  });
+
+  it('preserves protocol classification across txpool compaction and never trusts injected upstream activity', async () => {
+    const f = fixture();
+    const supply = `0x617ba037${addressArgument}${word(1)}${addressArgument}${word(0)}`;
+    const pending = [
+      transaction(2, { to: PROTOCOL_CONTRACTS.aave.addresses[0], input: supply }),
+      transaction(3, { to: TOKEN_CONTRACTS.usdc.address, input: call() }),
+    ];
+    f.setPending(pending);
+    f.setPool(pending);
+    await collectLogs(f);
+    const result = await f.provider();
+    expect(result.transactions.find((tx) => tx.id === id(2))?.protocols).toEqual([
+      { protocolId: 'aave', operation: 'supply', evidence: 'call' },
+    ]);
+    expect(result.transactions.find((tx) => tx.id === id(3))?.tokens?.[0]?.tokenId).toBe('usdc');
+    const fake = [{ protocolId: 'aave', operation: 'supply', evidence: 'call' }];
+    const bad = fixture();
+    bad.setLatest([transaction(1, { protocols: fake })]);
+    bad.setPending([transaction(2, { protocols: fake })]);
+    bad.setPool([transaction(2, { protocols: fake })]);
+    expect((await collectLogs(bad)).transactions.every((tx) => tx.protocols === undefined)).toBe(
+      true,
+    );
+  });
+
+  it('counts complete protocol calls before truncation and does not imply execution or add passengers', async () => {
+    const f = fixture();
+    f.setLatest(
+      Array.from({ length: CONFIRMED_SAMPLE_LIMIT + 2 }, (_, index) =>
+        transaction(
+          index + 1,
+          index >= CONFIRMED_SAMPLE_LIMIT
+            ? { to: PROTOCOL_CONTRACTS.aave.addresses[0], input: '0x' }
+            : {},
+        ),
+      ),
+    );
+    const result = await f.provider();
+    expect(result.transactions).toHaveLength(CONFIRMED_SAMPLE_LIMIT);
+    expect(result.transactions.every((tx) => tx.protocols === undefined)).toBe(true);
+    expect(result.protocolCalls).toEqual([
+      {
+        protocolId: 'uniswap',
+        blockHash: blockHash(100),
+        blockHeight: 100,
+        source: config.ethereumSource,
+        observedAt: now,
+        method: 'block-calls',
+        transactionCount: 0,
+      },
+      {
+        protocolId: 'aave',
+        blockHash: blockHash(100),
+        blockHeight: 100,
+        source: config.ethereumSource,
+        observedAt: now,
+        method: 'block-calls',
+        transactionCount: 2,
+      },
+    ]);
+    f.setHead(101);
+    f.setLatest([transaction(1)]);
+    f.advance(3_000);
+    expect(
+      (await f.provider()).protocolCalls?.every(
+        (report) => report.blockHeight === 101 && report.transactionCount === 0,
+      ),
+    ).toBe(true);
   });
 });
