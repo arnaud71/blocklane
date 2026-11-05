@@ -1,5 +1,22 @@
 # Verification status
 
+## First-attempt browser animation checks — 5 November 2026
+
+The [PR #1 Linux campaign](https://github.com/arnaud71/blocklane/actions/runs/42030449395) completed with 165 passing browser scenarios and three scenarios that passed only after retries: late network inclusions on desktop/mobile and historical Bitcoin reboarding on desktop. This proposal fixes their timing assumptions and sets Playwright `retries: 0` in every environment. A first-attempt failure now fails the campaign; neither assertions nor retry thresholds are relaxed.
+
+The network test treated a fully open door as a timestamp, then added 80 milliseconds. Full opening is a plateau: a late rendered observation plus that delay can cross the traveler's legitimate 320-millisecond appearance boundary. The scene publishes at 24 Hz and React commits after the animation callback. The test now acknowledges a committed frame and reads that chain's preparation progress, SVG door and real Canvas alpha in one browser task. It requires a closed illuminated prelude, partial opening without a traveler, a fully open empty frame between 200 and 320 milliseconds, no painted pixels before emergence, and first pixels after the threshold. The existing hidden-tab/pause freeze, route, door-hold, exact-cohort and no-replay checks remain.
+
+The historical-reboarding test installed a clock but left it running during real keyboard/network/render latency. A temporary four-second inspection delay reproduced the original `en marche` failure on both desktop and mobile; the identical delay passed with the clock frozen before navigation. That diagnostic delay was removed. The delivered fix adds only the pause and its explanatory comment; historical provenance, unknown current pool status, exact inclusion counts and keyboard assertions are unchanged.
+
+Verification with Node **24.22.2** and the unchanged lockfile:
+
+- `npm run check`: ESLint, strict TypeScript, **784 unit tests across 64 files** and the production build passed.
+- `npm run format:check` and `git diff --check` passed.
+- Each affected specification passed **five independent executions per profile**, desktop/mobile, with four workers and zero retries: **20 successful stress executions** in total. These are independent repetitions, not retries after failure.
+- The complete browser campaign passed **168 scenarios with zero retries**, two workers, **4.4 minutes**. Log: `/private/tmp/blocklane-e2e-final-browser.log`; results: `/private/tmp/blocklane-e2e-final-results/`.
+
+All observations are controlled fixtures; no public provider is needed by the automated tests. Desktop/mobile screenshots of the relevant phases and retained historical details were inspected. The accompanying review PR records the required Linux-runner verdict separately; local repetitions alone cannot guarantee that a test will never fail in a future environment. No production source, animation timing, route, contract, dependency, runtime requirement or deployment is changed. The existing Vite bundle-size warning remains visible.
+
 ## Text-safe responsive layout — 4 November 2026
 
 Information boards use natural-height rows for translated labels, values, units, controls and provenance. Provider-wide queue captions and coverage notices wrap fully. The outer layout reserves content-sized header/footer rows and at least 120 pixels for the scenes; shorter windows scroll vertically instead of hiding text. Compact laptop spacing preserves the existing requirement that the illustrated areas occupy more than half of a normal desktop viewport.

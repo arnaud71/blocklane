@@ -4,6 +4,12 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Deterministic browser animation checks — 5 November 2026
+
+- Freeze the historical-reboarding test's browser clock before navigation so keyboard and network/render latency do not consume the short return phase. All historical-status, exact-cohort and reboarding checks remain.
+- Observe the network door and Canvas together on each chain's committed animation frame, replacing the late fixed-delay checkpoint that could cross the first passenger's entrance. Keep the light/door/entry ordering, pause/hidden behavior, route and no-replay assertions.
+- Disable browser-test retries in every environment: a failing first attempt now fails CI instead of being reported as a successful flaky scenario. Stability campaigns use independent repeated executions with no retries. Production animation timing, provider data and dependencies are unchanged.
+
 ### Text-safe responsive layout — 4 November 2026
 
 - Information boards grow with translated labels, large values and wrapped source names; value, unit, status and navigation occupy separate rows without clipping. Narrow Flow and Comparison views stack their details.

@@ -38,6 +38,12 @@ Tests resumed at the owner's request after a temporary pause. Results and limita
 
 Dependabot proposes versions without merging them. The automation can prepare a PR; it must not publish an application or change secrets without the corresponding authorization.
 
+## Diagnosing browser-test instability
+
+Browser checks use `retries: 0` locally and in CI. Preserve the failing trace and the actual behavior assertions rather than re-running a job merely to obtain a green result. Independent repeated executions (`npm run test:e2e -- --repeat-each=10 --retries=0`) measure stability; any failure still fails that campaign.
+
+Freeze a controlled animation clock before navigation when keyboard inspection or asynchronous fixture handling must not consume an intermediate phase. Advance it deliberately and acknowledge the applied observation. For short animation windows, sample the committed door and passenger state together, relative to that chain's preparation progress; observing a fully open door does not identify the instant it first opened. Do not add an arbitrary delay after a screenshot or enlarge timeouts to hide a missed phase. Keep assertions about empty-before-entry, visibility/pause, exact inclusion evidence and retained historical provenance.
+
 ## Every month and before a migration
 
 Check the entire dependency tree with `npm audit`, not only runtime dependencies. Review Node support, the image operating system, pinned CI actions and bundle size. Check keyboard use, mobile, pause and reduced motion. Confirm that demonstration mode is labeled, old data is identified, and the FairOnChain link remains optional.
