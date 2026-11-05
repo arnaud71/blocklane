@@ -185,7 +185,9 @@ export function passengerDescription(
     '. ' +
     (pose.inHandoff
       ? t('à bord pendant le transfert', 'aboard during transfer')
-      : (locale === 'fr' ? phaseLabels : englishPhaseLabels)[pose.phase]) +
+      : pose.phase === 'arriving' && pose.arrivalKind === 'token-house'
+        ? t('arrivée illustrée depuis la maison USDT', 'illustrated arrival from the USDT house')
+        : (locale === 'fr' ? phaseLabels : englishPhaseLabels)[pose.phase]) +
     '.' +
     (pose.arrivalKind === 'initial-stock'
       ? t(
@@ -197,12 +199,17 @@ export function passengerDescription(
             ' Nouvelle observation dans cette scène ; cet instant ne date pas son arrivée réelle dans le mempool.',
             ' New observation in this scene; this time does not date its actual arrival in the mempool.',
           )
-        : pose.arrivalKind === 'late-inclusion'
+        : pose.arrivalKind === 'token-house'
           ? t(
-              ' Inclusion découverte hors de l’échantillon ; départ depuis le reste du réseau. Cet instant ne date pas son arrivée réelle dans le mempool.',
-              ' Inclusion discovered outside the sample; departure from the rest of the network. This time does not date its actual arrival in the mempool.',
+              ' Nouvelle activité USDT identifiée dans cet échantillon Ethereum ; la maison illustre le contrat, sans prouver son exécution ni son inclusion. Cet instant ne date pas son arrivée réelle dans le mempool.',
+              ' Newly identified USDT activity in this Ethereum sample; the house illustrates the contract, without proving execution or inclusion. This time does not date its actual arrival in the mempool.',
             )
-          : '') +
+          : pose.arrivalKind === 'late-inclusion'
+            ? t(
+                ' Inclusion découverte hors de l’échantillon ; départ depuis le reste du réseau. Cet instant ne date pas son arrivée réelle dans le mempool.',
+                ' Inclusion discovered outside the sample; departure from the rest of the network. This time does not date its actual arrival in the mempool.',
+              )
+            : '') +
     (waitingReason ? ` ${waitingReason}` : '') +
     (!pose.sourceObserved
       ? t(

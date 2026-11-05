@@ -26,6 +26,7 @@ import {
   ACTIVE_QUEUE_AREA,
   NETWORK_VESTIBULE_Y,
   PLATFORM_CORRIDOR_X,
+  TOKEN_HOUSE_CLEARANCE_Y,
   networkBoxBoardingPath,
   networkBoxExit,
   arrivalStart,
@@ -275,14 +276,19 @@ describe('Network remainder as the origin of late exact inclusions', () => {
       },
       inclusionSnapshot('ethereum', tx),
     );
+    const outerOrigin = { ...arrivalStart(0), y: TOKEN_HOUSE_CLEARANCE_Y };
     expect(passengerFrame(state).passengers).toMatchObject([
       {
         tx: { id: tx.id, status: 'confirmed' },
         arrivalKind: 'new-observation',
-        ...arrivalStart(0),
+        ...outerOrigin,
       },
     ]);
-    expect(state.passengers[0]!.path[0]).toEqual(arrivalStart(0));
+    expect(state.passengers[0]!.path[0]).toEqual(outerOrigin);
+    expect(state.passengers[0]!.path.slice(0, 2)).toEqual([
+      outerOrigin,
+      { x: PLATFORM_CORRIDOR_X, y: TOKEN_HOUSE_CLEARANCE_Y },
+    ]);
     expect(state.passengers[0]!.arrivalKind).not.toBe('late-inclusion');
   });
 

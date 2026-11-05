@@ -18,6 +18,7 @@ import {
 import { activeBitcoinBlockTemplate } from '../lib/passengerMotion';
 import { bitcoinArrivalObservation, passengerStatus } from '../lib/passengerStatus';
 import { sourceName } from '../lib/sourceDescription';
+import { formatTokenAmount, tokenActivityLabel } from '../lib/tokenDisplay';
 import { Icon } from './Icon';
 import './InfoPanel.css';
 
@@ -460,6 +461,31 @@ export function InfoPanel({
                 ? t('Données ou création de contrat', 'Contract data or deployment')
                 : t('Transfert', 'Transfer')}
             </Detail>
+            {selectedTx.tokens?.map((activity) => (
+              <Detail
+                key={activity.tokenId}
+                label={`USDT · ${tokenActivityLabel(activity, locale)}`}
+              >
+                {activity.amount !== undefined
+                  ? `${formatTokenAmount(activity.amount, locale)} USDT`
+                  : '—'}
+                {activity.transferCount !== undefined && (
+                  <>
+                    {' '}
+                    · {n(activity.transferCount)} {t('événement(s) Transfer', 'Transfer event(s)')}
+                  </>
+                )}
+                {activity.observedAt !== undefined && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <time dateTime={new Date(activity.observedAt).toISOString()}>
+                      {new Date(activity.observedAt).toLocaleString(languageTag(locale))}
+                    </time>
+                  </>
+                )}
+              </Detail>
+            ))}
           </dl>
           {selectedInclusionOnly && (
             <p className="info-caution">

@@ -1,3 +1,4 @@
+import { hasTokenActivity, type TokenId } from '../../shared/tokenContracts';
 import { MAX_HEAD_SCALE, MIN_HEAD_SCALE, type PassengerPose } from './passengerMotion';
 import { isPassengerMoving, stablePassengerHash } from './passengerPresentation';
 
@@ -29,6 +30,7 @@ export interface CanvasPassengerFrame {
   passengers: readonly CanvasPassenger[];
   view: CanvasSceneView;
   departure?: CanvasDepartureLayer;
+  highlightTokenId?: TokenId;
 }
 
 export interface CanvasDepartureLayer {
@@ -193,6 +195,8 @@ interface StaticPassengerRun {
   clips?: readonly CanvasClip[];
   selectedId?: string;
   highlightedId?: string;
+  highlightTokenId?: TokenId;
+  appearances: readonly CanvasPassengerAppearance[];
   seen: boolean;
   attempted: boolean;
   sprite?: PassengerSprite;
@@ -303,6 +307,24 @@ function paintShirt(context: CanvasRenderingContext2D, color: string): void {
 }
 
 const iconPainters: Record<string, SpritePainter> = {
+  usdt(context) {
+    // A compact vector Tether mark stays legible without a downloadable font.
+    context.fillStyle = '#26a17b';
+    context.beginPath();
+    context.arc(0, -12.5, 3.8, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = '#f3fff9';
+    context.lineWidth = 0.9;
+    context.beginPath();
+    context.moveTo(-2.2, -14.5);
+    context.lineTo(2.2, -14.5);
+    context.moveTo(0, -14.5);
+    context.lineTo(0, -10.1);
+    context.stroke();
+    context.beginPath();
+    context.ellipse(0, -12.6, 2.4, 0.65, 0, 0, Math.PI * 2);
+    context.stroke();
+  },
   shadow(context) {
     context.fillStyle = 'rgba(11, 41, 37, 0.55)';
     context.beginPath();
@@ -349,11 +371,42 @@ const iconPainters: Record<string, SpritePainter> = {
 };
 
 const iconBounds: Record<string, readonly [number, number, number, number]> = {
+  usdt: [-5, -17, 10, 10],
   shadow: [-8, -3, 16, 8],
   contract: [4, -13, 7, 9],
   confirmed: [6, -31, 8, 8],
   clock: [5, -32, 10, 10],
 };
+
+interface CanvasPassengerAppearance {
+  kind: PassengerPose['tx']['kind'];
+  status: PassengerPose['tx']['status'];
+  sourceObserved: boolean;
+  usdt: boolean;
+}
+
+/** Capture metadata as values so an in-place upgrade cannot reuse an older raster. */
+function passengerAppearance(passenger: CanvasPassenger): CanvasPassengerAppearance {
+  return {
+    kind: passenger.pose.tx.kind,
+    status: passenger.pose.tx.status,
+    sourceObserved: passenger.pose.sourceObserved,
+    usdt: hasTokenActivity(passenger.pose.tx, 'usdt'),
+  };
+}
+
+function samePassengerAppearance(
+  appearance: CanvasPassengerAppearance | undefined,
+  passenger: CanvasPassenger,
+): boolean {
+  const { pose } = passenger;
+  return (
+    appearance?.kind === pose.tx.kind &&
+    appearance.status === pose.tx.status &&
+    appearance.sourceObserved === pose.sourceObserved &&
+    appearance.usdt === hasTokenActivity(pose.tx, 'usdt')
+  );
+}
 
 export function createPassengerCanvasRenderer(): {
   draw(
@@ -378,6 +431,7 @@ export function createPassengerCanvasRenderer(): {
         clips: readonly CanvasClip[];
         mirrored: boolean;
         density: number;
+        appearances: readonly CanvasPassengerAppearance[];
         sprite?: PassengerSprite;
       }
     | undefined;
@@ -509,6 +563,7 @@ export function createPassengerCanvasRenderer(): {
     mirrored: boolean,
     selectedId?: string,
     highlightedId?: string,
+    highlightTokenId?: TokenId,
   ): void {
     const { pose, interactive } = passenger;
     if (!Number.isFinite(pose.x) || !Number.isFinite(pose.y) || pose.opacity <= 0) return;
@@ -521,6 +576,13 @@ export function createPassengerCanvasRenderer(): {
     context.save();
     context.translate(pose.x, pose.y);
     context.globalAlpha = Math.max(0, Math.min(1, pose.opacity));
+    if (highlightTokenId && hasTokenActivity(pose.tx, highlightTokenId)) {
+      context.strokeStyle = '#7ce1bd';
+      context.lineWidth = 1.4;
+      context.beginPath();
+      context.ellipse(0, 2, 9, 4, 0, 0, Math.PI * 2);
+      context.stroke();
+    }
     if (interactive && (pose.tx.id === selectedId || pose.tx.id === highlightedId)) {
       context.strokeStyle = '#f5d589';
       context.lineWidth = 2;
@@ -559,6 +621,11 @@ export function createPassengerCanvasRenderer(): {
     context.fill();
     context.restore();
     if (pose.tx.kind === 'contract') paintSprite(context, iconFor('contract'));
+    if (hasTokenActivity(pose.tx, 'usdt')) {
+      const badge = iconFor('usdt');
+      if (badge) paintSprite(context, badge);
+      else iconPainters.usdt?.(context);
+    }
     if ((pose.sourceObserved || !interactive) && pose.tx.status === 'confirmed') {
       paintSprite(context, iconFor('confirmed'));
     }
@@ -596,7 +663,10 @@ export function createPassengerCanvasRenderer(): {
       (departureImage.passengers !== departure.passengers ||
         departureImage.clips !== departure.clips ||
         departureImage.mirrored !== mirrored ||
-        departureImage.density !== density)
+        departureImage.density !== density ||
+        !departureImage.appearances.every((appearance, index) =>
+          samePassengerAppearance(appearance, departure.passengers[index]!),
+        ))
     ) {
       clearDepartureImage();
     }
@@ -607,6 +677,7 @@ export function createPassengerCanvasRenderer(): {
         clips: departure.clips,
         mirrored,
         density,
+        appearances: departure.passengers.map(passengerAppearance),
       };
       let canvas: HTMLCanvasElement | undefined;
       try {
@@ -674,11 +745,13 @@ export function createPassengerCanvasRenderer(): {
         cached.passengers.length === end - start &&
         cached.selectedId === selected &&
         cached.highlightedId === highlighted &&
+        cached.highlightTokenId === frame.highlightTokenId &&
         sameClips(cached.clips, first.clips) &&
         cached.passengers.every((previous, index) => {
           const current = frame.passengers[start + index]!;
           return (
             previous.pose === current.pose &&
+            samePassengerAppearance(cached.appearances[index], current) &&
             previous.color === current.color &&
             previous.interactive === current.interactive &&
             (previous.offsetY ?? 0) === (current.offsetY ?? 0)
@@ -692,6 +765,8 @@ export function createPassengerCanvasRenderer(): {
           clips: first.clips?.map((clip) => ({ ...clip })),
           selectedId: selected,
           highlightedId: highlighted,
+          highlightTokenId: frame.highlightTokenId,
+          appearances: frame.passengers.slice(start, end).map(passengerAppearance),
           seen: true,
           attempted: false,
         });
@@ -744,7 +819,14 @@ export function createPassengerCanvasRenderer(): {
             imageContext.scale(density, density);
             imageContext.translate(-left, -top);
             for (const passenger of run.passengers)
-              drawPassenger(imageContext, passenger, frame.view.mirrored, selected, highlighted);
+              drawPassenger(
+                imageContext,
+                passenger,
+                frame.view.mirrored,
+                selected,
+                highlighted,
+                frame.highlightTokenId,
+              );
             run.sprite = {
               canvas,
               x: left,
@@ -857,6 +939,7 @@ export function createPassengerCanvasRenderer(): {
                 frame.view.mirrored,
                 selectedId,
                 highlightedId,
+                frame.highlightTokenId,
               );
           index = end;
           const next = frame.passengers[index];

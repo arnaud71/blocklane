@@ -322,3 +322,34 @@
     display: inline;
   }
 }
+
+.passenger-canvas-browser .passenger-canvas-token-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-bottom: 12px;
+  padding: 6px 8px;
+  border: 1px solid #78b99a88;
+  border-radius: 4px;
+  color: #c5efdb;
+  cursor: pointer;
+}
+
+.passenger-canvas-token-filter input {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #70c99e;
+}
+
+.passenger-canvas-browse-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.passenger-canvas-browse--token {
+  border-color: #74c9a18c;
+  color: #bcebd4;
+}

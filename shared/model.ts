@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  MAX_TOKEN_ACTIVITIES,
+  tokenActivitySchema,
+  tokenBlockTransfersSchema,
+  tokenAmountSchema,
+} from './tokenContracts.js';
 
 export const chainIdSchema = z.enum(['bitcoin', 'ethereum']);
 export type ChainId = z.infer<typeof chainIdSchema>;
@@ -541,6 +547,8 @@ export const transactionSchema = z
     blockHash: canonicalIdentifier.optional(),
     /** Exact fee caps and account order; size remains the declared gas limit. */
     ethereum: ethereumTransactionSchema.optional(),
+    /** Compact, server-classified token intents or observed execution evidence. */
+    tokens: z.array(tokenActivitySchema).max(MAX_TOKEN_ACTIVITIES).optional(),
     kind: z.enum(['transfer', 'contract']),
     value: z.string().max(100),
   })
@@ -558,6 +566,24 @@ export const transactionSchema = z
         path: ['ethereum'],
         message: 'Ethereum metadata on another chain',
       });
+    }
+    if (transaction.tokens !== undefined) {
+      const tokens = transaction.tokens;
+      if (
+        transaction.chain !== 'ethereum' ||
+        transaction.kind !== 'contract' ||
+        new Set(tokens.map((activity) => activity.tokenId)).size !== tokens.length ||
+        tokens.some(
+          (activity) =>
+            activity.evidence === 'log' &&
+            (transaction.status !== 'confirmed' || transaction.blockHash === undefined),
+        )
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['tokens'],
+          message: 'Invalid token transaction',
+        });
     }
   });
 export type Tx = z.infer<typeof transactionSchema>;
@@ -626,6 +652,12 @@ export const snapshotSchema = z
     usdQuote: usdQuoteSchema.nullable().optional(),
     /** Native values from the exact latest block; null if its aggregate is unavailable. */
     latestBlockValue: latestBlockValueSchema.nullable().optional(),
+    /** Complete Transfer-log totals for the exact latest block; absent means unavailable. */
+    tokenTransfers: z
+      .array(tokenBlockTransfersSchema)
+      .max(MAX_TOKEN_ACTIVITIES)
+      .nullable()
+      .optional(),
     transactions: z.array(transactionSchema).max(MAX_TRANSACTIONS),
     blocks: z.array(blockSchema).max(MAX_BLOCKS),
     /** Bounded replay journal; its historical blocks need not appear in blocks. */
@@ -633,6 +665,64 @@ export const snapshotSchema = z
     message: z.string().max(700).optional(),
   })
   .superRefine((snapshot, context) => {
+    const tokenReports = snapshot.tokenTransfers ?? [];
+    const latestTokenBlock = snapshot.blocks[0];
+    if (
+      tokenReports.length > 0 &&
+      (snapshot.chain !== 'ethereum' ||
+        snapshot.status === 'unavailable' ||
+        latestTokenBlock === undefined ||
+        new Set(tokenReports.map((report) => report.tokenId)).size !== tokenReports.length ||
+        tokenReports.some(
+          (report) =>
+            report.blockHash !== latestTokenBlock.hash ||
+            report.blockHeight !== latestTokenBlock.height ||
+            report.transactionCount > latestTokenBlock.txCount ||
+            report.observedAt > snapshot.observedAt ||
+            (snapshot.mode === 'demo') !== (report.method === 'simulation'),
+        ))
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['tokenTransfers'],
+        message: 'Invalid token block totals',
+      });
+    for (const tx of snapshot.transactions)
+      for (const activity of tx.tokens ?? [])
+        if (
+          (snapshot.mode === 'demo') !== (activity.evidence === 'demo') ||
+          (activity.observedAt !== undefined && activity.observedAt > snapshot.observedAt)
+        )
+          context.addIssue({
+            code: 'custom',
+            path: ['transactions'],
+            message: 'Invalid token provenance',
+          });
+    for (const report of tokenReports) {
+      let amount = 0n;
+      let events = 0;
+      const ids = new Set<string>();
+      for (const tx of snapshot.transactions) {
+        if (tx.blockHash?.toLowerCase() !== report.blockHash.toLowerCase()) continue;
+        for (const activity of tx.tokens ?? []) {
+          if (activity.tokenId !== report.tokenId || activity.evidence !== 'log') continue;
+          ids.add(tx.id.toLowerCase());
+          events += activity.transferCount ?? 0;
+          if (tokenAmountSchema.safeParse(activity.amount).success)
+            amount += BigInt(activity.amount!);
+        }
+      }
+      if (
+        ids.size > report.transactionCount ||
+        events > report.transferCount ||
+        (tokenAmountSchema.safeParse(report.amount).success && amount > BigInt(report.amount))
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['tokenTransfers'],
+          message: 'Sampled logs exceed complete block totals',
+        });
+    }
     const templateIds = new Set(
       snapshot.blockTemplate?.selectedTransactionIds.map((id) => id.toLowerCase()) ?? [],
     );

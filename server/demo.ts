@@ -16,7 +16,12 @@ function seededRandom(seed: number): () => number {
 }
 
 /** Repeatable synthetic data, explicitly separated from every live-provider path. */
-export function generateDemoSnapshot(chain: ChainId, now = Date.now(), seed = 2026): Snapshot {
+export function generateDemoSnapshot(
+  chain: ChainId,
+  now = Date.now(),
+  seed = 2026,
+  options: { includeTokens?: boolean } = {},
+): Snapshot {
   const bitcoin = chain === 'bitcoin';
   const random = seededRandom(seed + (bitcoin ? 0 : 1_000));
   const hex = () =>
@@ -43,6 +48,26 @@ export function generateDemoSnapshot(chain: ChainId, now = Date.now(), seed = 20
     used: Math.round(capacity * (0.45 + random() * 0.5)),
     capacity,
   }));
+  // Explicit opt-in keeps generic fixtures free of token evidence. Production
+  // demo requests opt in here; no live-provider path can call this enrichment.
+  if (!bitcoin && options.includeTokens)
+    transactions.forEach((transaction, index) => {
+      if (index % 7 !== 0) return;
+      transaction.kind = 'contract';
+      transaction.tokens = [
+        {
+          tokenId: 'usdt',
+          operation: index % 21 === 0 ? 'approval' : 'transfer',
+          evidence: 'demo',
+          amount: (BigInt(index + 1) * 1_234_567n).toString(),
+        },
+      ];
+    });
+  const simulatedTransfers = transactions.flatMap((tx) =>
+    tx.status === 'confirmed'
+      ? (tx.tokens ?? []).filter((activity) => activity.operation === 'transfer')
+      : [],
+  );
   return snapshotSchema.parse({
     chain,
     mode: 'demo',
@@ -59,6 +84,25 @@ export function generateDemoSnapshot(chain: ChainId, now = Date.now(), seed = 20
       ...(transaction.status === 'confirmed' ? { blockHash: blocks[0]!.hash } : {}),
     })),
     blocks,
+    ...(!bitcoin && options.includeTokens
+      ? {
+          tokenTransfers: [
+            {
+              tokenId: 'usdt',
+              blockHash: blocks[0]!.hash,
+              blockHeight: blocks[0]!.height,
+              source: 'Fictional USDT demonstration',
+              observedAt: Math.max(0, Math.floor(now)),
+              method: 'simulation',
+              transactionCount: simulatedTransfers.length,
+              transferCount: simulatedTransfers.length,
+              amount: simulatedTransfers
+                .reduce((sum, tx) => sum + BigInt(tx.amount!), 0n)
+                .toString(),
+            },
+          ],
+        }
+      : {}),
     message:
       'Mode démonstration clairement identifié. Les identifiants demo ne correspondent à aucune transaction réelle.',
   });

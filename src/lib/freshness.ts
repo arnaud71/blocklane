@@ -53,6 +53,7 @@ export function assessFreshness(snapshot: Snapshot, failed: boolean, now: number
       ethereumProjection: null,
       ethereumDependencies: null,
       latestBlockValue: null,
+      tokenTransfers: null,
       feeRate: null,
       transactions: [],
       blocks: [],
@@ -75,6 +76,7 @@ export function assessFreshness(snapshot: Snapshot, failed: boolean, now: number
     (now < snapshot.poolFlow.observedAt ||
       now - snapshot.poolFlow.observedAt > POOL_FLOW_MAX_AGE_MS);
   const event = snapshot.eventFlow;
+  const tokenReportFuture = snapshot.tokenTransfers?.some((report) => report.observedAt > now);
   const arrivalsExpired =
     !!snapshot.bitcoinArrivals &&
     (now < snapshot.bitcoinArrivals.observedAt ||
@@ -114,6 +116,7 @@ export function assessFreshness(snapshot: Snapshot, failed: boolean, now: number
     !dependenciesExpired &&
     !flowExpired &&
     !arrivalsExpired &&
+    !tokenReportFuture &&
     !eventFuture &&
     !eventExpired
   )
@@ -131,6 +134,7 @@ export function assessFreshness(snapshot: Snapshot, failed: boolean, now: number
     ...(poolExpired ? { poolObservation: null } : {}),
     ...(dependenciesExpired ? { ethereumDependencies: null } : {}),
     ...(flowExpired ? { poolFlow: null } : {}),
+    ...(tokenReportFuture ? { tokenTransfers: null } : {}),
     ...(arrivalsExpired
       ? {
           bitcoinArrivals: null,
