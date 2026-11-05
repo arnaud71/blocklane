@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useI18n, type Locale } from '../i18n';
 import type { ChainId, Tx } from '../../shared/model';
 import {
   canvasPassengerAnchor,
@@ -47,10 +48,10 @@ const MAX_BACKING_DIMENSION = 8_192;
 const CONTROL_SELECTOR =
   'button, a, input, select, textarea, label, [role="button"], [role="dialog"], [data-passenger-controls]';
 
-function feeText(passenger: CanvasPassenger): string {
+function feeText(passenger: CanvasPassenger, locale: Locale): string {
   return (
     passenger.feeLabel ??
-    `${passenger.pose.tx.feeRate.toFixed(2)} ${passenger.pose.tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei'}`
+    `${number(passenger.pose.tx.feeRate, 2, locale)} ${passenger.pose.tx.chain === 'bitcoin' ? 'sat/vB' : 'Gwei'}`
   );
 }
 
@@ -92,6 +93,8 @@ export function PassengerCanvas({
   onSelect,
   chain,
 }: PassengerCanvasProps) {
+  const { locale, t } = useI18n();
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<ReturnType<typeof createPassengerCanvasRenderer> | null>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -236,10 +239,10 @@ export function PassengerCanvas({
       .sort((left, right) => left.pose.tx.id.localeCompare(right.pose.tx.id))
       .map((passenger) => {
         const tx = passenger.pose.tx;
-        const status = passengerStatus(passenger.pose);
+        const status = passengerStatus(passenger.pose, locale);
         return {
           id: tx.id,
-          label: `${tx.id.slice(0, 12)}…${tx.id.slice(-6)} · ${feeText(passenger)} · ${status.label}`,
+          label: `${tx.id.slice(0, 12)}…${tx.id.slice(-6)} · ${feeText(passenger, locale)} · ${status.label}`,
           group: status.group,
         };
       });
@@ -259,7 +262,7 @@ export function PassengerCanvas({
     }
     optionCache.current = next;
     return next;
-  }, [browserOpen, frame]);
+  }, [browserOpen, frame, locale]);
   const options = useMemo(
     () => filterTransactionOptions(allOptions, query, filter),
     [allOptions, query, filter],
@@ -302,7 +305,7 @@ export function PassengerCanvas({
       ref={triggerRef}
       type="button"
       className={`passenger-canvas-browse${browseTarget ? ' passenger-canvas-browse--docked' : ''}`}
-      aria-label={`Parcourir les transactions ${chainName}`}
+      aria-label={t(`Parcourir les transactions ${chainName}`, `Browse ${chainName} transactions`)}
       aria-expanded={browserOpen}
       aria-controls={browserOpen ? controlsId : undefined}
       onClick={() => {
@@ -310,7 +313,7 @@ export function PassengerCanvas({
         else setBrowserOpen(true);
       }}
     >
-      <span className="passenger-canvas-browse-full">Transactions</span>
+      <span className="passenger-canvas-browse-full">{t('Transactions', 'Transactions')}</span>
       <span className="passenger-canvas-browse-compact" aria-hidden="true">
         Tx
       </span>
@@ -327,8 +330,10 @@ export function PassengerCanvas({
       />
       {!drawingAvailable && (
         <p className="passenger-canvas-unavailable">
-          Le dessin des voyageurs est indisponible dans ce navigateur. Le bouton « Transactions »
-          permet toujours de consulter les données observées.
+          {t(
+            'Le dessin des voyageurs est indisponible dans ce navigateur. Le bouton « Transactions » permet toujours de consulter les données observées.',
+            'Passenger drawing is unavailable in this browser. The Transactions button still provides access to the observed data.',
+          )}
         </p>
       )}
       {drawingAvailable && !browserOpen && highlightedPassenger && anchor && (
@@ -344,12 +349,13 @@ export function PassengerCanvas({
           }}
         >
           <strong>{highlightedPassenger.pose.tx.id}</strong>
-          <span>{feeText(highlightedPassenger)}</span>
+          <span>{feeText(highlightedPassenger, locale)}</span>
           <p>
             {passengerDescription(
               highlightedPassenger.pose,
               highlightedPassenger.feeLabel,
               highlightedPassenger.interactive,
+              locale,
             )}
           </p>
         </div>
@@ -370,28 +376,37 @@ export function PassengerCanvas({
             id={controlsId}
             className="passenger-canvas-browser"
             role="dialog"
-            aria-label={`Transactions observées ${chainName}`}
+            aria-label={t(
+              `Transactions observées ${chainName}`,
+              `Observed ${chainName} transactions`,
+            )}
           >
             <div className="passenger-canvas-browser-heading">
-              <strong>Transactions {chainName}</strong>
-              <button type="button" onClick={closeBrowser} aria-label="Fermer les transactions">
-                Fermer
+              <strong>{t(`Transactions ${chainName}`, `${chainName} transactions`)}</strong>
+              <button
+                type="button"
+                onClick={closeBrowser}
+                aria-label={t('Fermer les transactions', 'Close transactions')}
+              >
+                {t('Fermer', 'Close')}
               </button>
             </div>
-            <label htmlFor={`${controlsId}-search`}>Rechercher une transaction</label>
+            <label htmlFor={`${controlsId}-search`}>
+              {t('Rechercher une transaction', 'Search for a transaction')}
+            </label>
             <input
               ref={searchRef}
               id={`${controlsId}-search`}
               type="search"
               value={query}
               maxLength={128}
-              placeholder="Hash complet ou fragment"
+              placeholder={t('Hash complet ou fragment', 'Full hash or fragment')}
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => setQuery(event.target.value)}
             />
             <fieldset className="passenger-canvas-filters">
-              <legend>Filtrer les transactions</legend>
+              <legend>{t('Filtrer les transactions', 'Filter transactions')}</legend>
               <div>
                 {TRANSACTION_BROWSER_FILTERS.map((choice) => (
                   <label key={choice.value}>
@@ -402,7 +417,18 @@ export function PassengerCanvas({
                       checked={filter === choice.value}
                       onChange={() => setFilter(choice.value)}
                     />
-                    <span>{choice.label}</span>
+                    <span>
+                      {t(
+                        choice.label,
+                        {
+                          all: 'All',
+                          current: 'Present',
+                          queued: 'Queued',
+                          history: 'Historical',
+                          confirmed: 'Included',
+                        }[choice.value],
+                      )}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -410,12 +436,16 @@ export function PassengerCanvas({
             <p
               className="passenger-canvas-result-count"
               role="status"
-              aria-label="Résultats de recherche"
+              aria-label={t('Résultats de recherche', 'Search results')}
             >
-              {number(options.length)} {options.length === 1 ? 'résultat' : 'résultats'} sur{' '}
-              {number(allOptions.length)} transactions représentées
+              {n(options.length)}{' '}
+              {options.length === 1 ? t('résultat', 'result') : t('résultats', 'results')}{' '}
+              {t('sur', 'of')} {n(allOptions.length)}{' '}
+              {t('transactions représentées', 'represented transactions')}
             </p>
-            <label htmlFor={`${controlsId}-select`}>Transaction représentée dans la scène</label>
+            <label htmlFor={`${controlsId}-select`}>
+              {t('Transaction représentée dans la scène', 'Transaction shown in the scene')}
+            </label>
             <select
               ref={selectRef}
               id={`${controlsId}-select`}
@@ -427,8 +457,11 @@ export function PassengerCanvas({
               {options.length === 0 ? (
                 <option value="">
                   {allOptions.length
-                    ? 'Aucune transaction ne correspond'
-                    : 'Aucune transaction observée disponible'}
+                    ? t('Aucune transaction ne correspond', 'No matching transaction')
+                    : t(
+                        'Aucune transaction observée disponible',
+                        'No observed transaction available',
+                      )}
                 </option>
               ) : (
                 <TransactionOptions options={options} />
@@ -443,13 +476,14 @@ export function PassengerCanvas({
                   setFilter('all');
                 }}
               >
-                Réinitialiser la recherche et les filtres
+                {t('Réinitialiser la recherche et les filtres', 'Reset search and filters')}
               </button>
             )}
             <p id={`${controlsId}-help`}>
-              Liste des voyageurs représentés, classée par identifiant. Les détails anciens et la
-              présence dans le dernier inventaire sont distingués. Une absence d’inventaire ne
-              prouve aucune confirmation. Un embarquement animé ne prouve aucune inclusion.
+              {t(
+                'Liste des voyageurs représentés, classée par identifiant. Les détails anciens et la présence dans le dernier inventaire sont distingués. Une absence d’inventaire ne prouve aucune confirmation. Un embarquement animé ne prouve aucune inclusion.',
+                'Represented passengers, sorted by identifier. Historical details and presence in the latest inventory are distinguished. Absence from an inventory does not prove confirmation. Animated boarding does not prove inclusion.',
+              )}
             </p>
             {browsedPassenger && (
               <p id={`${controlsId}-description`} className="passenger-canvas-browser-description">
@@ -457,6 +491,7 @@ export function PassengerCanvas({
                   browsedPassenger.pose,
                   browsedPassenger.feeLabel,
                   browsedPassenger.interactive,
+                  locale,
                 )}
               </p>
             )}
@@ -471,7 +506,7 @@ export function PassengerCanvas({
                 if (current) latest.current.onSelect(current.pose.tx);
               }}
             >
-              Afficher les détails
+              {t('Afficher les détails', 'View details')}
             </button>
           </section>
         )}

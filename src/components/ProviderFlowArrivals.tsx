@@ -1,4 +1,5 @@
 import { memo, useEffect, useState, type CSSProperties } from 'react';
+import { useI18n } from '../i18n';
 import type { Snapshot } from '../../shared/model';
 import { advanceProviderFlowArrival } from '../lib/poolFlowDisplay';
 import { number } from '../lib/format';
@@ -19,6 +20,8 @@ export const ProviderFlowArrivals = memo(function ProviderFlowArrivals({
   paused: boolean;
   reducedMotion: boolean;
 }) {
+  const { locale, t } = useI18n();
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
   const [state, setState] = useState(() => advanceProviderFlowArrival(null, snapshot));
   const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
   useEffect(() => {
@@ -34,7 +37,7 @@ export const ProviderFlowArrivals = memo(function ProviderFlowArrivals({
   const width = Math.min(122, Math.max(70, projectX(460) - projectX(426)));
   const x = Math.min(projectX(ARRIVAL_LANE_X), projectX(460) - width / 2 - 3);
   const style = { '--provider-flow-shift': `${Math.min(32, width / 4)}px` } as CSSProperties;
-  const seconds = number((arrival.observedAt - arrival.fromObservedAt) / 1_000, 1);
+  const seconds = n((arrival.observedAt - arrival.fromObservedAt) / 1_000, 1);
   return (
     <g
       className="provider-flow-arrivals"
@@ -46,7 +49,10 @@ export const ProviderFlowArrivals = memo(function ProviderFlowArrivals({
       data-flow-reduced={reducedMotion}
       data-flow-origin="ordinary-lateral-entry"
       role="group"
-      aria-label={`Arrivées collectives : ${number(arrival.count)} ${arrival.kind === 'events' ? 'notifications pending reçues du fournisseur' : 'identifiants entrés dans l’inventaire du fournisseur'} en ${seconds} s, hors de la sélection pending à la première publication de cet intervalle. ${arrival.kind === 'events' ? 'Une notification peut être une promotion depuis queued ou une réémission, pas une nouvelle entrée mondiale. ' : ''}Certains peuvent déjà être conservés parmi les observations de la scène ; ce groupe ne s’ajoute pas au nombre de voyageurs individuels et ne prouve aucune inclusion.`}
+      aria-label={t(
+        `Arrivées collectives : ${n(arrival.count)} ${arrival.kind === 'events' ? 'notifications pending reçues du fournisseur' : 'identifiants entrés dans l’inventaire du fournisseur'} en ${seconds} s, hors de la sélection pending à la première publication de cet intervalle. ${arrival.kind === 'events' ? 'Une notification peut être une promotion depuis queued ou une réémission, pas une nouvelle entrée mondiale. ' : ''}Certains peuvent déjà être conservés parmi les observations de la scène ; ce groupe ne s’ajoute pas au nombre de voyageurs individuels et ne prouve aucune inclusion.`,
+        `Collective arrivals: ${n(arrival.count)} ${arrival.kind === 'events' ? 'pending notifications received from the provider' : 'identifiers entering the provider’s inventory'} in ${seconds} s, outside the pending selection when this interval was first published. ${arrival.kind === 'events' ? 'A notification may be a queued promotion or re-emission, not a new worldwide arrival. ' : ''}Some may already be retained among the scene’s observations; this group does not add to the individual passenger count or prove inclusion.`,
+      )}
       transform={`translate(${x} 260)`}
       style={style}
     >
@@ -71,10 +77,10 @@ export const ProviderFlowArrivals = memo(function ProviderFlowArrivals({
           </g>
           <rect x={-width / 2} y="6" width={width} height="31" rx="5" />
           <text y="18" textAnchor="middle">
-            +{number(arrival.count)}
+            +{n(arrival.count)}
           </text>
           <text className="provider-flow-arrivals-caption" y="30" textAnchor="middle">
-            hors échantillon
+            {t('hors échantillon', 'outside sample')}
           </text>
         </g>
       </g>

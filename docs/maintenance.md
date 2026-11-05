@@ -1,96 +1,96 @@
-# Exploitation et maintenance
+# Operations and maintenance
 
-Automatisation enregistrée le 14 octobre 2026 : `maintenance-hebdomadaire-blocklane`, attachée au chat du projet, active chaque lundi à 09 h (Europe/Zurich). Elle prépare des correctifs vérifiables, reste silencieuse en l'absence de changement utile et n'effectue aucune fusion ni publication. Pour les exécutions locales, garder le poste éveillé et l'application ouverte.
+Automation registered on 14 October 2026: `maintenance-hebdomadaire-blocklane`, attached to the project chat and active every Monday at 09:00 (Europe/Zurich). It prepares reviewable fixes, stays quiet when there is no useful change, and neither merges nor publishes anything. For local runs, keep the computer awake and the application open.
 
-## Responsabilités
+## Responsibilities
 
-Codex peut préparer des correctifs, mises à jour, tests et PR dans ce projet. L'automatisation hebdomadaire doit être enregistrée dans Codex pour déclencher ce travail ; `AGENTS.md` et Dependabot ne réveillent pas seuls un agent local. Le poste ou l'environnement d'exécution, les autorisations et les comptes nécessaires doivent être disponibles. Aucune maintenance permanente ni astreinte n'est garantie par ce dépôt.
+Codex can prepare fixes, updates, tests and PRs in this project. The weekly automation must be registered in Codex to trigger this work; `AGENTS.md` and Dependabot do not wake a local agent by themselves. The computer or execution environment, permissions and required accounts must be available. This repository guarantees neither continuous maintenance nor an on-call service.
 
-Le propriétaire conserve la décision de fusion et de publication. Un hébergement public a besoin d'un responsable pour les comptes, le domaine, les incidents et les coûts. Ne pas confondre une proposition de correction vérifiée avec une livraison en production.
+The owner retains the decision to merge and publish. Public hosting needs someone responsible for accounts, the domain, incidents and costs. A verified proposed fix is not a production release.
 
-## À configurer après création du dépôt distant
+## Configuration after creating the remote repository
 
-Le dépôt public [arnaud71/blocklane](https://github.com/arnaud71/blocklane) appartient au compte personnel arnaud71, séparément d’onchainfinity. Le propriétaire a autorisé sa publication publique le 16 octobre 2026, après le refus GitHub HTTP 403 des protections sur l’offre privée. Les règles de `main` sont actives avant le premier envoi du code : aucun acteur de contournement, PR et contrôles obligatoires, interdiction de force-push et de suppression. La création initiale de la branche est exemptée des seuls checks qui ne peuvent pas encore exister ; les mises à jour exigent ensuite leurs résultats à jour. La fusion automatique reste désactivée. Les alertes de dépendances, la détection des secrets, la protection au push et le signalement privé de vulnérabilités sont activés.
+The public repository [arnaud71/blocklane](https://github.com/arnaud71/blocklane) belongs to the personal arnaud71 account, separately from onchainfinity. The owner authorized public publication on 16 October 2026 after GitHub returned HTTP 403 for branch protection under the private-repository plan. The `main` rules were active before the first code upload: no bypass actors, mandatory PRs and checks, and no force pushes or deletion. Initial branch creation is exempt only from checks that cannot yet exist; subsequent updates require current results. Automatic merging remains disabled. Dependency alerts, secret scanning, push protection and private vulnerability reporting are enabled.
 
-Les contrôles obligatoires configurés sont `Lint, types, tests, build et navigateur` et `audit`. L’audit s’exécute pour toutes les PR : un filtrage par chemins le laisserait en attente pour les autres changements. Prévoir une PR obligatoire, des checks à jour, les conversations résolues, aucun contournement administrateur, aucun force-push et aucune suppression de `main`. Un compte personnel seul utilise zéro approbation formelle obligatoire pour permettre la revue sans exiger sa propre approbation ; les contrôles et la PR restent requis.
+The configured required checks are `Lint, types, tests, build et navigateur` and `audit`. The audit runs for every PR: a path filter would leave it pending for other changes. Require a PR, up-to-date checks, resolved conversations, no administrator bypass, no force pushes and no deletion of `main`. A sole personal-account owner uses zero mandatory formal approvals to allow review without requiring self-approval; checks and the PR remain mandatory.
 
-1. Publier le dépôt et protéger `main` : PR obligatoire, contrôles CI obligatoires, historique sans force-push, suppression de branche protégée interdite.
-2. Activer Dependabot et ses alertes, ainsi que la détection et le signalement privé de secrets/vulnérabilités lorsque l'offre du dépôt le permet.
-3. Conserver les permissions Actions minimales ; ne pas donner de secrets de déploiement aux PR ni aux forks.
-4. Renseigner le contact de sécurité dans `SECURITY.md` et définir qui valide une release.
-5. Créer les secrets et limites fournisseur dans l'environnement serveur ; vérifier leur rotation.
-6. Définir le domaine HTTPS, les limites au reverse proxy et des sondes externes. Le proxy doit remplacer `X-Real-IP` par l'IP cliente observée ; déclarer son adresse de socket exacte dans `TRUSTED_PROXY_IPS`.
-7. Configurer une alerte de service et une alerte de source ancienne/indisponible. Le simple HTTP 200 du serveur ne prouve pas que les données sont fraîches.
-8. Vérifier l'automatisation de maintenance Codex dans l'application et son accès au projet.
+1. Publish the repository and protect `main`: mandatory PRs and CI checks, no force pushes, and no deletion of the protected branch.
+2. Enable Dependabot and its alerts, as well as secret detection and private reporting of secrets/vulnerabilities when the repository plan permits them.
+3. Keep Actions permissions minimal; do not expose deployment secrets to PRs or forks.
+4. Set the security contact in `SECURITY.md` and define who approves a release.
+5. Create provider secrets and limits in the server environment; check their rotation.
+6. Define the HTTPS domain, reverse-proxy limits and external probes. The proxy must replace `X-Real-IP` with the client IP it observes; declare its exact socket address in `TRUSTED_PROXY_IPS`.
+7. Configure a service alert and a stale/unavailable-source alert. An HTTP 200 from the server alone does not establish data freshness.
+8. Verify the Codex maintenance automation in the application and its access to the project.
 
-Les workflows du dépôt ne configurent pas automatiquement les règles GitHub. Les réglages ci-dessus ont été appliqués séparément ; vérifier leur maintien sur [GitHub](https://github.com/arnaud71/blocklane/settings/rules). L’hébergement reste une opération distincte.
+Repository workflows do not configure GitHub rules automatically. The settings above were applied separately; verify that they remain in place on [GitHub](https://github.com/arnaud71/blocklane/settings/rules). Hosting remains a separate operation. The initial CI run passed completely for commit `335e9af`: [quality checks, including browser tests](https://github.com/arnaud71/blocklane/actions/runs/38909153856) completed in 7m49s, and the [dependency audit](https://github.com/arnaud71/blocklane/actions/runs/38909158417) passed.
 
-Les tests ont repris à la demande du propriétaire après leur suspension ponctuelle. Les résultats propres à chaque changement, ainsi que leurs limites, figurent dans [validation.md](validation.md).
+Tests resumed at the owner's request after a temporary pause. Results and limitations for each change are recorded in [validation.md](validation.md).
 
-## Chaque semaine
+## Every week
 
-- Lire les alertes de sécurité, les propositions Dependabot et les résultats CI récents.
-- Vérifier la disponibilité et la fraîcheur des deux chaînes, sans diffuser d'URL contenant une clé dans les sorties.
-- Examiner les annonces officielles de Node, des dépendances affectées et des fournisseurs si un contrat a changé.
-- Préparer les mises à jour compatibles dans une branche `codex/maintenance-YYYY-MM-DD`. Une PR claire peut regrouper des correctifs cohérents ; séparer les migrations majeures.
-- Exécuter `npm run check`, `npm run format:check`, `npm run test:e2e` et l'audit applicable. Reproduire les problèmes de données avec des fixtures contrôlées.
-- Signaler uniquement un changement utile : faille, panne persistante, mise à jour vérifiable, besoin de décision ou correctif prêt. Rester silencieux si rien d'actionnable n'a changé.
+- Read security alerts, Dependabot proposals and recent CI results.
+- Check availability and freshness for both chains without exposing URLs containing keys in output.
+- Review official announcements from Node, affected dependencies and providers when a contract changes.
+- Prepare compatible updates on a `codex/maintenance-YYYY-MM-DD` branch. A clear PR can group related fixes; keep major migrations separate.
+- Run `npm run check`, `npm run format:check`, `npm run test:e2e` and the applicable audit. Reproduce data issues with controlled fixtures.
+- Report only an actionable change: a vulnerability, persistent outage, verifiable update, required decision or ready fix. Stay quiet if nothing actionable has changed.
 
-Dependabot propose les versions, sans les fusionner. L'automatisation peut préparer une PR ; elle ne doit pas publier une application ni modifier des secrets sans autorisation correspondante.
+Dependabot proposes versions without merging them. The automation can prepare a PR; it must not publish an application or change secrets without the corresponding authorization.
 
-## Chaque mois et avant une migration
+## Every month and before a migration
 
-Vérifier l'arbre complet avec `npm audit`, pas seulement le runtime. Examiner le support Node, le système de l'image, les actions CI épinglées et le poids du bundle. Vérifier le clavier, mobile, pause et mouvement réduit. Confirmer que la démonstration est étiquetée, que les anciennes données sont signalées et que le lien FairOnChain reste facultatif.
+Check the entire dependency tree with `npm audit`, not only runtime dependencies. Review Node support, the image operating system, pinned CI actions and bundle size. Check keyboard use, mobile, pause and reduced motion. Confirm that demonstration mode is labeled, old data is identified, and the FairOnChain link remains optional.
 
-Pour une version majeure, lire le guide officiel de migration, proposer les adaptations et tester le parcours complet. Ne pas utiliser `npm audit fix --force`. Documenter les modifications du contrat, les incompatibilités et le retour arrière. Programmer la migration Node avant la fin de support de la version choisie ; vérifier le [calendrier Node officiel](https://nodejs.org/en/about/previous-releases).
+For a major version, read the official migration guide, propose the adaptations and test the complete user journey. Do not use `npm audit fix --force`. Document contract changes, incompatibilities and rollback. Schedule the Node migration before the chosen version reaches end of support; check the [official Node release schedule](https://nodejs.org/en/about/previous-releases).
 
-## Diagnostiquer une panne de données
+## Diagnosing a data outage
 
-1. Vérifier que le service répond à `GET /api/health` puis consulter les états de chaîne dans l'interface ou les instantanés API.
-2. Distinguer liveness du serveur, accès réseau upstream et fraîcheur des données. Une chaîne peut échouer sans arrêter l'autre.
-3. Vérifier DNS, HTTPS, quota, statut fournisseur et présence de la configuration côté serveur. Inspecter des messages sanitizés ; ne pas copier une URL RPC complète.
-4. Respecter le cache partagé de 3 secondes après chaque collecte. Éviter de rafraîchir en boucle ou de multiplier les instances : cela augmente les appels upstream. Le délai court accroît la fréquence possible des collectes ; la déduplication ne vaut que pour une même instance du serveur.
-5. Reproduire un changement de payload avec une fixture anonymisée. Ne jamais désactiver la validation pour accepter un payload inconnu.
-6. Si une clé est compromise, la révoquer et la remplacer dans les secrets de l'hébergeur.
-7. Si un fournisseur doit être remplacé, vérifier le contrat du nouvel endpoint et les tests, puis redémarrer avec la nouvelle configuration. La source affichée doit correspondre à la provenance réelle.
+1. Check that the service responds to `GET /api/health`, then inspect chain states in the interface or API snapshots.
+2. Distinguish server liveness, upstream network access and data freshness. One chain can fail without stopping the other.
+3. Check DNS, HTTPS, quotas, provider status and the presence of server-side configuration. Inspect sanitized messages; do not copy a complete RPC URL.
+4. Respect the shared three-second cache after each collection. Avoid refresh loops or multiplying instances: these increase upstream calls. The short delay allows more frequent collections; deduplication applies only within one server instance.
+5. Reproduce a payload change with an anonymized fixture. Never disable validation to accept an unknown payload.
+6. If a key is compromised, revoke it and replace it in the hosting provider's secrets.
+7. If a provider must be replaced, verify the new endpoint's contract and tests, then restart with the new configuration. The displayed source must match the actual provenance.
 
-Une panne upstream peut afficher le dernier instantané pendant 120 secondes avec le statut ancien. Au-delà, la source doit être indisponible. Il n'y a aucune bascule automatique vers une simulation.
+An upstream outage can display the last snapshot for 120 seconds with a stale status. After that, the source must be unavailable. There is no automatic switch to simulation.
 
-## Diagnostiquer un flux non mesuré
+## Diagnosing an unmeasured flow
 
-Le panneau Flux privilégie `eventFlow` quand une période de notifications est valide. Vérifier son état, sa source, son epoch et ses dates propres : un début de connexion n’est pas un zéro reçu. Les notifications Ethereum ne couvrent pas les transactions queued et peuvent être des promotions ou réémissions. Une coupure ne restitue aucun historique manqué. Les URL `BITCOIN_EVENTS_WS_URL` et `ETHEREUM_EVENTS_WS_URL` sont privées, configurées côté serveur ; une valeur vide désactive le flux. Les valeurs publiques par défaut sont proposées uniquement si le fournisseur HTTP associé reste celui d’origine. Un fournisseur personnalisé exige sa configuration événementielle explicite. Ne jamais publier ces URL ou leurs paramètres.
+The Flow panel prefers `eventFlow` when a notification period is valid. Check its state, source, epoch and independent timestamps: starting a connection is not a received zero. Ethereum notifications do not cover queued transactions and may represent promotions or re-emissions. A disconnection does not recover missed history. The `BITCOIN_EVENTS_WS_URL` and `ETHEREUM_EVENTS_WS_URL` URLs are private server-side configuration; an empty value disables the stream. Public defaults are offered only while the associated HTTP provider remains the original one. A custom provider requires explicit event-stream configuration. Never publish these URLs or their parameters.
 
-Le secours `poolFlow` exige deux inventaires complets successifs : `getrawmempool` réconcilié pour Bitcoin, union pending/queued de `txpool_content` pour Ethereum. Un premier relevé est en initialisation. Un compteur `txpool_status`, un candidat GBT, un bloc pending ou un échantillon de transactions récentes ne suffisent pas à mesurer les entrées de tout l’inventaire observé. Garder « non mesuré » si le flux et les inventaires sont inexploitables ; ne pas déduire le débit de la variation nette d’un compteur.
+The `poolFlow` fallback requires two successive complete inventories: reconciled `getrawmempool` for Bitcoin, or the union of pending/queued from `txpool_content` for Ethereum. The first observation is a baseline. A `txpool_status` count, GBT candidate, pending block or recent-transaction sample cannot measure arrivals across the entire observed inventory. Keep “not measured” when streams and inventories are unusable; do not infer throughput from a counter's net change.
 
-Vérifier `poolFlow.source`, sa méthode, sa date propre et les deux dates du dernier intervalle dans la réponse publique, sans afficher de configuration privée. Les relevés gardent leur cadence existante d’environ trente secondes après collecte ; le cache HTTP de trois secondes ne les rend pas plus fréquents. Une panne, un recul d’horloge, une réinitialisation de branche ou un intervalle supérieur à 90 secondes impose une nouvelle référence. Le contexte expire après 90 secondes, même si les blocs continuent d’arriver. Une vue répartie entre plusieurs nœuds peut changer de contenu : annoncer cette limite plutôt que présenter un flux mondial.
+Check `poolFlow.source`, its method, its own timestamp and both timestamps of the latest interval in the public response, without displaying private configuration. Observations retain their existing cadence of about thirty seconds after collection; the three-second HTTP cache does not make them more frequent. A failure, backward clock movement, branch reset or interval over 90 seconds requires a new baseline. Context expires after 90 seconds even if blocks keep arriving. A view distributed across multiple nodes can change its contents: state this limit instead of presenting a worldwide flow.
 
-Une connexion événementielle dispose de huit secondes pour aboutir ; trente secondes sans message reconnu la coupent. Les reconnexions suivent un délai exponentiel borné à trente secondes, avec budgets conservés entre les tentatives. Une minute sans lecture du direct ferme le flux ; le mode démo n’entretient pas ces lectures. Le contexte actif expire indépendamment après quinze secondes sans publication. Un gros message, un débit excessif ou plus de 20 000 identifiants privés interrompt la mesure avec une limite annoncée ; ne pas relever ces bornes pour masquer un problème fournisseur. Le schéma et les plafonds complets figurent dans [architecture.md](architecture.md).
+An event connection has eight seconds to establish; thirty seconds without a recognized message closes it. Reconnection uses exponential backoff capped at thirty seconds, with budgets preserved between attempts. One minute without a live-data read closes the stream; demo mode does not maintain these reads. Active context independently expires after fifteen seconds without publication. An oversized message, excessive rate or more than 20,000 private identifiers interrupts measurement with a reported limit; do not raise these bounds to hide a provider problem. The complete schema and bounds are documented in [architecture.md](architecture.md).
 
-Bitcoin ne montre plus de groupe collectif latéral : vérifier `bitcoinArrivals` et ses jusqu’à 384 IDs pending réellement présents dans la réponse. Ils occupent des places dans le plafond de 1 920, sans l’augmenter. La réserve provient de `track-mempool`/`mempool-transactions`, sans HTTP par hash ; seuls frais propres et taille virtuelle sont retenus, jamais les inputs/outputs. Sa date est celle du dernier delta consécutif validé et expire après soixante secondes ; un simple HTTP lu, un nouveau bloc ou une statistique générale ne la renouvelle pas. Vérifier aussi cette échéance sans nouvelle réponse HTTP : les IDs exclusivement justifiés par le flux doivent quitter la sélection active, en gardant leurs avatars/détails historiques sous les budgets existants. Les confirmations et les preuves RPC/GBT indépendantes encore fraîches restent exploitables. Coupure, chargement ou discontinuité de séquence doivent la vider. Comparer sa source/date à l’inventaire RPC sans les fusionner : une arrivée observée ailleurs n’y est pas déclarée présente. Le mélange final n’est pas un top global ni une preuve d’inclusion GBT.
+Bitcoin no longer displays a lateral collective group: check `bitcoinArrivals` and its up to 384 pending IDs actually present in the response. They occupy places within the 1,920 limit, without increasing it. The reserve comes from `track-mempool`/`mempool-transactions`, without HTTP requests per hash; only each transaction's own fee and virtual size are retained, never inputs/outputs. Its timestamp is the last validated consecutive delta and expires after sixty seconds; an HTTP read, new block or general statistic does not renew it. Also check this expiry without a new HTTP response: IDs supported exclusively by the stream must leave the active selection while retaining historical avatars/details within the existing budgets. Confirmations and independent, still-fresh RPC/GBT evidence remain usable. A disconnection, loading state or sequence discontinuity must clear it. Compare its source/timestamp with the RPC inventory without merging them: an arrival observed elsewhere is not declared present in that inventory. The final mixture is neither a global fee ranking nor proof of GBT inclusion.
 
-Le groupe collectif latéral Ethereum reste un signal hors sélection pending lors du premier affichage du lot ; il ne compte pas les avatars historiques et ne rejoint aucun wagon. Ne pas le confondre avec les découvertes d’inclusions de la borne réseau haute. Le maintien d’un échantillon individuel stable n’établit pas une absence de nouvelles transactions. Un voyageur Bitcoin déplacé hors sélection peut rester parmi les anciennes observations selon les bornes existantes ; ne pas modifier son statut en confirmation à cause d’un retrait ou d’un remplacement.
+Ethereum's lateral collective group remains a signal outside the pending selection when the batch is first displayed; it does not count historical avatars or enter a wagon. Do not confuse it with newly discovered inclusions from the upper network station. A stable individual sample does not establish the absence of new transactions. A Bitcoin passenger displaced from the selection may remain among older observations within the existing bounds; removal or replacement must not change its status to confirmed.
 
-## Diagnostiquer une conversion USD indisponible
+## Diagnosing an unavailable USD conversion
 
-Le cours possède sa propre provenance et fraîcheur, indépendantes de la blockchain. Une chaîne peut rester en direct avec `usdQuote: null` ; les frais natifs restent consultables. Examiner la source Coinbase, l'heure de réception et le statut du cours sans traiter cette panne comme une panne Bitcoin ou Ethereum. Le renouvellement fonctionne en arrière-plan : une première réponse sans cours peut être suivie d'une réponse avec cours, sans bloquer les données blockchain.
+The price has its own provenance and freshness, independent of the blockchain. A chain can remain live with `usdQuote: null`; native fees remain available. Inspect the Coinbase source, receipt time and price status without treating this failure as a Bitcoin or Ethereum outage. Renewal runs in the background: a first response without a price may be followed by one containing a price, without blocking blockchain data.
 
-Les seules destinations sont les routes spot fixes BTC/USD et ETH/USD de `api.coinbase.com`. Pour HEG, autoriser DNS et HTTPS sortant vers `api.coinbase.com:443` si l'affichage USD est souhaité. Aucun secret, paramètre d'environnement ou fournisseur choisi par le visiteur n'est ajouté. Respecter le cache de cours de 60 secondes après chaque tentative, distinct du cache blockchain de trois secondes ; un redémarrage efface les caches et plusieurs instances multiplient les lectures.
+The only destinations are the fixed BTC/USD and ETH/USD spot routes at `api.coinbase.com`. For HEG, allow DNS and outbound HTTPS to `api.coinbase.com:443` if USD display is wanted. No secret, environment parameter or visitor-selected provider is added. Respect the sixty-second price cache after each attempt, separate from the three-second blockchain cache; a restart clears caches and multiple instances multiply reads.
 
-Une requête de cours est limitée à huit secondes et 16 Kio. Un ancien cours peut être conservé au plus cinq minutes depuis sa réception, signalé comme ancien, puis la conversion devient indisponible. Ne pas désactiver ces limites, inventer un cours de démonstration ou substituer zéro. Le total Ethereum reste une estimation avec limite de gas déclarée, pas le coût payé ; le cours relevé n'est pas celui du bloc historique. En cas d'évolution du payload, adapter une fixture contrôlée et le contrat après reprise autorisée des validations. [Documentation Coinbase](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices).
+A price request is limited to eight seconds and 16 KiB. An old price may be retained for at most five minutes after receipt, marked stale, after which conversion becomes unavailable. Do not disable these limits, invent a demonstration price or substitute zero. The Ethereum total remains an estimate using the declared gas limit, not the paid cost; the observed price is not the price at the historical block. If the payload changes, update a controlled fixture and the contract, then run the applicable validation checks. [Coinbase documentation](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices).
 
-## Livraison vérifiée
+## Verified release
 
-1. Partir d'un commit revu avec CI verte et un espace de travail propre. Vérifier le changelog et la version `package.json` / lockfile.
-2. Exécuter les contrôles prévus et compiler depuis le lockfile avec `npm ci`. Les tests navigateur utilisent des données contrôlées ; compléter par un test direct de lecture des fournisseurs avant la publication.
-3. Construire l'image conteneur et noter le commit, la version Node, le digest de l'image de base résolue et le digest de l'image produite. Le tag de base `node:24-bookworm-slim` reçoit des mises à jour ; conserver les digests de la livraison pour la reproductibilité opérationnelle.
-4. Lancer l'image dans un environnement de préproduction avec les mêmes variables non secrètes. Vérifier santé, deux chaînes, anciens instantanés, erreurs, fichiers statiques et fonctionnement sans FairOnChain.
-5. Conserver l'image actuellement déployée et un export protégé de sa configuration, sans écrire les secrets dans Git.
-6. Présenter la version et les vérifications au propriétaire ; déployer seulement avec l'autorisation appropriée.
-7. Après livraison, vérifier le domaine HTTPS, les sources, les limites du proxy et les alertes. Créer le tag SemVer et la release correspondant exactement au commit livré.
+1. Start from a reviewed commit with passing CI and a clean workspace. Check the changelog and the `package.json`/lockfile version.
+2. Run the required checks and build from the lockfile using `npm ci`. Browser tests use controlled data; supplement them with a live, read-only provider check before publication.
+3. Build the container image and record the commit, Node version, resolved base-image digest and produced-image digest. The `node:24-bookworm-slim` base tag receives updates; retain release digests for operational reproducibility.
+4. Run the image in a staging environment with the same non-secret variables. Check health, both chains, stale snapshots, errors, static files and operation without FairOnChain.
+5. Retain the currently deployed image and a protected configuration export, without writing secrets into Git.
+6. Present the version and verification to the owner; deploy only with the appropriate authorization.
+7. After release, check the HTTPS domain, sources, proxy limits and alerts. Create the SemVer tag and release matching exactly the delivered commit.
 
-Il n'existe pas de job de déploiement automatique dans cette version. Ajouter un pipeline de livraison uniquement après choix de l'hébergement et des règles de validation.
+This version has no automatic deployment job. Add a delivery pipeline only after the hosting destination and validation rules have been chosen.
 
-## Conteneur local
+## Local container
 
 ```sh
 docker compose up --build -d
@@ -99,18 +99,18 @@ docker compose logs --tail=100 blocklane
 docker compose down
 ```
 
-Le port est publié uniquement sur `127.0.0.1:3001` côté hôte. HTTPS et la publication du domaine sont à gérer par le reverse proxy. `HOST=0.0.0.0` est défini à l'intérieur du conteneur ; cela ne publie pas son port sur toutes les interfaces de l'hôte. Les variables `.env` servent aussi à l'interpolation Compose ; garder ce fichier privé.
+The host port is published only on `127.0.0.1:3001`. HTTPS and domain publication belong at the reverse proxy. `HOST=0.0.0.0` is set inside the container; it does not publish the port on every host interface. `.env` variables also provide Compose interpolation; keep that file private.
 
-La valeur `TRUSTED_PROXY_IPS` est une liste d'IP IPv4/IPv6 exactes, séparées par virgules, limitée à 64 entrées et sans CIDR. Avec un proxy situé sur l'hôte, l'adresse vue depuis le conteneur peut être une passerelle Docker plutôt que `127.0.0.1`. Vérifier la topologie avant de déclarer une confiance. Une mauvaise configuration regroupe les visiteurs sous le quota du proxy, ou permet d'usurper le quota d'un autre client. `API_RATE_LIMIT_PER_MINUTE` accepte un entier de 1 à 10000, par défaut 120 ; augmenter cette valeur ne remplace pas les contrôles du reverse proxy.
+`TRUSTED_PROXY_IPS` is a comma-separated list of exact IPv4/IPv6 addresses, limited to 64 entries and without CIDR. With a host-side proxy, the address observed from the container may be a Docker gateway rather than `127.0.0.1`. Verify the topology before declaring trust. Incorrect configuration groups visitors under the proxy's quota or allows impersonation of another client's quota. `API_RATE_LIMIT_PER_MINUTE` accepts an integer from 1 to 10000, defaulting to 120; increasing it does not replace reverse-proxy controls.
 
-Le cache ne nécessite aucune sauvegarde. Sauvegarder le dépôt distant, les configurations d'exploitation et les références des images publiées. Les secrets doivent vivre dans un coffre ou dans les mécanismes protégés de l'hébergeur.
+The cache needs no backup. Back up the remote repository, operational configurations and published-image references. Secrets belong in a vault or the hosting provider's protected mechanisms.
 
-## Retour arrière
+## Rollback
 
-Redéployer l'image précédente par digest avec sa configuration compatible, puis vérifier santé et provenance des données. Avec Compose, remplacer l'image du service par la référence précédente dans un fichier d'exploitation, puis exécuter `docker compose up -d` ; ne pas reconstruire un ancien tag flottant en espérant retrouver le même artefact.
+Redeploy the previous image by digest with compatible configuration, then check health and data provenance. With Compose, replace the service image with the previous reference in an operations file, then run `docker compose up -d`; do not rebuild an old floating tag hoping to recover the same artifact.
 
-L'état en mémoire peut être perdu sans migration. Si une future version ajoute une base ou modifie un contrat durable, son plan de migration et de retour arrière devient un préalable à la livraison. Documenter la cause et le correctif après l'incident.
+In-memory state may be lost without a migration. If a future version adds a database or changes a durable contract, its migration and rollback plan becomes a release prerequisite. Document the cause and fix after the incident.
 
-## Références des actions CI initiales
+## Initial CI action references
 
-Les actions sont épinglées à des commits complets vérifiés dans leurs releases officielles le 14 octobre 2026 : [checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1), [setup-node v7.1.0](https://github.com/actions/setup-node/releases/tag/v7.1.0) et [upload-artifact v7.0.2](https://github.com/actions/upload-artifact/releases/tag/v7.0.2). Dependabot propose leur évolution. Vérifier la release, les permissions et le runtime exigé lors d'un changement de pin ; utiliser un runner maintenu.
+Actions are pinned to full commits verified against their official releases on 14 October 2026: [checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1), [setup-node v7.1.0](https://github.com/actions/setup-node/releases/tag/v7.1.0) and [upload-artifact v7.0.2](https://github.com/actions/upload-artifact/releases/tag/v7.0.2). Dependabot proposes updates. Check the release, permissions and required runtime when changing a pin; use a maintained runner.

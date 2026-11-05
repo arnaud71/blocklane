@@ -1,11 +1,11 @@
-## Changement
+## Change
 
-Décrire le problème concret et le comportement obtenu. Indiquer les limites ou incompatibilités qui affectent l'utilisation.
+Describe the concrete problem and resulting behavior. State any limitations or incompatibilities that affect use.
 
-## Vérification
+## Verification
 
-Indiquer les contrôles réellement exécutés et leurs résultats. Pour l'interface, joindre une capture desktop/mobile si utile. Pour les données, préciser les fixtures ou sources vérifiées et leur provenance.
+List the checks actually performed and their results. For interface changes, attach a desktop/mobile screenshot when useful. For data changes, identify the fixtures or sources checked and their provenance.
 
-## Exploitation
+## Operations
 
-Indiquer toute modification de configuration, de contrat, de fournisseur ou de procédure de retour arrière. Omettre cette section si elle ne s'applique pas. Ne jamais inclure de secret.
+Describe changes to configuration, contracts, providers or rollback procedures. Omit this section when it does not apply. Never include a secret.

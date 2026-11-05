@@ -1,55 +1,56 @@
-# Instructions de maintenance de BlockLane
+# BlockLane maintenance instructions
 
-## Intention
+## Purpose
 
-BlockLane est un observatoire pédagogique public, inspiré de la métaphore de transport de TxStreet, avec une scène et du code originaux. Conserver une interface française, lisible, esthétique et accessible. Bitcoin et Ethereum sont les deux réseaux initiaux. La personnalisation HEG et un lien FairOnChain doivent rester facultatifs.
+BlockLane is a public educational observatory inspired by TxStreet's transport metaphor, with an original scene and code. Keep the interface readable, attractive and accessible in French and English. Bitcoin and Ethereum are the initial networks. HEG customization and a FairOnChain link must remain optional.
 
-Les demandes explicites de l'utilisateur priment sur ce guide. Progresser de façon autonome sur les actions réversibles déjà autorisées. Ce guide n'impose pas une nouvelle confirmation pour les correctifs ordinaires.
+Explicit user requests take precedence over this guide. Proceed autonomously with reversible actions that are already authorized. This guide does not require another confirmation for ordinary fixes.
 
-## Architecture à préserver
+## Architecture to preserve
 
-- React, TypeScript strict et Vite pour l'interface ; Canvas 2D natif pour les voyageurs individuels et SVG/CSS pour les wagons, portes, phares, maisons, textes et groupes collectifs statiques. Préserver la sélection au pointeur et le navigateur de transactions HTML accessible au clavier, sans recréer un élément DOM par voyageur.
-- API HTTP Node 24 en lecture seule ; fournisseurs et clés configurés côté serveur.
-- Contrat partagé validé par Zod entre les adaptateurs et l'interface.
-- Aucun accès FairOnChain nécessaire au chargement, aux données ou aux animations.
-- Ajouter une chaîne par un adaptateur documenté ; garder sa logique hors de la scène.
-- Introduire un service, une dépendance ou une base de données seulement avec un besoin concret et une décision dans `docs/architecture.md`.
+- React, strict TypeScript and Vite for the interface; native Canvas 2D for individual passengers and SVG/CSS for wagons, doors, headlights, houses, text and static collective groups. Preserve pointer selection and the keyboard-accessible HTML transaction browser, without creating a DOM element per passenger.
+- A read-only Node 24 HTTP API; providers and keys configured on the server.
+- A shared contract validated by Zod between adapters and the interface.
+- No FairOnChain access required for loading, data or animations.
+- Add a chain through a documented adapter; keep its logic outside the scene.
+- Introduce a service, dependency or database only for a concrete need, recorded as a decision in `docs/architecture.md`.
+- Keep repository documentation in English. The interface supports French and English, initially uses the browser's language preferences, remembers an explicit choice and falls back to English. Language must not change data, animation timing or provenance.
 
-## Honnêteté des données
+## Data honesty
 
-- Ne jamais remplacer silencieusement une panne du direct par des données simulées.
-- Garder distincts mode démonstration, direct valide, données anciennes et indisponibilité.
-- La scène est un échantillon limité ; ne pas la présenter comme un inventaire exhaustif.
-- Respecter la distinction Ethereum `pending` / dernier bloc confirmé. Ne jamais inventer une taille de mempool mondial.
-- Les blocs Bitcoin n'ont pas une échéance garantie ; les slots Ethereum ne garantissent pas l'inclusion ni la finalité.
-- Une transaction visible, une estimation de frais ou un déplacement animé ne prouve pas une confirmation.
-- Ne pas ajouter de portefeuille, de signature, de diffusion de transaction ou de conseil d'investissement dans le périmètre actuel.
+- Never silently replace a live-data failure with simulated data.
+- Keep demonstration mode, valid live data, stale data and unavailability distinct.
+- The scene is a limited sample; do not present it as a complete inventory.
+- Respect Ethereum's distinction between `pending` and the latest confirmed block. Never invent a worldwide mempool size.
+- Bitcoin blocks have no guaranteed deadline; Ethereum slots guarantee neither inclusion nor finality.
+- A visible transaction, a fee estimate or an animated movement does not prove confirmation.
+- Do not add wallets, signing, transaction broadcasting or investment advice to the current scope.
 
-## Sécurité
+## Security
 
-- Ne jamais enregistrer de secrets, clés RPC, jetons ou `.env` réels dans Git, une capture ou une sortie d'outil.
-- Les clés ne doivent jamais apparaître dans `src/`, `VITE_*`, l'API publique, les messages d'erreur ou le bundle.
-- Les visiteurs ne choisissent pas les URL upstream. Garder une liste fixe de routes ; aucune route de proxy arbitraire.
-- Valider et borner les données distantes avant affichage. Préserver délai d'expiration, limite de taille, cache partagé et limite d'objets.
-- Ne pas diminuer les contrôles de sécurité ou masquer un échec CI pour livrer.
-- Ne pas exécuter `npm audit fix --force` ni migrer une version majeure sans analyser la compatibilité.
-- N'ajouter ni fusion ni déploiement automatique. Les livraisons passent par une validation explicite dans l'environnement retenu.
+- Never store secrets, RPC keys, tokens or real `.env` files in Git, screenshots or tool output.
+- Keys must never appear in `src/`, `VITE_*`, the public API, error messages or the bundle.
+- Visitors do not choose upstream URLs. Keep a fixed route list; no arbitrary proxy route.
+- Validate and bound remote data before display. Preserve timeouts, size limits, shared caching and object limits.
+- Do not weaken security controls or hide a CI failure to ship a change.
+- Do not run `npm audit fix --force` or migrate a major version without analyzing compatibility.
+- Do not add automatic merging or deployment. Releases require explicit approval for the chosen environment.
 
-## Procédure de changement
+## Change procedure
 
-1. Lire l'état Git et les fichiers concernés ; préserver les changements du propriétaire et des autres agents.
-2. Utiliser une branche `codex/...` pour une proposition traçable. Ne jamais réécrire l'historique partagé ni forcer un push.
-3. Pour un changement métier, ajouter ou adapter des tests qui vérifient le contrat réel : payload invalide, panne, ancienneté, provenance, bornes ou comportement utilisateur. Éviter les tests qui recopient l'implémentation.
-4. Lancer `npm run check` et `npm run format:check`. Exécuter `npm run test:e2e` pour un changement d'interface, d'API ou de contrat. Ne pas dépendre des API réelles dans les tests automatiques.
-5. Vérifier visuellement un changement de scène sur desktop et mobile, au clavier et en mouvement réduit. Respecter le bouton de pause et éviter les animations coûteuses.
-6. Exécuter l'audit de dépendances lorsque le manifeste, le lockfile ou le runtime change. Examiner aussi les dépendances de développement, même si l'audit bloquant CI cible le runtime.
-7. Documenter les changements visibles, incompatibilités, sources et limites dans le changelog. Mettre à jour les procédures affectées.
-8. Présenter les tests effectués et les limitations restantes dans la PR. Éviter les mises à jour massives sans rapport.
+1. Read Git status and the affected files; preserve the owner's and other agents' changes.
+2. Use a `codex/...` branch for a traceable proposal. Never rewrite shared history or force-push.
+3. For business-logic changes, add or adapt tests that verify the actual contract: invalid payloads, failure, age, provenance, limits or user behavior. Avoid tests that merely repeat the implementation.
+4. Run `npm run check` and `npm run format:check`. Run `npm run test:e2e` for interface, API or contract changes. Automated tests must not depend on real APIs.
+5. Visually verify scene changes on desktop and mobile, with the keyboard and reduced motion. Respect the pause button and avoid expensive animations.
+6. Run the dependency audit when the manifest, lockfile or runtime changes. Also inspect development dependencies, even when the blocking CI audit targets the runtime.
+7. Document visible changes, incompatibilities, sources and limitations in the changelog. Update affected procedures.
+8. Report the checks performed and remaining limitations in the PR. Avoid unrelated bulk updates.
 
-Avant une publication GitHub, configurer les protections de branche et les contrôles obligatoires. Un fichier de workflow n'active pas ces protections à lui seul.
+Before publishing on GitHub, configure branch protection and required checks. A workflow file does not activate those protections by itself.
 
-## Maintenance périodique
+## Periodic maintenance
 
-Examiner Dependabot, les avis de sécurité Node et des dépendances, les contrats des fournisseurs et les erreurs remontées. Mettre à jour d'abord les correctifs compatibles, dans une PR vérifiable. Conserver les migrations majeures dans des propositions distinctes avec plan de retour arrière. Ne pas promettre une maintenance permanente si l'automatisation, l'accès aux comptes ou l'hébergement ne sont pas actifs.
+Review Dependabot, Node and dependency security advisories, provider contracts and reported errors. Update compatible patches first, through a verifiable PR. Keep major migrations in separate proposals with a rollback plan. Do not promise permanent maintenance when automation, account access or hosting is not active.
 
-Préférer les sources officielles pour vérifier une évolution technique. Inscrire une décision qui modifie la provenance des données, la sémantique des animations, le contrat partagé ou l'hébergement. Consulter `docs/maintenance.md` et `SECURITY.md` avant une intervention opérationnelle.
+Prefer official sources when checking technical changes. Record decisions that change data provenance, animation semantics, the shared contract or hosting. Read `docs/maintenance.md` and `SECURITY.md` before operational work.

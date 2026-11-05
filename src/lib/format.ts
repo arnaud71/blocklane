@@ -1,14 +1,17 @@
-const numberFormatters = new Map<number, Intl.NumberFormat>();
+import { languageTag, type Locale } from '../i18n/locale';
+
+const numberFormatters = new Map<string, Intl.NumberFormat>();
 const MAX_NUMBER_FORMATTERS = 32;
 
-export function number(value: number | null, digits = 0): string {
+export function number(value: number | null, digits = 0, locale: Locale = 'fr'): string {
   if (value === null) return '—';
-  let formatter = numberFormatters.get(digits);
+  const key = `${locale}:${digits}`;
+  let formatter = numberFormatters.get(key);
   if (!formatter) {
-    formatter = new Intl.NumberFormat('fr-CH', { maximumFractionDigits: digits });
+    formatter = new Intl.NumberFormat(languageTag(locale), { maximumFractionDigits: digits });
     if (numberFormatters.size >= MAX_NUMBER_FORMATTERS)
       numberFormatters.delete(numberFormatters.keys().next().value!);
-    numberFormatters.set(digits, formatter);
+    numberFormatters.set(key, formatter);
   }
   return formatter.format(value);
 }
