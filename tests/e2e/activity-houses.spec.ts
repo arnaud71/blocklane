@@ -174,6 +174,11 @@ test('four houses share existing travelers, keep overlapping categories and rest
   expect(bounds[0]!.y).toBeGreaterThan(entrance!.y + entrance!.height);
   const network = await ethereum.locator('.network-remainder-body').boundingBox();
   for (const id of HOUSE_IDS) {
+    const isToken = id === 'usdt' || id === 'usdc';
+    await expect(house(page, id)).toHaveAccessibleDescription(isToken ? /^Token :/ : /^dApp :/);
+    await expect(house(page, id).locator('.token-house-kind-label')).toHaveText(
+      isToken ? 'TOKEN' : 'DAPP',
+    );
     const body = await house(page, id).locator('.token-house-body').boundingBox();
     expect(body!.width).toBeLessThan(network!.width);
   }
@@ -192,6 +197,9 @@ test('four houses share existing travelers, keep overlapping categories and rest
       name: `Observations ${ACTIVITY_HOUSES[id].label}`,
     });
     await expect(summary).toContainText('Ces compteurs ne s’additionnent pas');
+    await expect(summary.locator('.house-kind-pill')).toHaveText(
+      id === 'usdt' || id === 'usdc' ? 'TOKEN' : 'dApp',
+    );
     expect(await canvasHash(page)).not.toBe(initial);
     await page.keyboard.press('Escape');
     await expect(house(page, id)).toBeFocused();
@@ -293,6 +301,11 @@ test('English simulation and reduced motion preserve house filters and quiet doo
       dialog.getByRole('region', { name: `${ACTIVITY_HOUSES[id].label} observations` }),
     ).toHaveAttribute('data-token-report', 'demo');
     await expect(dialog).toContainText('Explicit simulation');
+    await expect(dialog).toContainText(
+      id === 'usdc'
+        ? 'Digital asset · token contract'
+        : 'Decentralized application · protocol contracts',
+    );
     await expect(dialog).toContainText('These counters must not be added together');
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();

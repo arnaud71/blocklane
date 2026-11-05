@@ -1,5 +1,13 @@
 # Verification status
 
+## Token versus dApp house presentation — 5 November 2026
+
+The existing registry's `kind` now determines two visual families: USDT/USDC use pitched roofs, rounded facades, coin symbols and TOKEN plaques; Uniswap/Aave use flat roofs, angular facades, application-window symbols and DAPP plaques. Project colors and labels remain distinct within each family. Plaques and focus outlines stay below the main arrival label and inside the existing width cap; door centers and motion geometry are unchanged.
+
+Each house retains its accessible button name and adds a unique `aria-describedby` description in French/English. The HTML summary adds a readable family badge and explanation, supporting mobile and assistive technology when the overview is small. Help text explains the same distinction. No transaction classification, source, count, category filter, passenger identity, dependency or animation timing changes.
+
+`npm run check` passed with Node **24.22.2** and the unchanged lockfile: ESLint, strict TypeScript, **896 tests across 71 files**, and the production build. Formatting and whitespace checks passed. Existing browser scenarios additionally inspect type labels, accessible descriptions and translated summary badges while preserving focus return, overlapping membership, quiet reduced-motion doors and the main-passage clearance assertions. The complete browser campaign passed **196 desktop/mobile scenarios with zero retries**, four workers, **2.5 minutes**; log: `/private/tmp/blocklane-house-types-e2e.log`, artifacts: `/private/tmp/blocklane-house-types-e2e-results/`. Desktop and mobile captures, including the HTML dApp badge, were visually inspected. No dependency audit is required for these presentation-only edits; the existing Vite large-chunk warning remains visible. Verification does not imply merge or deployment.
+
 ## Lower, slimmer houses and a clear main passage — 5 November 2026
 
 All four Ethereum houses move down by 90 scene units, narrow from 28 to 18 units and sit inside the outer edge. Projected facade width is capped at 84 units, so desktop platform expansion no longer stretches houses. The visual door remains centered on the projected motion doorway. The main first-row arrival now crosses directly above the first roof; door departures and later rows continue using facade clearance routes. Bitcoin geometry and all data/provider semantics remain unchanged.

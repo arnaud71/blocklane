@@ -1,4 +1,4 @@
-import { memo, type RefObject, type CSSProperties } from 'react';
+import { memo, useId, type RefObject, type CSSProperties } from 'react';
 import type { Snapshot } from '../../shared/model';
 import { TOKEN_CONTRACTS, type TokenId } from '../../shared/tokenContracts';
 import { ACTIVITY_HOUSES, hasHouseActivity, type HouseId } from '../../shared/activityHouses';
@@ -30,6 +30,9 @@ export const TokenHouse = memo(function TokenHouse({
 }) {
   const { t } = useI18n();
   const house = ACTIVITY_HOUSES[houseId];
+  const token = house.kind === 'token';
+  const family = token ? 'token' : 'dapp';
+  const kindDescriptionId = useId();
   const { x, y, width, height } = HOUSE_RECTS[houseId];
   // Expand the quay, not its buildings. Keep the visual door centered on the
   // projected route while bounding the facade on wide desktop viewports.
@@ -38,12 +41,14 @@ export const TokenHouse = memo(function TokenHouse({
   const left = center - displayWidth / 2,
     right = center + displayWidth / 2;
   const doorWidth = displayWidth * 0.34;
+  const badgeWidth = Math.min(62, displayWidth - 4);
+  const symbolSize = Math.min(4, displayWidth * 0.1);
   const progress = Number.isFinite(doorProgress) ? Math.min(1, Math.max(0, doorProgress)) : 0;
   const readable = mirrored ? `translate(${2 * center} 0) scale(-1 1)` : undefined;
   return (
     <g
       ref={triggerRef}
-      className={`token-house token-house--${houseId}${active ? ' token-house--active' : ''}`}
+      className={`token-house token-house--${family} token-house--${houseId}${active ? ' token-house--active' : ''}`}
       style={{ '--house-color': house.color } as CSSProperties}
       role="button"
       tabIndex={0}
@@ -52,8 +57,10 @@ export const TokenHouse = memo(function TokenHouse({
         `${house.label} house: browse transactions`,
       )}
       aria-expanded={expanded}
+      aria-describedby={kindDescriptionId}
       data-passenger-controls="true"
       data-token-house={houseId}
+      data-house-kind={family}
       data-token-house-active={active}
       onClick={onBrowse}
       onKeyDown={(event) => {
@@ -69,23 +76,51 @@ export const TokenHouse = memo(function TokenHouse({
           `${house.label} on Ethereum: recognized activity in our sample. Open the list and dated observations.`,
         )}
       </title>
+      <desc id={kindDescriptionId}>
+        {token
+          ? t(
+              'Token : actif numérique suivi via son contrat de jeton.',
+              'Token: digital asset tracked through its token contract.',
+            )
+          : t(
+              'dApp : application décentralisée suivie via ses contrats de protocole.',
+              'dApp: decentralized application tracked through its protocol contracts.',
+            )}
+      </desc>
       <g aria-hidden="true">
         <rect
           className="token-house-focus"
           x={left - 2}
-          y={y - 10}
+          y={y - 22}
           width={displayWidth + 2}
-          height={height + 13}
+          height={height + 25}
           rx="5"
         />
+        <rect
+          className="token-house-kind-sign"
+          x={center - badgeWidth / 2}
+          y={y - 20}
+          width={badgeWidth}
+          height="11"
+          rx={token ? 5.5 : 1.5}
+        />
+        <text
+          className="token-house-kind-label"
+          x={center}
+          y={y - 12}
+          textAnchor="middle"
+          transform={readable}
+          fontSize={Math.min(8.5, (badgeWidth - 3) / 3.5)}
+          fontWeight="800"
+        >
+          {token ? 'TOKEN' : 'DAPP'}
+        </text>
         <path
           className="token-house-roof"
           d={
-            houseId === 'aave'
+            token
               ? `M${left} ${y + 5}L${center} ${y - 8}L${right} ${y + 5}Z`
-              : houseId === 'uniswap'
-                ? `M${left} ${y + 5}V${y - 2}H${right}V${y + 5}Z`
-                : `M${left} ${y + 5}L${center} ${y - 8}L${right} ${y + 5}Z`
+              : `M${left} ${y + 5}V${y - 2}H${right}V${y + 5}Z`
           }
         />
         <rect
@@ -94,7 +129,7 @@ export const TokenHouse = memo(function TokenHouse({
           y={y + 5}
           width={displayWidth}
           height={height - 5}
-          rx="2"
+          rx={token ? 5 : 1.5}
         />
         <rect
           className="token-house-sign"
@@ -127,13 +162,23 @@ export const TokenHouse = memo(function TokenHouse({
             ⇄
           </text>
         )}
-        {houseId === 'aave' && (
-          <path
-            d={`M${left + displayWidth * 0.15} ${y + 24}v${height - 27}M${right - displayWidth * 0.15} ${y + 24}v${height - 27}`}
-            stroke="#e8d4ff"
-            strokeWidth="2"
-          />
-        )}
+        <g
+          className="token-house-kind-symbol"
+          transform={`translate(${left + displayWidth * 0.83} ${y + 32}) scale(${symbolSize / 4})`}
+        >
+          {token ? (
+            <>
+              <ellipse cx="0" cy="1.7" rx="3.4" ry="1.7" />
+              <ellipse cx="0" cy="-0.8" rx="3.4" ry="1.7" />
+              <path d="M-3.4-.8v2.5M3.4-.8v2.5" />
+            </>
+          ) : (
+            <>
+              <rect x="-3.5" y="-3" width="7" height="6" rx=".6" />
+              <path d="M-3.5-1h7M-1.8.5h1M.8.5h1M-1.8 1.8h3.6" />
+            </>
+          )}
+        </g>
         <circle
           className="token-house-lamp"
           cx={left + displayWidth * 0.17}
@@ -184,6 +229,7 @@ export function TokenHouseSummary({
 }) {
   const { locale, t } = useI18n();
   const house = ACTIVITY_HOUSES[houseId];
+  const token = house.kind === 'token';
   const tokenId: TokenId | undefined =
     houseId === 'usdt' || houseId === 'usdc' ? houseId : undefined;
   const usable = snapshot.status !== 'unavailable';
@@ -220,6 +266,17 @@ export function TokenHouseSummary({
       }
     >
       <strong>{house.label} · Ethereum</strong>
+      <p className="token-house-kind-description">
+        <span className={`house-kind-pill house-kind-pill--${token ? 'token' : 'dapp'}`}>
+          {token ? 'TOKEN' : 'dApp'}
+        </span>{' '}
+        {token
+          ? t('Actif numérique · contrat de jeton', 'Digital asset · token contract')
+          : t(
+              'Application décentralisée · contrats de protocole',
+              'Decentralized application · protocol contracts',
+            )}
+      </p>
       <p className="token-house-scope">
         {t(
           'Échantillon limité, sans total mondial du mempool.',

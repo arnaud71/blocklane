@@ -4,6 +4,11 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Token and dApp landmarks — 5 November 2026
+
+- Distinguish USDT/USDC token houses with pitched roofs, rounded facades, coin symbols and TOKEN signs; Uniswap/Aave dApps use flat roofs, angular facades, application-window symbols and DAPP signs. Preserve each project's color, compact lowered footprint and shared-clock door position.
+- Add readable token/dApp badges and French/English explanations to the accessible transaction summary, plus screen-reader descriptions on every house. Classification derives from the existing registry; data, filters, counts and passenger identities are unchanged.
+
 ### Clear main passage and slimmer houses — 5 November 2026
 
 - Move all four Ethereum activity houses down by 90 scene units and reduce their width from 28 to 18 units, inset from the outer edge. Bound projected facade width so houses stay compact even on wide desktops. The main lateral arrival passage remains clear above the first roof, and houses occupy less of the platform width.
