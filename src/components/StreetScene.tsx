@@ -44,6 +44,7 @@ import { isHistoricalPassenger } from '../lib/passengerStatus';
 import { formatTransactionFee, formatFeeRate, type FeeDisplayUnit } from '../lib/feeDisplay';
 import { PassengerCanvas } from './PassengerCanvas';
 import { NetworkRemainder } from './NetworkRemainder';
+import { TokenHouse } from './TokenHouse';
 import { ProviderFlowArrivals } from './ProviderFlowArrivals';
 import { confirmedBlockRemainder } from '../lib/networkRemainder';
 import type { CanvasClip, CanvasPassengerFrame } from '../lib/passengerCanvas';
@@ -681,11 +682,13 @@ function WaitingArchive({
 }
 
 const PlatformBackdrop = memo(function PlatformBackdrop({
+  chain,
   viewWidth,
   projectX,
   mirrored,
 }: {
   viewWidth: number;
+  chain: ChainId;
   projectX: (x: number) => number;
   mirrored: boolean;
 }) {
@@ -749,7 +752,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
       <ReadableText
         mirrored={mirrored}
         x={(arrivalStart + viewEnd) / 2}
-        y="172"
+        y={chain === 'ethereum' ? 220 : 172}
         textAnchor="middle"
         fill="#d3dec0"
         fontSize={narrow ? 7.5 : 11}
@@ -781,6 +784,9 @@ export const StreetScene = memo(function StreetScene({
   const id = useId().replace(/:/g, '');
   const nodeTemplate = activeBitcoinBlockTemplate(snapshot);
   const viewport = useRef<HTMLDivElement>(null);
+  const tokenHouseRef = useRef<SVGGElement>(null);
+  const [tokenBrowseRequest, setTokenBrowseRequest] = useState(0);
+  const [tokenHighlight, setTokenHighlight] = useState(false);
   const [viewWidth, setViewWidth] = useState(SCENE_WIDTH - VIEW_START_X);
   useEffect(() => {
     const element = viewport.current;
@@ -994,6 +1000,7 @@ export const StreetScene = memo(function StreetScene({
     });
     return {
       view: { startX: VIEW_START_X, width: viewWidth, height: SCENE_HEIGHT, mirrored },
+      highlightTokenId: tokenHighlight ? 'usdt' : undefined,
       departure: moving
         ? {
             passengers: departurePassengers,
@@ -1030,6 +1037,7 @@ export const StreetScene = memo(function StreetScene({
     feeLabel,
     viewWidth,
     mirrored,
+    tokenHighlight,
   ]);
   const boardedCount = motion.passengers.filter((pose) => pose.inWagon).length;
   const historicalQuayCount = motion.passengers.filter(
@@ -1142,7 +1150,12 @@ export const StreetScene = memo(function StreetScene({
                 mirrored ? `translate(${2 * VIEW_START_X + viewWidth} 0) scale(-1 1)` : undefined
               }
             >
-              <PlatformBackdrop viewWidth={viewWidth} projectX={projectX} mirrored={mirrored} />
+              <PlatformBackdrop
+                chain={snapshot.chain}
+                viewWidth={viewWidth}
+                projectX={projectX}
+                mirrored={mirrored}
+              />
               <NetworkRemainder
                 chain={snapshot.chain}
                 projectX={projectX}
@@ -1150,6 +1163,17 @@ export const StreetScene = memo(function StreetScene({
                 doorProgress={motion.networkDoorProgress}
                 active={motion.networkActive}
               />
+              {snapshot.chain === 'ethereum' && (
+                <TokenHouse
+                  projectX={projectX}
+                  mirrored={mirrored}
+                  doorProgress={motion.usdtHouseDoorProgress}
+                  active={motion.usdtHouseActive}
+                  expanded={tokenHighlight}
+                  triggerRef={tokenHouseRef}
+                  onBrowse={() => setTokenBrowseRequest((request) => request + 1)}
+                />
+              )}
               <ProviderFlowArrivals
                 snapshot={snapshot}
                 projectX={projectX}
@@ -1313,6 +1337,10 @@ export const StreetScene = memo(function StreetScene({
             selectedId={selectedId}
             onSelect={onSelect}
             chain={snapshot.chain}
+            tokenSnapshot={snapshot.chain === 'ethereum' ? snapshot : undefined}
+            tokenBrowseRequest={tokenBrowseRequest}
+            tokenBrowseReturnRef={tokenHouseRef}
+            onTokenFilterChange={setTokenHighlight}
           />
         </div>
       </div>

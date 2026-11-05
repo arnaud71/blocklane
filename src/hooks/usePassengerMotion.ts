@@ -42,6 +42,8 @@ function sameVisibleFrame(previous: PassengerFrame, next: PassengerFrame): boole
     previous.preparationPassengerCount === next.preparationPassengerCount &&
     previous.networkDoorProgress === next.networkDoorProgress &&
     previous.networkActive === next.networkActive &&
+    previous.usdtHouseActive === next.usdtHouseActive &&
+    previous.usdtHouseDoorProgress === next.usdtHouseDoorProgress &&
     previous.waitingArchiveCount === next.waitingArchiveCount &&
     previous.waitingArchiveTrackedCount === next.waitingArchiveTrackedCount &&
     previous.waitingArchiveUnknownCount === next.waitingArchiveUnknownCount &&

@@ -621,6 +621,12 @@ export function App() {
                       'A recent inclusion can be undone by a chain reorganization. Ethereum distinguishes states including safe and finalized. This version shows observed inclusion without certifying finality.',
                     )}
                   </Lesson>
+                  <Lesson n="07" title={t('La maison USDT', 'The USDT house')}>
+                    {t(
+                      'Sur Ethereum, la maison USDT regroupe les interactions reconnues avec le contrat officiel. Les nouvelles transactions en attente reconnues peuvent en sortir ; le stock initial et les inclusions découvertes tardivement conservent leur parcours habituel. Le badge vert identifie USDT sans changer la couleur du t-shirt liée aux frais. Ouvrir la maison filtre la liste accessible et souligne les voyageurs concernés, sans retirer les autres. Une autorisation n’est pas un transfert ; un appel exprime une intention. Les journaux Transfer validés attestent les transferts du dernier bloc, y compris les appels indirects, sans garantir la finalité. Une transaction peut produire plusieurs événements. Les compteurs du bloc sont distincts des transactions reconnues dans notre échantillon pending limité : les appels indirects en attente peuvent ne pas être reconnus. Une donnée indisponible n’est jamais affichée comme zéro.',
+                      'On Ethereum, the USDT house groups recognized interactions with the official contract. Newly recognized pending transactions can emerge from it; initial stock and late-discovered inclusions keep their usual route. The green badge identifies USDT without changing fee-based shirt colors. Opening the house filters the accessible list and outlines matching travelers without removing others. An approval is not a transfer; a call expresses intent. Validated Transfer logs evidence transfers in the latest block, including indirect calls, without guaranteeing finality. A transaction can produce several events. Block counters are separate from recognized transactions in our limited pending sample: indirect pending calls may not be recognized. Unavailable data is never shown as zero.',
+                    )}
+                  </Lesson>
                 </div>
               </section>
             )}

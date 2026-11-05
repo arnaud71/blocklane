@@ -98,6 +98,35 @@ Ethereum verifies `eth_chainId = 0x1`, reads the latest complete block and up to
 
 The `pending` tag is optional: a result equal to the latest confirmed block, invalid or unsupported leaves confirmed transactions visible. A distinct candidate block can supply pending passengers; it never represents the global mempool and its count never replaces an unavailable local total. All validated candidate transactions are sorted by exact effective gas price in wei before Gwei conversion and limitation to at most the highest 1,920. Transactions already included in `latest` are excluded before sorting. This ranking concerns only the provider's candidate. EIP1559 transactions use `min(maxFeePerGas, baseFeePerGas + maxPriorityFeePerGas)` in bigint before Gwei conversion. The card price represents the latest block's base fee, without a tip. Sizes are block gas and transactions' declared gas limits, never estimates from execution receipts.
 
+### USDT classification and optional latest-block transfers — 5 November 2026
+
+`shared/tokenContracts.ts` identifies USDT only on Ethereum mainnet (`eth_chainId = 0x1`) at `0xdac17f958d2ee523a2206206994597c13d831ec7`, with six-decimal display. The reviewed address comes from [Tether's supported protocols](https://tether.to/en/supported-protocols/). Names, symbols and visitor input cannot choose a token contract or upstream. This uses the existing server-fixed `ETHEREUM_RPC_URL`, without a new service, dependency, key or configuration variable.
+
+`ethereumTokens.ts` classifies the already-collected calldata for direct calls to this address. Exact standard argument layouts distinguish `transfer` (`0xa9059cbb`), `transferFrom` (`0x23b872dd`) and `approve` (`0x095ea7b3`); amounts are validated as uint256 and converted to canonical decimal strings. Unknown selectors or invalid argument layouts produce only a generic contract interaction, without an invented amount. `Tx.tokens` carries compact `{ tokenId, operation, evidence, amount?, transferCount?, observedAt? }` metadata. Calldata is discarded from the retained compact pending-pool representation after classification and is not exposed through the API. Calls identify intent: approvals are not transfers, an included call may have failed, and pending calls through other contracts can remain unrecognized. [ERC-20 standard](https://eips.ethereum.org/EIPS/eip-20).
+
+For the latest validated complete block, the optional asynchronous request is fixed to:
+
+```json
+{
+  "method": "eth_getLogs",
+  "params": [
+    {
+      "blockHash": "<exact latest verified block hash>",
+      "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+      "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+    }
+  ]
+}
+```
+
+This starts in the background and does not delay the blockchain response. One provider instance shares at most one request in flight across visitors and head changes; a generation check discards results for superseded heads or invalidated branches/clocks. Success is cached for that hash. Failure waits thirty seconds before retrying on the same head, independently of the three-second blockchain cache. Requests retain the ordinary eight-second timeout and two-MiB response bound. Only this latest block is queried: no block ranges, pagination, token-history backfill, per-event detail requests or additional receipt/trace reads are introduced. Sources: [Ethereum JSON-RPC](https://ethereum.org/developers/docs/apis/json-rpc/#eth_getlogs), [execution API block-hash filter](https://ethereum.github.io/execution-apis/api/methods/eth_getLogs/).
+
+Validation rejects the complete optional result above **4,096 events**, or if any event has the wrong address/topic/ABI shape, hash/height, transaction membership/index, removed flag, duplicate log index or invalid quantity. Transaction hashes are checked against the complete block already read. The bounded private map groups logs by transaction, using exact `BigInt` sums; neither log bodies nor indexed participant addresses are sent to the browser. The filter also recognizes executed USDT transfers through other contracts because the log's emitting address, rather than the outer transaction destination, identifies the token. Provider completeness remains an assumption; no independent receipt audit detects omitted events.
+
+Optional nullable `Snapshot.tokenTransfers` contains `{ tokenId, blockHash, blockHeight, source, observedAt, method, transactionCount, transferCount, amount }` entries. It distinguishes **unique transactions with at least one Transfer event**, **event count** and **gross amount summed across all matching events**. One transaction can contribute several events but counts once; a sampled transaction still has at most one passenger, and these totals create no unsampled details. Zero-value events are valid; a validated empty response yields explicit zero totals. `amount` is a bounded decimal integer string in USDT base units; six-decimal formatting never converts it through `Number`. These totals concern the full returned latest-block log result, not the displayed sample or native ETH block value.
+
+Validated log evidence can enrich already-returned confirmed transaction details with `evidence: 'log'`, exact amount/count and its own observation time. It neither fetches unsampled details nor enlarges the 1,920 pending/24 confirmation limits. Without valid logs, direct-call metadata remains intent. `tokenTransfers: null` means unavailable, including while collection is pending or unsupported; it does not alter independently valid chain status and must never become zero. A successful report retains its date for the same current hash; a head/branch change invalidates it. Stale snapshots retain their observed block with its stale label, and unavailable snapshots expose no totals. Demonstration uses separate `demo` activity evidence and `simulation` reports; no live error substitutes simulation. The additive fields can be omitted by older snapshot producers. Observed block inclusion and matching logs establish neither future canonicality nor finality.
+
 ### Optional Ethereum local count
 
 After validating `eth_chainId` and the latest block, `createEthereumProvider` can collect `txpool_status` on the same server-fixed `ETHEREUM_RPC_URL`. This non-standard capability exposes that node's `pending` and `queued` transaction counts. The adapter publishes their sum in `pendingCount`, including the queue for future execution, without calling it a worldwide mempool. Optional nullable `Snapshot.mempool` carries `{ pending, queued, observedAt, status: 'ok' | 'stale', method: 'txpool_status' }`. Its millisecond timestamp is count receipt, separate from block collection. The contract rejects this detail in demonstration mode, on Bitcoin or on an unavailable snapshot, and checks total consistency. Sources: [Geth `txpool_status` contract](https://geth.ethereum.org/docs/interacting-with-geth/rpc/ns-txpool#txpool-status), [Geth hexadecimal-counter code](https://github.com/ethereum/go-ethereum/blob/master/internal/ethapi/api.go).

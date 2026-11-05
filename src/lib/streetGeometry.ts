@@ -37,6 +37,10 @@ export const HISTORY_QUEUE_START = PENDING_SAMPLE_LIMIT * 2;
 /** The unobserved network is a source of late discoveries, never a local pool count. */
 export const NETWORK_BOX_RECT = { x: 434, y: 28, width: 26, height: 88 } as const;
 export const NETWORK_VESTIBULE_Y = 140;
+/** A contract landmark on the Ethereum quay, separate from the network station. */
+export const USDT_HOUSE_RECT = { x: 432, y: 148, width: 28, height: 42 } as const;
+/** Clear even the largest head below the house before crossing towards the active queue. */
+export const TOKEN_HOUSE_CLEARANCE_Y = 238;
 /** Fan out only after clearing the cabinet, entirely above the active waiting area. */
 export const NETWORK_FLOW_LANES = [NETWORK_VESTIBULE_Y, 122, 104, 86] as const;
 export const NETWORK_FLOW_BRANCH_X = 410;
@@ -105,6 +109,20 @@ export function networkBoxBoardingPath(seatIndex: number, laneIndex = 0): Street
     entryDoorPoint('next'),
     wagonSeat('next', seatIndex),
   ];
+}
+
+/** Identified pending activity leaves a contract doorway and joins the ordinary queue. */
+export function tokenHouseArrivalPath(
+  queueIndex: number,
+  layout: QueueLayout = DEFAULT_QUEUE_LAYOUT,
+): StreetPoint[] {
+  const queue = queuePosition(queueIndex, layout);
+  const door = {
+    x: USDT_HOUSE_RECT.x + USDT_HOUSE_RECT.width / 2,
+    y: USDT_HOUSE_RECT.y + USDT_HOUSE_RECT.height,
+  };
+  const laneY = Math.max(TOKEN_HOUSE_CLEARANCE_Y, queue.y);
+  return [door, { x: door.x, y: laneY }, { x: queue.x, y: laneY }, queue];
 }
 
 /** Separate physical places for unknown/absent historical observations on the same outer quay. */

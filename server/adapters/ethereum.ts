@@ -20,6 +20,7 @@ import {
   type Tx,
 } from '../../shared/model.js';
 import type { ServerConfig } from '../config.js';
+import { TOKEN_CONTRACTS, type TokenActivity } from '../../shared/tokenContracts.js';
 import {
   createEthereumDependencyTracker,
   ethereumNonceKey,
@@ -28,6 +29,12 @@ import {
   type EthereumPoolNonceIndex,
 } from './ethereumDependencies.js';
 import { createPoolFlowTracker } from './poolFlow.js';
+import {
+  ERC20_TRANSFER_TOPIC,
+  ethereumTokenCall,
+  parseEthereumTokenTransfers,
+  type EthereumTokenTransfers,
+} from './ethereumTokens.js';
 import {
   bigintToSafeNumber,
   parsePayload,
@@ -74,7 +81,7 @@ export const ethereumTransactionSchema = z
       context.addIssue({ code: 'custom', message: 'Priority fee exceeds the transaction fee cap' });
     }
   });
-type EthereumTransaction = z.infer<typeof ethereumTransactionSchema>;
+type EthereumTransaction = z.infer<typeof ethereumTransactionSchema> & { tokens?: TokenActivity[] };
 
 const blockFields = {
   hash: hashSchema.nullable(),
@@ -118,7 +125,9 @@ export const ethereumBlockHeaderSchema = z
       new Set(block.transactions.map((id) => id.toLowerCase())).size === block.transactions.length,
     { message: 'Duplicate transaction identifiers in a block' },
   );
-type EthereumBlock = z.infer<typeof ethereumFullBlockSchema>;
+type EthereumBlock = Omit<z.infer<typeof ethereumFullBlockSchema>, 'transactions'> & {
+  transactions: EthereumTransaction[];
+};
 type EthereumBlockHeader = z.infer<typeof ethereumBlockHeaderSchema>;
 const MEMPOOL_REFRESH_MS = 30_000;
 const MEMPOOL_MAX_AGE_MS = 120_000;
@@ -132,6 +141,7 @@ const RECEIPT_CONCURRENCY = 2;
 const RECEIPT_REFRESH_MS = 15_000;
 const RECEIPT_RETRY_MS = 60_000;
 const RECEIPT_PENDING_AGE_MS = 30_000;
+const TOKEN_LOG_RETRY_MS = 30_000;
 const ethereumReceiptSchema = z.object({
   transactionHash: hashSchema,
   blockHash: hashSchema,
@@ -224,7 +234,12 @@ function parseEthereumPool(
           minimumNonce.set(from, nonceNumber);
         if (identifiers.size > MAX_POOL_TRANSACTIONS) throw new UpstreamError('too-large');
         if (category === 'pending') {
-          pending.push({ ...transaction, input: transaction.input.length > 2 ? '0x00' : '0x' });
+          const tokens = ethereumTokenCall(transaction);
+          pending.push({
+            ...transaction,
+            input: transaction.input.length > 2 ? '0x00' : '0x',
+            ...(tokens === undefined ? {} : { tokens }),
+          });
           pendingIds.add(transaction.hash.toLowerCase());
           pendingCount += 1;
         } else {
@@ -309,6 +324,7 @@ async function rpc(
     | 'eth_chainId'
     | 'eth_getBlockByNumber'
     | 'eth_getTransactionReceipt'
+    | 'eth_getLogs'
     | 'txpool_status'
     | 'txpool_content',
   params: unknown[],
@@ -398,8 +414,12 @@ function toTransactions(block: EthereumBlock, status: Tx['status'], limit: numbe
     size: bigintToSafeNumber(BigInt(tx.gas)),
     status,
     ...(status === 'confirmed' ? { blockHash: block.hash!.toLowerCase() } : {}),
-    kind: tx.to === null || tx.input.length > 2 ? 'contract' : 'transfer',
+    kind:
+      tx.to === null || tx.input.length > 2 || tx.to.toLowerCase() === TOKEN_CONTRACTS.usdt.address
+        ? 'contract'
+        : 'transfer',
     value: formatEther(BigInt(tx.value)),
+    tokens: tx.tokens ?? ethereumTokenCall(tx),
     ...(tx.nonce === undefined
       ? {}
       : {
@@ -483,6 +503,84 @@ export function createEthereumProvider(
   let poolFailure: EthereumPoolFailure | null = null;
   let poolNextRefreshAt = 0;
   let poolInFlight: Promise<void> | null = null;
+  let tokenHeadHash: string | null = null;
+  let tokenGeneration = 0;
+  let tokenTransfers: EthereumTokenTransfers | null = null;
+  let tokenInFlight: Promise<void> | null = null;
+  let tokenNextRetryAt = 0;
+  let tokenLastClock: number | null = null;
+
+  function invalidateTokenTransfers(): void {
+    tokenGeneration += 1;
+    tokenHeadHash = null;
+    tokenTransfers = null;
+    tokenNextRetryAt = 0;
+    // Keep the transport occupied until settlement, while its generation makes the result inert.
+    // This prevents rapid head changes from creating unbounded concurrent optional requests.
+  }
+
+  function tokenTime(): number {
+    const time = now();
+    if (
+      !Number.isSafeInteger(time) ||
+      time < 0 ||
+      (tokenLastClock !== null && time < tokenLastClock)
+    )
+      invalidateTokenTransfers();
+    tokenLastClock = Number.isSafeInteger(time) && time >= 0 ? time : null;
+    return time;
+  }
+
+  function currentTokenTransfers(latest: ObservedEthereumBlock): EthereumTokenTransfers | null {
+    const startedAt = tokenTime();
+    if (tokenHeadHash !== latest.block.hash) {
+      invalidateTokenTransfers();
+      tokenHeadHash = latest.block.hash;
+    }
+    if (
+      tokenTransfers === null &&
+      tokenInFlight === null &&
+      Number.isSafeInteger(startedAt) &&
+      startedAt >= tokenNextRetryAt
+    ) {
+      const generation = tokenGeneration;
+      tokenInFlight = Promise.resolve().then(async () => {
+        try {
+          const raw = await rpc(
+            config,
+            'eth_getLogs',
+            [
+              {
+                blockHash: latest.block.hash,
+                address: TOKEN_CONTRACTS.usdt.address,
+                topics: [ERC20_TRANSFER_TOPIC],
+              },
+            ],
+            fetcher,
+          );
+          if (generation !== tokenGeneration) return;
+          const observedAt = tokenTime();
+          if (generation !== tokenGeneration || observedAt < startedAt) return;
+          tokenTransfers = parseEthereumTokenTransfers(
+            raw,
+            {
+              hash: latest.block.hash,
+              height: latest.block.height,
+              transactionIds: latest.transactionIds,
+            },
+            config.ethereumSource,
+            observedAt,
+          );
+        } catch {
+          // This optional capability never changes the validity of the independent chain read.
+          if (generation === tokenGeneration) tokenNextRetryAt = now() + TOKEN_LOG_RETRY_MS;
+        } finally {
+          tokenInFlight = null;
+        }
+      });
+    }
+    return tokenTransfers;
+  }
 
   function invalidatePoolFlow(): void {
     poolFlow.invalidate();
@@ -597,6 +695,7 @@ export function createEthereumProvider(
 
   function resetBranch(): void {
     invalidatePoolFlow();
+    invalidateTokenTransfers();
     checked.clear();
     journal.clear();
     journalPriority.clear();
@@ -1078,6 +1177,14 @@ export function createEthereumProvider(
       (transaction) => !newlyConfirmedIds.has(transaction.id),
     );
     scheduleReceiptRefresh(latestBlock, new Set(pendingTransactions.map((tx) => tx.id)));
+    const tokenObservation = currentTokenTransfers(latestObserved);
+    if (tokenObservation !== null)
+      confirmedTransactions = confirmedTransactions.map((transaction) => {
+        const transfer = tokenObservation.byTransaction.get(transaction.id);
+        return transfer === undefined
+          ? transaction
+          : { ...transaction, kind: 'contract', tokens: [transfer] };
+      });
     const transactions = [...pendingTransactions, ...confirmedTransactions].slice(
       0,
       MAX_TRANSACTIONS,
@@ -1174,6 +1281,7 @@ export function createEthereumProvider(
           )
         : null,
       latestBlockValue,
+      tokenTransfers: tokenObservation === null ? null : [tokenObservation.report],
       feeRate:
         latest.baseFeePerGas === undefined
           ? null
@@ -1192,6 +1300,7 @@ export function createEthereumProvider(
     } catch (error) {
       // Do not bridge a required chain-read failure, including a request still in flight.
       invalidatePoolFlow();
+      invalidateTokenTransfers();
       throw error;
     }
   };

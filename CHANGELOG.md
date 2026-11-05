@@ -4,6 +4,14 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### USDT contract house on Ethereum — 5 November 2026
+
+- Recognize USDT by the reviewed Ethereum-mainnet contract `0xdac17f958d2ee523a2206206994597c13d831ec7`, rather than a token name or symbol. The Ethereum quay gains an accessible USDT house and a cached green badge; fee-based shirt colors, resource sizes and transaction limits retain their meaning. [Tether's published contract](https://tether.to/en/supported-protocols/).
+- Newly observed, identified pending transactions emerge from the house and join the ordinary queue. Initial inventory, retained observations, archives and late-discovered confirmed inclusions keep their provenance and routes. House doors use the existing animation clock, including pause, hidden tabs, speed and reduced motion; multiple events never create additional passengers for a transaction.
+- Opening the house or the HTML USDT shortcut filters the existing transaction browser and outlines matching passengers without removing others. Search, status filters, keyboard selection, Escape and focus return remain available in French and English. Details distinguish transfer intent, approval and generic interaction; pending indirect calls may remain unrecognized.
+- An optional asynchronous `eth_getLogs` read supplies separate latest-block totals for unique transactions, `Transfer` events and exact USDT quantity, including transfers executed through another contract. It is fixed to the reviewed address, event topic and exact latest block hash, shared per provider instance and bounded to 4,096 events under the existing transport limits. Failure leaves these totals unavailable without invalidating independent Ethereum data or substituting zero. [ERC-20 events](https://eips.ethereum.org/EIPS/eip-20), [Ethereum JSON-RPC filters](https://ethereum.org/developers/docs/apis/json-rpc/#eth_getlogs).
+- Optional shared-contract token metadata keeps call intent, validated log evidence and explicit demonstration data distinct. Amounts use bounded decimal integer strings and `BigInt` with six-decimal presentation. An approval, included call, badge or animation proves no executed transfer; block inclusion supplies no finality guarantee. No service, dependency, database, key or environment setting is added. Provider support and completeness remain limitations.
+
 ### Deterministic browser animation checks — 5 November 2026
 
 - Freeze the historical-reboarding test's browser clock before navigation so keyboard and network/render latency do not consume the short return phase. All historical-status, exact-cohort and reboarding checks remain.

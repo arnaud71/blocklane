@@ -80,7 +80,8 @@ export class SnapshotService implements SnapshotReader {
   }
 
   async get(chain: ChainId, mode: 'demo' | 'live'): Promise<Snapshot> {
-    if (mode === 'demo') return generateDemoSnapshot(chain, this.now());
+    if (mode === 'demo')
+      return generateDemoSnapshot(chain, this.now(), 2026, { includeTokens: true });
     const quotePromise = Promise.resolve()
       .then(() => this.usdQuotes.get(chain))
       .then((quote) => (quote === null ? null : usdQuoteSchema.parse(quote)))

@@ -1,5 +1,21 @@
 # Verification status
 
+## USDT contract house — 5 November 2026
+
+The Ethereum scene adds the reviewed USDT category without increasing passenger limits or replacing any provider. Pending calls express intent; complete latest-block Transfer logs have their own hash, timestamp and availability. Amounts use exact base-unit strings and BigInt formatting. Invalid optional logs cannot turn a valid Ethereum response into an outage or a missing metric into zero. The shared boundary also rejects sampled executed-transfer evidence that exceeds its complete-block report.
+
+Verification with Node **24.22.2**, unchanged dependencies and lockfile:
+
+- `npm run check`: ESLint, strict TypeScript, **852 tests across 68 files**, and the production build passed.
+- `npm run format:check` and `git diff --check` passed.
+- Full browser campaign: **182 desktop/mobile Chromium scenarios passed**, four workers, zero retries, **2.4 minutes**. The 14 new scenarios cover the house, filtering, keyboard/focus, exact amounts and counts, zero/unavailable/stale/demo, immutable same-head log dates, reduced motion and pause. Logs: `/private/tmp/blocklane-usdt-e2e.log`; results: `/private/tmp/blocklane-usdt-e2e-results/`.
+- The 14 USDT browser scenarios then passed **three independent executions each**, **42 passes with zero retries** in 10.7 seconds, including additional transfer/approval detail assertions. On mobile, the scenario closes the foreground details panel before selecting the next transaction in the non-modal browser; it never forces a click through that panel. Log: `/private/tmp/blocklane-usdt-repeated-final.log`.
+- Focused contracts/adapters cover malformed calls and logs, injected upstream metadata, exact large amounts, multi-event/unique-transaction totals, optional failure/recovery, concurrency, head replacement and clock rollback. Motion/Canvas checks preserve one identity, initial stock and archive continuity, late network-origin inclusions, queue clearance, badges, cached-raster updates and hit areas.
+
+Automated tests use controlled fixtures and make no public-provider call. Desktop/mobile screenshots of the French counters and English reduced-motion scene were visually inspected. The pause test commits a queued Canvas admission render before capturing its frozen baseline; rendering a newly received observation is distinct from advancing its paused journey.
+
+A separate manual local API probe against the existing default Ethereum source returned valid live chain data and recognized USDT calls. For block **26,350,225**, the optional report returned **168 unique transactions / 205 Transfer events / 22,274,258.731081 USDT**; the following observed block returned **17 / 34 / 33,575,161.742762 USDT**. The first response for a new hash had unavailable token totals while the asynchronous read completed; a subsequent three-second refresh supplied that hash's totals. These are dated observations, not an availability guarantee or a proof that the provider omitted nothing. Pending indirect calls and transactions outside the existing sample can remain unidentified, and latest-block aggregate totals do not add their missing details as passengers. No real-device mobile test, receipt/trace execution audit, load benchmark, merge or deployment is claimed. The existing Vite large-chunk warning remains visible.
+
 ## First-attempt browser animation checks — 5 November 2026
 
 The [PR #1 Linux campaign](https://github.com/arnaud71/blocklane/actions/runs/42030449395) completed with 165 passing browser scenarios and three scenarios that passed only after retries: late network inclusions on desktop/mobile and historical Bitcoin reboarding on desktop. This proposal fixes their timing assumptions and sets Playwright `retries: 0` in every environment. A first-attempt failure now fails the campaign; neither assertions nor retry thresholds are relaxed.
