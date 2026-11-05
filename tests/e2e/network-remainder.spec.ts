@@ -177,6 +177,45 @@ async function doorLeaves(page: Page, chain: ChainId) {
     .evaluateAll((leaves) => leaves.map((leaf) => leaf.getAttribute('transform')));
 }
 
+/** Read the SVG clock, door and Canvas in one task, after the same React commit. */
+async function portalFrame(page: Page, chain: ChainId) {
+  return pane(page, chain).evaluate(
+    (element, preparationMs) => {
+      const wagon = element.querySelector('.street-first-wagon');
+      const door = element.querySelector('[data-network-door="true"]');
+      const canvas = element.querySelector<HTMLCanvasElement>('canvas.passenger-canvas');
+      const context = canvas?.getContext('2d');
+      if (!wagon || !door || !canvas || !context)
+        throw new Error('La porte et le rendu Canvas doivent être attachés.');
+      const progress = wagon.getAttribute('data-preparation-progress');
+      if (progress === null) throw new Error('La préparation doit être en cours.');
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let painted = 0;
+      for (let offset = 3; offset < pixels.length; offset += 4) if (pixels[offset]) painted += 1;
+      return {
+        elapsedMs: Number(progress) * preparationMs,
+        door: Number(door.getAttribute('data-network-door-progress')),
+        painted,
+      };
+    },
+    chain === 'bitcoin' ? 3_000 : 1_500,
+  );
+}
+
+/** A runFor call fires RAF callbacks; wait separately for their React/Canvas commit. */
+async function advancePortalFrame(page: Page, durationMs = 48) {
+  const previous = await Promise.all(
+    CHAINS.map((chain) => firstWagon(page, chain).getAttribute('data-preparation-progress')),
+  );
+  await page.clock.runFor(durationMs);
+  for (const [index, chain] of CHAINS.entries())
+    await expect(firstWagon(page, chain)).not.toHaveAttribute(
+      'data-preparation-progress',
+      previous[index]!,
+    );
+  return Promise.all(CHAINS.map(async (chain) => [chain, await portalFrame(page, chain)] as const));
+}
+
 async function networkAppearance(page: Page, chain: ChainId) {
   return networkBox(page, chain)
     .locator('.network-remainder-body')
@@ -565,10 +604,10 @@ test('late detailed inclusions emerge from the remainder and board once without 
   });
   await page.getByRole('button', { name: 'Reprendre l’animation', exact: true }).click();
   // Light is already on while the door and the unseen traveler still wait.
-  await page.clock.runFor(100);
-  for (const chain of CHAINS) {
-    expect(await doorProgress(page, chain)).toBe(0);
-    expect((await canvasState(page, chain)).painted).toBe(0);
+  for (const [chain, frame] of await advancePortalFrame(page, 100)) {
+    expect(frame.elapsedMs).toBeLessThan(120);
+    expect(frame.door).toBe(0);
+    expect(frame.painted).toBe(0);
     await expect(networkBox(page, chain)).toHaveAttribute('data-network-active', 'true');
   }
   await page.screenshot({
@@ -578,7 +617,7 @@ test('late detailed inclusions emerge from the remainder and board once without 
   for (let step = 0; step < 8; step += 1) {
     if ((await Promise.all(CHAINS.map((chain) => doorProgress(page, chain)))).every((p) => p > 0))
       break;
-    await page.clock.runFor(20);
+    await advancePortalFrame(page);
   }
   const openingProgress = new Map<ChainId, number>();
   for (const chain of CHAINS) {
@@ -603,32 +642,42 @@ test('late detailed inclusions emerge from the remainder and board once without 
     expect(await networkAppearance(page, chain)).toEqual(activeAppearance.get(chain));
   }
   await setHidden(page, false);
+  // Visibility restores the RAF baseline before the next 24 Hz motion frame.
+  await advancePortalFrame(page, 64);
   for (let step = 0; step < 8; step += 1) {
     if ((await Promise.all(CHAINS.map((chain) => doorProgress(page, chain)))).every((p) => p === 1))
       break;
-    await page.clock.runFor(20);
+    await advancePortalFrame(page);
   }
+  const fullyOpenAt = new Map<ChainId, number>();
   for (const chain of CHAINS) {
-    expect(await doorProgress(page, chain)).toBe(1);
-    expect((await canvasState(page, chain)).painted).toBe(0);
+    const frame = await portalFrame(page, chain);
+    expect(frame.door).toBe(1);
+    expect(frame.elapsedMs).toBeGreaterThanOrEqual(200);
+    expect(frame.elapsedMs).toBeLessThan(320);
+    expect(frame.painted).toBe(0);
+    fullyOpenAt.set(chain, frame.elapsedMs);
   }
   await page.screenshot({
     path: testInfo.outputPath('network-portal-open.png'),
     fullPage: true,
   });
-  await page.clock.runFor(80);
-  for (const chain of CHAINS) {
-    expect(await doorProgress(page, chain)).toBe(1);
-    expect((await canvasState(page, chain)).painted).toBe(0);
-  }
-  await advanceUntil(
-    page,
-    async () =>
-      (await Promise.all(CHAINS.map((chain) => canvasState(page, chain)))).every(
-        (state) => state.solidBounds !== null,
-      ),
-    'Les voyageurs doivent apparaître après le prélude porte ouverte.',
-    400,
+  // Full-open is a range, not a timestamp: its first observed render may be late.
+  // Check each committed frame against its own preparation clock, rather than
+  // assuming another 80 wall-clock ms are still inside the invisible prelude.
+  const emergedAt = new Map<ChainId, number>();
+  for (let step = 0; step < 8 && emergedAt.size < CHAINS.length; step += 1)
+    for (const [chain, frame] of await advancePortalFrame(page)) {
+      expect(frame.door).toBe(1);
+      if (frame.elapsedMs < 320) expect(frame.painted).toBe(0);
+      if (frame.painted > 0 && !emergedAt.has(chain)) {
+        expect(frame.elapsedMs).toBeGreaterThanOrEqual(320);
+        expect(frame.elapsedMs - fullyOpenAt.get(chain)!).toBeGreaterThanOrEqual(80);
+        emergedAt.set(chain, frame.elapsedMs);
+      }
+    }
+  expect(emergedAt.size, 'Les voyageurs doivent apparaître après le prélude porte ouverte.').toBe(
+    CHAINS.length,
   );
   const births = new Map<ChainId, Awaited<ReturnType<typeof canvasState>>>();
   for (const chain of CHAINS) {

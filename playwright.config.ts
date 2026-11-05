@@ -4,7 +4,8 @@ export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // A passing browser check must succeed on its first attempt, locally and in CI.
+  retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: { baseURL: 'http://127.0.0.1:5173', trace: 'retain-on-failure', locale: 'fr-CH' },
   projects: [

@@ -99,6 +99,8 @@ test('a previously boarded historical Bitcoin traveler reboards after another ve
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.clock.install({ time: OBSERVED_AT });
+  // Keep keyboard inspection and network/render latency outside the animation timeline.
+  await page.clock.pauseAt(OBSERVED_AT + 100);
   const retained = transaction(1, 10);
   const included = transaction(2, 20);
   let stage = 0;

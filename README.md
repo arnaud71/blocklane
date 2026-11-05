@@ -138,7 +138,7 @@ npm run test:e2e
 npm audit --omit=dev --audit-level=high
 ```
 
-`check` combines lint, strict TypeScript, unit tests and build. Browser tests cover journeys with controlled data; they do not depend on public API availability. CI repeats these checks on proposed changes. Dependabot opens weekly proposals; no automatic merge or publication is configured.
+`check` combines lint, strict TypeScript, unit tests and build. Browser tests cover journeys with controlled data; they do not depend on public API availability. Browser failures are not retried, locally or in CI: a green check requires a successful first attempt. CI runs these checks on proposed changes. Dependabot opens weekly proposals; no automatic merge or publication is configured.
 
 Retain `package-lock.json`, use `npm ci`, work on `codex/...` branches, use a PR and update [CHANGELOG.md](CHANGELOG.md). Versions follow SemVer; a validated release receives a `vX.Y.Z` tag. CI and `main` protection are configured in the GitHub repository; future changes pass through their required checks and a PR. Private vulnerability reporting is enabled. The initial CI run passed completely for commit `335e9af`: [quality checks, including browser tests](https://github.com/arnaud71/blocklane/actions/runs/38909153856), and [dependency audit](https://github.com/arnaud71/blocklane/actions/runs/38909158417).
 
