@@ -19,6 +19,11 @@ import {
   queuePosition,
 } from '../../src/lib/streetGeometry';
 import { passengerDescription } from '../../src/lib/passengerPresentation';
+import {
+  PASSENGER_HEADROOM,
+  PASSENGER_FOOTROOM,
+  PASSENGER_HALF_WIDTH,
+} from '../../src/lib/passengerVisual';
 
 const now = 1_760_000_000_000;
 const id = (value: number) => `0x${value.toString(16).padStart(64, '0')}`;
@@ -77,10 +82,10 @@ function intersectsOtherHouse(point: { x: number; y: number }, source?: HouseId)
     if (id === source) return false;
     const house = HOUSE_RECTS[id];
     return (
-      point.x + 20 > house.x &&
-      point.x - 20 < house.x + house.width &&
-      point.y + 8 > house.y - 8 &&
-      point.y - 48 < house.y + house.height
+      point.x + PASSENGER_HALF_WIDTH > house.x &&
+      point.x - PASSENGER_HALF_WIDTH < house.x + house.width &&
+      point.y + PASSENGER_FOOTROOM > house.y - 8 &&
+      point.y - PASSENGER_HEADROOM < house.y + house.height
     );
   });
 }

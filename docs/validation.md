@@ -1,5 +1,13 @@
 # Verification status
 
+## Larger Canvas travelers — 5 November 2026
+
+Individual travelers on both chains grow uniformly by **12%** around fixed foot anchors. Head-resource ratios, shirt-fee colors, badges, transaction counts and native block capacities retain their meaning. Drawing and picking share the same local scale; world-space wagon clipping, departure offsets and network trails remain independent. Stationary raster envelopes scale consistently and use symmetric head margins under mirroring, retaining existing surface/pixel limits and allocation-failure fallbacks.
+
+`npm run check` passed with Node **24.22.2** and unchanged dependencies/lockfile: lint, strict TypeScript, **897 tests across 71 files**, and production build. Formatting and whitespace checks passed. The six focused real-pixel desktop/mobile appearance scenarios passed without retries: the new measurement counter-scales only the outer transform to compare actual painted extents against a same-renderer baseline. Existing cyan-accessory marks, unchanged shirt colors, head-size differences, picking, world clips, warm/cold caches and departing cohorts remain checked. Pixel probes use the actual physical-pixel center at fractional scales instead of drifting into the adjacent DPR pixel.
+
+Shared conservative bounds are 50 units above the foot, nine below and 23 sideways. Facade approaches and accelerated preparation use these bounds; the main lateral route remains open. Geometry regression tests exercise the enlarged envelope across queue widths and all houses. The complete browser campaign passed **198 desktop/mobile scenarios with zero retries**, four workers, **2.5 minutes**; log: `/private/tmp/blocklane-larger-passengers-e2e.log`, artifacts: `/private/tmp/blocklane-larger-passengers-e2e-results/`. Desktop and mobile queue captures were visually inspected. No provider, dependency, passenger budget or data-classification change, performance benchmark, merge or deployment is claimed. The existing Vite large-chunk warning remains visible.
+
 ## Token versus dApp house presentation — 5 November 2026
 
 The existing registry's `kind` now determines two visual families: USDT/USDC use pitched roofs, rounded facades, coin symbols and TOKEN plaques; Uniswap/Aave use flat roofs, angular facades, application-window symbols and DAPP plaques. Project colors and labels remain distinct within each family. Plaques and focus outlines stay below the main arrival label and inside the existing width cap; door centers and motion geometry are unchanged.

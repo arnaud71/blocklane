@@ -10,6 +10,10 @@ async function appearanceScenario() {
   const modulePath = '/src/lib/passengerCanvas.ts';
   const { createPassengerCanvasRenderer, canvasPassengerAnchor, hitTestCanvasPassenger } =
     (await import(modulePath)) as typeof import('../../src/lib/passengerCanvas');
+  const visualModulePath = '/src/lib/passengerVisual.ts';
+  const { PASSENGER_VISUAL_SCALE: visualScale } = (await import(
+    visualModulePath
+  )) as typeof import('../../src/lib/passengerVisual');
   const canvas = document.createElement('canvas');
   canvas.width = 1_000;
   canvas.height = 440;
@@ -75,11 +79,40 @@ async function appearanceScenario() {
     let result = 0;
     for (let y = rect.y; y < rect.y + rect.height; y += 0.5)
       for (let x = rect.x; x < rect.x + rect.width; x += 0.5)
-        if (matches(pixel(pixels, anchor.x + x, anchor.y + y))) result += 1;
+        if (matches(pixel(pixels, anchor.x + x * visualScale, anchor.y + y * visualScale)))
+          result += 1;
     return result;
   };
   const difference = (left: Uint8ClampedArray, right: Uint8ClampedArray) =>
     left.reduce((sum, value, index) => sum + Math.abs(value - right[index]!), 0) / left.length;
+  const extent = (pixels: Uint8ClampedArray) => {
+    let left = Infinity,
+      top = Infinity,
+      right = -Infinity,
+      bottom = -Infinity;
+    for (let y = 0; y < canvas.height; y += 1)
+      for (let x = 0; x < canvas.width; x += 1)
+        if (pixels[(y * canvas.width + x) * 4 + 3]! > 0) {
+          left = Math.min(left, x);
+          right = Math.max(right, x);
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y);
+        }
+    return { width: right - left + 1, height: bottom - top + 1 };
+  };
+  // A controlled 1x rendering of the same primitives supplies an actual-pixel
+  // baseline. Only the new uniform foot-anchor transform is neutralized here.
+  const originalScale = context.scale;
+  context.scale = function (x, y) {
+    return originalScale.call(
+      this,
+      x === visualScale && y === visualScale ? 1 : x,
+      x === visualScale && y === visualScale ? 1 : y,
+    );
+  };
+  const baseline = extent(paint(frameFor([target], false)));
+  context.scale = originalScale;
+  const enlarged = extent(paint(frameFor([target], false)));
   const variants = [];
   for (const mirrored of [false, true]) {
     const frame = frameFor([target], mirrored);
@@ -115,8 +148,14 @@ async function appearanceScenario() {
     let shirtUnchanged = true;
     for (let y = shirtRect.y; y < shirtRect.y + shirtRect.height; y += 0.5)
       for (let x = shirtRect.x; x < shirtRect.x + shirtRect.width; x += 0.5)
-        shirtUnchanged &&= pixel(contract, anchor.x + x, anchor.y + y).every(
-          (channel, index) => channel === pixel(transfer, anchor.x + x, anchor.y + y)[index],
+        shirtUnchanged &&= pixel(
+          contract,
+          anchor.x + x * visualScale,
+          anchor.y + y * visualScale,
+        ).every(
+          (channel, index) =>
+            channel ===
+            pixel(transfer, anchor.x + x * visualScale, anchor.y + y * visualScale)[index],
         );
     const passengers = Array.from({ length: 8 }, (_, index) => ({
       ...target,
@@ -131,19 +170,30 @@ async function appearanceScenario() {
     const cold = paint(group, target.pose.tx.id);
     paint(group, target.pose.tx.id);
     const warm = paint(group, target.pose.tx.id);
+    const outerHead: { left?: { x: number; y: number }; right?: { x: number; y: number } } = {};
+    for (let y = anchor.y - 45 * visualScale; y < anchor.y - 18 * visualScale; y += 0.5)
+      for (let x = anchor.x - 21 * visualScale; x <= anchor.x + 21 * visualScale; x += 0.5)
+        if ((pixel(cold, x, y)[3] ?? 0) > 220) {
+          const center = {
+            x: (Math.floor(x * viewport.ratio) + 0.5) / viewport.ratio,
+            y: (Math.floor(y * viewport.ratio) + 0.5) / viewport.ratio,
+          };
+          if (!outerHead.left || x < outerHead.left.x) outerHead.left = center;
+          if (!outerHead.right || x > outerHead.right.x) outerHead.right = center;
+        }
     let top: { x: number; y: number } | undefined;
     let side: { x: number; y: number } | undefined;
-    for (let y = anchor.y - 44; y < anchor.y - 32; y += 0.5) {
-      for (let x = anchor.x - 16; x < anchor.x + 17; x += 0.5) {
+    for (let y = anchor.y - 44 * visualScale; y < anchor.y - 32 * visualScale; y += 0.5) {
+      for (let x = anchor.x - 16 * visualScale; x < anchor.x + 17 * visualScale; x += 0.5) {
         if ((pixel(cold, x, y)[3] ?? 0) > 220) {
           top ??= { x: x + 0.25, y: y + 0.25 };
-          if (x > anchor.x + 13) side ??= { x: x + 0.25, y: y + 0.25 };
+          if (x > anchor.x + 13 * visualScale) side ??= { x: x + 0.25, y: y + 0.25 };
         }
       }
     }
     // Hair can extend sideways lower than the very top of the head.
-    for (let y = anchor.y - 32; !side && y < anchor.y - 18; y += 0.5)
-      for (let x = anchor.x + 13; x < anchor.x + 17; x += 0.5)
+    for (let y = anchor.y - 32 * visualScale; !side && y < anchor.y - 18 * visualScale; y += 0.5)
+      for (let x = anchor.x + 13 * visualScale; x < anchor.x + 17 * visualScale; x += 0.5)
         if ((pixel(cold, x, y)[3] ?? 0) > 220) side = { x: x + 0.25, y: y + 0.25 };
     const clicked = (point: { x: number; y: number } | undefined, current = group) =>
       !!point &&
@@ -182,6 +232,9 @@ async function appearanceScenario() {
       topClickable: clicked(top),
       sideClickable: clicked(side),
       warmRetainsTop: !!top && (pixel(warm, top.x, top.y)[3] ?? 0) > 220,
+      warmRetainsOuterHead:
+        Object.values(outerHead).length === 2 &&
+        Object.values(outerHead).every((point) => (pixel(warm, point.x, point.y)[3] ?? 0) > 220),
       warmDifference: difference(cold, warm),
       clipHidesTop,
       clipRejectsTop,
@@ -190,7 +243,14 @@ async function appearanceScenario() {
     });
   }
   renderer.dispose();
-  return { variants, visibleCanvases: document.querySelectorAll('canvas').length };
+  return {
+    variants,
+    visibleCanvases: document.querySelectorAll('canvas').length,
+    sizing: {
+      widthRatio: enlarged.width / baseline.width,
+      heightRatio: enlarged.height / baseline.height,
+    },
+  };
 }
 
 test.beforeEach(async ({ page }) => {
@@ -226,10 +286,21 @@ test('les grandes têtes restent distinctives, cliquables et entières dans les 
     expect(variant.topClickable).toBe(true);
     expect(variant.sideClickable).toBe(true);
     expect(variant.warmRetainsTop).toBe(true);
+    expect(variant.warmRetainsOuterHead).toBe(true);
     expect(variant.warmDifference).toBeLessThan(0.3);
     expect(variant.clipHidesTop).toBe(true);
     expect(variant.clipRejectsTop).toBe(true);
     expect(variant.departureRetainsTop).toBe(true);
     expect(variant.departureStable).toBe(true);
   }
+});
+
+test('les voyageurs sont légèrement agrandis autour des pieds dans les vrais pixels', async ({
+  page,
+}) => {
+  const result = await page.evaluate(appearanceScenario);
+  expect(result.sizing.widthRatio).toBeGreaterThan(1.06);
+  expect(result.sizing.widthRatio).toBeLessThan(1.2);
+  expect(result.sizing.heightRatio).toBeGreaterThan(1.08);
+  expect(result.sizing.heightRatio).toBeLessThan(1.2);
 });

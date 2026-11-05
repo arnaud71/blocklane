@@ -6,10 +6,14 @@ import {
   passengerFrame,
   reconcilePassengerMotion,
   TOKEN_HOUSE_DOOR_LEAD_MS,
-  MAX_HEAD_SCALE,
   type PassengerMotionState,
 } from '../../src/lib/passengerMotion';
 import { passengerDescription } from '../../src/lib/passengerPresentation';
+import {
+  PASSENGER_HALF_WIDTH,
+  PASSENGER_FOOTROOM,
+  PASSENGER_HEADROOM,
+} from '../../src/lib/passengerVisual';
 import {
   createQueueLayout,
   NETWORK_VESTIBULE_Y,
@@ -216,7 +220,7 @@ describe('Identified USDT contract arrivals', () => {
     const person = passengerFrame(state).passengers[0]!;
     expect(person.arrivalKind).toBe('new-observation');
     expect(state.passengers[0]!.path[0]!.y).toBe(queuePosition(0).y);
-    expect(queuePosition(0).y + 8).toBeLessThan(USDT_HOUSE_RECT.y - 8);
+    expect(queuePosition(0).y + PASSENGER_FOOTROOM).toBeLessThan(USDT_HOUSE_RECT.y - 8);
     expect(state.passengers[0]!.path.at(-1)).toEqual(queuePosition(0));
     expect(passengerFrame(state).usdtHouseActive).toBe(false);
   });
@@ -247,7 +251,7 @@ describe('Identified USDT contract arrivals', () => {
 
   it('keeps house routes off the road and below the separate network vestibule', () => {
     expect(USDT_HOUSE_RECT.x + USDT_HOUSE_RECT.width).toBeLessThanOrEqual(SCENE_WIDTH);
-    expect(USDT_HOUSE_RECT.x).toBeGreaterThan(queuePosition(2).x + 8 * MAX_HEAD_SCALE);
+    expect(USDT_HOUSE_RECT.x).toBeGreaterThan(queuePosition(2).x + PASSENGER_HALF_WIDTH);
     for (const scale of [0.5, 1, 2.5]) {
       const layout = createQueueLayout(scale);
       for (let index = 0; index < layout.capacity; index += 1) {
@@ -256,7 +260,7 @@ describe('Identified USDT contract arrivals', () => {
         expect(path.every((point) => point.x > 294 && point.y >= 190)).toBe(true);
         expect(path[1]!.y).toBeGreaterThanOrEqual(TOKEN_HOUSE_CLEARANCE_Y);
         // The tallest permitted head remains below the network's independent vestibule.
-        expect(Math.min(...path.map((point) => point.y)) - 22 - 9 * 2.5).toBeGreaterThan(
+        expect(Math.min(...path.map((point) => point.y)) - PASSENGER_HEADROOM).toBeGreaterThan(
           NETWORK_VESTIBULE_Y,
         );
       }

@@ -3,9 +3,11 @@ import { ACTIVITY_HOUSES, HOUSE_IDS } from '../../shared/activityHouses';
 import {
   createPassengerCanvasRenderer,
   hitTestCanvasPassenger,
+  canvasPassengerAnchor,
   type CanvasPassenger,
   type CanvasPassengerFrame,
 } from '../../src/lib/passengerCanvas';
+import { PASSENGER_VISUAL_SCALE } from '../../src/lib/passengerVisual';
 
 interface PaintEvent {
   type: 'fill' | 'stroke' | 'image';
@@ -100,7 +102,40 @@ const drawsBadge = (events: PaintEvent[]) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe('USDT Canvas passenger badge and category highlighting', () => {
-  it('draws every recognized category once on a single traveler with the original fee shirt and hit area', () => {
+  it('enlarges body and head picking with the figure while preserving mirrored foot anchors and world clips', () => {
+    for (const mirrored of [false, true]) {
+      const person = passenger(1);
+      person.offsetY = 7;
+      person.pose.headScale = 0.8;
+      const scene = frame([person]);
+      scene.view.mirrored = mirrored;
+      const anchor = canvasPassengerAnchor(scene, viewport, person);
+      const outward = mirrored ? -1 : 1;
+      // This point lies beyond the previous 13-unit body edge, inside the enlarged body.
+      expect(
+        hitTestCanvasPassenger(
+          scene,
+          viewport,
+          anchor.x + outward * 14,
+          anchor.y - 15 * PASSENGER_VISUAL_SCALE,
+        ),
+      ).toBe(person);
+      expect(canvasPassengerAnchor(scene, viewport, person)).toEqual(anchor);
+      person.pose.headScale = 2.5;
+      const edge = { x: anchor.x + outward * 16.2, y: anchor.y - 22 * PASSENGER_VISUAL_SCALE };
+      expect(hitTestCanvasPassenger(scene, viewport, edge.x, edge.y)).toBe(person);
+      expect(
+        hitTestCanvasPassenger(scene, viewport, anchor.x + outward * 25, edge.y),
+      ).toBeUndefined();
+      person.clips = [{ x: person.pose.x - 10, y: person.pose.y - 55, width: 20, height: 65 }];
+      expect(hitTestCanvasPassenger(scene, viewport, edge.x, edge.y)).toBeUndefined();
+      expect(
+        hitTestCanvasPassenger(scene, viewport, anchor.x, anchor.y - 22 * PASSENGER_VISUAL_SCALE),
+      ).toBe(person);
+    }
+  });
+
+  it('draws every recognized category once on a single traveler with the original fee shirt and consistent hit area', () => {
     const canvases = canvasDocument();
     const renderer = createPassengerCanvasRenderer();
     const person = passenger(1, true);

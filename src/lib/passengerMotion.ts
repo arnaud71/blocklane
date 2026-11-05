@@ -37,6 +37,13 @@ import {
   type WagonKind,
 } from './streetGeometry';
 import { HOUSE_IDS, primaryHouseId, type HouseId } from '../../shared/activityHouses';
+import {
+  MIN_HEAD_SCALE,
+  MAX_HEAD_SCALE,
+  PASSENGER_HEADROOM,
+  PASSENGER_HALF_WIDTH,
+} from './passengerVisual';
+export { MIN_HEAD_SCALE, MAX_HEAD_SCALE } from './passengerVisual';
 import { capacityForSnapshot, transactionBlockSize } from './blockCapacity';
 import {
   bitcoinArrivalObservation,
@@ -79,9 +86,7 @@ const FAST_EXIT_DURATION_MS = 500;
 const MIN_PREPARATION_PASSAGE_MS = 50;
 const MAX_ARRIVAL_STAGGER_MS = 1_500;
 export const CANDIDATE_ARRIVAL_DURATION_MS = 700;
-export const MIN_HEAD_SCALE = 0.8;
-export const MAX_HEAD_SCALE = 2.5;
-const GEOMETRY_VERSION = 'outer-platform-slim-lower-houses-v23';
+const GEOMETRY_VERSION = 'outer-platform-larger-passengers-v24';
 export const TOKEN_HOUSE_DOOR_LEAD_MS = 200;
 const TOKEN_HOUSE_DOOR_OPEN_MS = 80;
 const TOKEN_HOUSE_DOOR_HOLD_MS = 150;
@@ -2113,7 +2118,9 @@ function prepareForDeparture(
       const fromTokenHouse =
         passenger.arrivalKind === 'token-house' && passenger.phase === 'arriving';
       const sourceHouse = passenger.houseId ? HOUSE_RECTS[passenger.houseId] : undefined;
-      const houseClearance = sourceHouse ? sourceHouse.y + sourceHouse.height + 48 : 0;
+      const houseClearance = sourceHouse
+        ? sourceHouse.y + sourceHouse.height + PASSENGER_HEADROOM
+        : 0;
       const networkDoorLeadMs = fromNetwork
         ? NETWORK_DOOR_BEFORE_PASSAGE_MS * networkTimingScale
         : 0;
@@ -2162,7 +2169,7 @@ function prepareForDeparture(
                 closingAt:
                   sourceHouse &&
                   point.y < houseClearance &&
-                  point.x + MAX_HEAD_SCALE * 8 >= sourceHouse.x
+                  point.x + PASSENGER_HALF_WIDTH >= sourceHouse.x
                     ? passageStartedAt +
                       ((passageDeadline - passageStartedAt) * (houseClearance - point.y)) /
                         Math.max(1, pathGeometry(path).distance) +

@@ -6,6 +6,12 @@ Build a portable web application: **React + TypeScript + Vite, native Canvas 2D 
 
 TxStreet supplies the metaphor reference. Its repository describes Vue, Bulma, Phaser, socket.io communication and a separate backend historically accompanied by nodes, MongoDB and Redis. This project proposes an original implementation with smaller infrastructure; it depends on neither TxStreet's backend nor its resources. [Source: TxStreet repository](https://github.com/txstreet/txstreet).
 
+## Larger individual travelers — decision of 5 November 2026
+
+Apply a uniform **1.12** local scale around each individual Canvas traveler's fixed foot position. Keep the transaction-derived head scale of 0.8–2.5, fee-based shirt colors, category/status markers and motion anchors unchanged. This is presentation, not an increase in block capacity or a change to transaction selection. Collective provider-wide groups remain separate illustrations.
+
+`src/lib/passengerVisual.ts` centralizes the scale and conservative head/foot/side envelope. Pointer picking inverts that local scale after world-space wagon clipping; the same drawing applies to stationary groups and cached departures. Raster bounds account for the larger glyph while retaining the existing dimension, pixel, memory and fallback limits. Geometry uses the larger envelope for facade clearance and in-flight preparation, keeping the direct main arrival passage and lower/narrow house placement. No CSS zoom of the street, network-trail scaling, new per-passenger DOM, provider call, timer or dependency is added.
+
 ## Multiple Ethereum activity houses — decision of 5 November 2026
 
 Extend the original USDT landmark through two independent registries and `shared/activityHouses.ts`: tokens identify USDT/USDC transfer evidence; protocols identify calls to reviewed entry points. `HouseId` covers `usdt`, `usdc`, `uniswap` and `aave`. A protocol's governance-token transfer is not an interaction with that protocol. No dependency, provider, service, key or database is added.

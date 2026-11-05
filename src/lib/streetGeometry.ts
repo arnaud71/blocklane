@@ -1,5 +1,6 @@
 import { PENDING_SAMPLE_LIMIT } from '../../shared/model';
 import { HOUSE_IDS, type HouseId } from '../../shared/activityHouses';
+import { PASSENGER_HEADROOM, PASSENGER_FOOTROOM, PASSENGER_HALF_WIDTH } from './passengerVisual';
 
 /** Canonical right-platform geometry; the Bitcoin scene mirrors these coordinates at display. */
 export interface StreetPoint {
@@ -47,7 +48,8 @@ export const HOUSE_RECTS = {
 } as const;
 export const USDT_HOUSE_RECT = HOUSE_RECTS.usdt;
 /** Clear even the largest head below the house before crossing towards the active queue. */
-export const TOKEN_HOUSE_CLEARANCE_Y = USDT_HOUSE_RECT.y + USDT_HOUSE_RECT.height + 48;
+export const TOKEN_HOUSE_CLEARANCE_Y =
+  USDT_HOUSE_RECT.y + USDT_HOUSE_RECT.height + PASSENGER_HEADROOM;
 /** Fan out only after clearing the cabinet, entirely above the active waiting area. */
 export const NETWORK_FLOW_LANES = [NETWORK_VESTIBULE_Y, 122, 104, 86] as const;
 export const NETWORK_FLOW_BRANCH_X = 410;
@@ -138,7 +140,7 @@ export function houseArrivalPath(
     x: house.x + house.width / 2,
     y: house.y + house.height,
   };
-  const laneY = house.y + house.height + 48;
+  const laneY = house.y + house.height + PASSENGER_HEADROOM;
   return [door, { x: door.x, y: laneY }, { x: queue.x, y: laneY }, queue];
 }
 
@@ -147,8 +149,11 @@ export function houseClearanceY(y: number): number {
   let lane = y;
   for (const id of HOUSE_IDS) {
     const house = HOUSE_RECTS[id];
-    if (lane + 8 > house.y - 8 && lane - 48 < house.y + house.height)
-      lane = house.y + house.height + 48;
+    if (
+      lane + PASSENGER_FOOTROOM > house.y - 8 &&
+      lane - PASSENGER_HEADROOM < house.y + house.height
+    )
+      lane = house.y + house.height + PASSENGER_HEADROOM;
   }
   return lane;
 }
@@ -164,7 +169,7 @@ export function ordinaryEthereumArrivalPath(
 
 /** Reflow an in-progress outer arrival without cutting through a house. */
 export function houseAwareQuayPath(from: StreetPoint, target: StreetPoint): StreetPoint[] {
-  if (from.x + 20 < USDT_HOUSE_RECT.x) return [from, target];
+  if (from.x + PASSENGER_HALF_WIDTH < USDT_HOUSE_RECT.x) return [from, target];
   const laneY = houseClearanceY(from.y);
   return [from, { x: from.x, y: laneY }, { x: target.x, y: laneY }, target];
 }

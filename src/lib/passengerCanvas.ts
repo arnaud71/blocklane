@@ -8,6 +8,7 @@ import {
 } from '../../shared/activityHouses';
 import { MAX_HEAD_SCALE, MIN_HEAD_SCALE, type PassengerPose } from './passengerMotion';
 import { isPassengerMoving, stablePassengerHash } from './passengerPresentation';
+import { PASSENGER_VISUAL_SCALE } from './passengerVisual';
 
 export interface CanvasClip {
   x: number;
@@ -147,23 +148,21 @@ export function hitTestCanvasPassenger(
     }
     const y = viewY - (passenger.offsetY ?? 0);
     if (passenger.clips && !passenger.clips.some((clip) => containsClip(clip, x, y))) continue;
+    const localX = (x - passenger.pose.x) / PASSENGER_VISUAL_SCALE;
+    const localY = (y - passenger.pose.y) / PASSENGER_VISUAL_SCALE;
     const headScale = passengerHeadScale(passenger.pose);
     if (
-      containsClip(
-        { x: passenger.pose.x - 12, y: passenger.pose.y - 33, width: 25, height: 40, radius: 5 },
-        x,
-        y,
-      ) ||
+      containsClip({ x: -12, y: -33, width: 25, height: 40, radius: 5 }, localX, localY) ||
       containsClip(
         {
-          x: passenger.pose.x - 6 * headScale,
-          y: passenger.pose.y + HEAD_CENTER_Y - 7 * headScale,
+          x: -6 * headScale,
+          y: HEAD_CENTER_Y - 7 * headScale,
           width: 12 * headScale,
           height: 12 * headScale,
           radius: 2 * headScale,
         },
-        x,
-        y,
+        localX,
+        localY,
       )
     ) {
       return passenger;
@@ -648,6 +647,7 @@ export function createPassengerCanvasRenderer(): {
     drawTrail(context, pose);
     context.save();
     context.translate(pose.x, pose.y);
+    context.scale(PASSENGER_VISUAL_SCALE, PASSENGER_VISUAL_SCALE);
     context.globalAlpha = Math.max(0, Math.min(1, pose.opacity));
     if (highlightHouseId && hasHouseActivity(pose.tx, highlightHouseId)) {
       context.strokeStyle =
@@ -861,17 +861,23 @@ export function createPassengerCanvasRenderer(): {
       let bottom = -Infinity;
       for (const passenger of run.passengers) {
         const headScale = passengerHeadScale(passenger.pose);
-        left = Math.min(left, passenger.pose.x + Math.min(-16, HEAD_SPRITE_BOUNDS.x * headScale));
+        // Either street mirror can put the wider side of a hair sprite on the left.
+        const halfWidth =
+          PASSENGER_VISUAL_SCALE *
+          Math.max(
+            16,
+            Math.abs(HEAD_SPRITE_BOUNDS.x) * headScale,
+            Math.abs(HEAD_SPRITE_BOUNDS.x + HEAD_SPRITE_BOUNDS.width) * headScale,
+          );
+        left = Math.min(left, passenger.pose.x - halfWidth);
         top = Math.min(
           top,
-          passenger.pose.y + Math.min(-42, HEAD_CENTER_Y + HEAD_SPRITE_BOUNDS.y * headScale),
+          passenger.pose.y +
+            PASSENGER_VISUAL_SCALE *
+              Math.min(-42, HEAD_CENTER_Y + HEAD_SPRITE_BOUNDS.y * headScale),
         );
-        right = Math.max(
-          right,
-          passenger.pose.x +
-            Math.max(16, (HEAD_SPRITE_BOUNDS.x + HEAD_SPRITE_BOUNDS.width) * headScale),
-        );
-        bottom = Math.max(bottom, passenger.pose.y + 8);
+        right = Math.max(right, passenger.pose.x + halfWidth);
+        bottom = Math.max(bottom, passenger.pose.y + 8 * PASSENGER_VISUAL_SCALE);
       }
       // Preserve the output pixel grid, including fractional DPR, projection and mirroring.
       left = (Math.floor(left * density + originX) - originX) / density;

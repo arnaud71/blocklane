@@ -4,6 +4,11 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Slightly larger individual travelers — 5 November 2026
+
+- Enlarge individual Canvas passengers by 12% around their foot anchors, including shirts, transaction-scaled heads, category badges and status indicators. Preserve the head-size ratios that represent transaction resources, fee colors, foot anchors, native capacities and transaction counts.
+- Coordinate pointer picking, stationary/departure raster envelopes and facade clearances with the larger drawing, retaining existing memory/surface limits and world-space wagon clips. No extra passenger DOM nodes, provider calls, dependencies or animation timers are introduced.
+
 ### Token and dApp landmarks — 5 November 2026
 
 - Distinguish USDT/USDC token houses with pitched roofs, rounded facades, coin symbols and TOKEN signs; Uniswap/Aave dApps use flat roofs, angular facades, application-window symbols and DAPP signs. Preserve each project's color, compact lowered footprint and shared-clock door position.
