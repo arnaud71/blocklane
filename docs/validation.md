@@ -1,5 +1,11 @@
 # Verification status
 
+## Ethereum activity house clearance — 9 November 2026
+
+The Linux Chromium mobile job for PR #6 measured a 0.19 CSS pixel overlap between the USDT focus outline's bounding box and the bottom of the arrivals label. On macOS, the previous geometry gave a gap of only 0.78 CSS pixels when checked against the stronger requirement. The four houses now sit 16 scene units lower, with doors and paths using the same geometry. The browser test measures the label and house group in the same layout and requires a gap of at least 3 CSS pixels on desktop and emulated mobile. [Original CI failure](https://github.com/arnaud71/blocklane/actions/runs/42092419578/job/127473626814).
+
+`npm run check` passed with Node **24.22.2** and the committed lockfile, including lint, strict TypeScript, **897 tests across 71 files** and the production build. `npm run format:check` passed. The affected browser scenario passed four independent runs per viewport, and the full browser campaign passed **198 scenarios** in 2.4 minutes with four workers and zero retries. Both scene captures were visually checked, and the browser scenario verifies opening each house and returning keyboard focus in reduced motion.
+
 ## Larger Canvas travelers — 5 November 2026
 
 Individual travelers on both chains grow uniformly by **12%** around fixed foot anchors. Head-resource ratios, shirt-fee colors, badges, transaction counts and native block capacities retain their meaning. Drawing and picking share the same local scale; world-space wagon clipping, departure offsets and network trails remain independent. Stationary raster envelopes scale consistently and use symmetric head margins under mirroring, retaining existing surface/pixel limits and allocation-failure fallbacks.
