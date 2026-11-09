@@ -4,6 +4,10 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Ethereum activity house clearance — 9 November 2026
+
+- Lower the four Ethereum activity houses by 16 scene units so the USDT label and keyboard focus outline leave a visible gap below the arrivals label on desktop and mobile. Doorways and passenger paths follow the shared house geometry.
+
 ### Slightly larger individual travelers — 5 November 2026
 
 - Enlarge individual Canvas passengers by 12% around their foot anchors, including shirts, transaction-scaled heads, category badges and status indicators. Preserve the head-size ratios that represent transaction resources, fee colors, foot anchors, native capacities and transaction counts.

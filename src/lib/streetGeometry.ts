@@ -41,10 +41,10 @@ export const NETWORK_BOX_RECT = { x: 434, y: 28, width: 26, height: 88 } as cons
 export const NETWORK_VESTIBULE_Y = 140;
 /** Slim outer-quay houses sit below the main arrival passage and network station. */
 export const HOUSE_RECTS = {
-  usdt: { x: 440, y: 248, width: 18, height: 42 },
-  usdc: { x: 440, y: 358, width: 18, height: 42 },
-  uniswap: { x: 440, y: 468, width: 18, height: 42 },
-  aave: { x: 440, y: 578, width: 18, height: 42 },
+  usdt: { x: 440, y: 264, width: 18, height: 42 },
+  usdc: { x: 440, y: 374, width: 18, height: 42 },
+  uniswap: { x: 440, y: 484, width: 18, height: 42 },
+  aave: { x: 440, y: 594, width: 18, height: 42 },
 } as const;
 export const USDT_HOUSE_RECT = HOUSE_RECTS.usdt;
 /** Clear even the largest head below the house before crossing towards the active queue. */
