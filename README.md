@@ -22,7 +22,7 @@ The upper panels' **Flow** section prefers events received through a shared serv
 
 ## Getting started
 
-Requirements: Node.js **24 LTS** and npm. The 24 branch is a maintained Node release; check the [official schedule](https://nodejs.org/en/about/previous-releases) before migration.
+Use Node.js **24.22.3 or newer within the 24.x LTS line**, with npm. With nvm, run `nvm install` and `nvm use` from the repository before installing dependencies. See the [official Node security release](https://nodejs.org/en/blog/release/v24.22.3/) and [release schedule](https://nodejs.org/en/about/previous-releases).
 
 ```sh
 npm ci

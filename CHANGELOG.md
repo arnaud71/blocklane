@@ -4,6 +4,11 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Node.js security update — 16 November 2026
+
+- Require Node.js 24.22.3 or newer in the 24.x LTS line. Align the npm engine requirement and lockfile, select 24.22.3 via `.nvmrc` in both CI workflows, and use the matching Node image in all three Docker stages. [Node.js security release](https://nodejs.org/en/blog/vulnerability/november-2026-security-releases/).
+- Existing installations need a current Node binary or a rebuilt image before the next release.
+
 ### Text-safe responsive layout — 4 November 2026
 
 - Information boards grow with translated labels, large values and wrapped source names; value, unit, status and navigation occupy separate rows without clipping. Narrow Flow and Comparison views stack their details.

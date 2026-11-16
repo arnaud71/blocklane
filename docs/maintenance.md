@@ -38,6 +38,10 @@ Tests resumed at the owner's request after a temporary pause. Results and limita
 
 Dependabot proposes versions without merging them. The automation can prepare a PR; it must not publish an application or change secrets without the corresponding authorization.
 
+## Updating the Node security baseline
+
+Update `.nvmrc`, the Node floor in `package.json` and `package-lock.json`, and the base image in all Docker stages together. Both CI workflows read `.nvmrc`. Run the required checks and confirm the official security release and image availability before preparing a review.
+
 ## Every month and before a migration
 
 Check the entire dependency tree with `npm audit`, not only runtime dependencies. Review Node support, the image operating system, pinned CI actions and bundle size. Check keyboard use, mobile, pause and reduced motion. Confirm that demonstration mode is labeled, old data is identified, and the FairOnChain link remains optional.
@@ -82,7 +86,7 @@ A price request is limited to eight seconds and 16 KiB. An old price may be reta
 
 1. Start from a reviewed commit with passing CI and a clean workspace. Check the changelog and the `package.json`/lockfile version.
 2. Run the required checks and build from the lockfile using `npm ci`. Browser tests use controlled data; supplement them with a live, read-only provider check before publication.
-3. Build the container image and record the commit, Node version, resolved base-image digest and produced-image digest. The `node:24-bookworm-slim` base tag receives updates; retain release digests for operational reproducibility.
+3. Build the container image with `--pull` using the Node patch selected in `Dockerfile`. Record the commit, Node version, resolved base-image digest and produced-image digest. Retain release digests for reproducibility.
 4. Run the image in a staging environment with the same non-secret variables. Check health, both chains, stale snapshots, errors, static files and operation without FairOnChain.
 5. Retain the currently deployed image and a protected configuration export, without writing secrets into Git.
 6. Present the version and verification to the owner; deploy only with the appropriate authorization.
