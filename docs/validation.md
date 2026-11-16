@@ -1,5 +1,11 @@
 # Verification status
 
+## Ethereum activity house clearance follow-up — 16 November 2026
+
+At the 9 November commit, Linux Chromium mobile measured 2.57 CSS pixels of clearance, below the existing 3-pixel requirement. The houses now sit eight more scene units lower, 24 in total. Their doors and pedestrian paths follow the shared geometry. At the lowest house, a passenger crossing toward the queue still leaves seven scene units between their feet and the capacity plaque. [Linux mobile result](https://github.com/arnaud71/blocklane/actions/runs/42584458396/job/129050821445).
+
+`npm ci`, `npm run check` and `npm run format:check` passed on macOS with Node **24.22.3** and the committed lockfile. All **897 tests across 71 files** passed. The house browser suite passed **42 scenarios** across three independent runs on desktop and emulated mobile with zero retries. Both scene captures were visually checked.
+
 ## Ethereum activity house clearance — 9 November 2026
 
 The Linux Chromium mobile job for PR #6 measured a 0.19 CSS pixel overlap between the USDT focus outline's bounding box and the bottom of the arrivals label. On macOS, the previous geometry gave a gap of only 0.78 CSS pixels when checked against the stronger requirement. The four houses now sit 16 scene units lower, with doors and paths using the same geometry. The browser test measures the label and house group in the same layout and requires a gap of at least 3 CSS pixels on desktop and emulated mobile. [Original CI failure](https://github.com/arnaud71/blocklane/actions/runs/42092419578/job/127473626814).

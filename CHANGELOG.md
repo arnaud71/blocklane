@@ -4,9 +4,9 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
-### Ethereum activity house clearance — 9 November 2026
+### Ethereum activity house clearance — 16 November 2026
 
-- Lower the four Ethereum activity houses by 16 scene units so the USDT label and keyboard focus outline leave a visible gap below the arrivals label on desktop and mobile. Doorways and passenger paths follow the shared house geometry.
+- Lower the four Ethereum activity houses by 24 scene units so the USDT label and keyboard focus outline leave a visible gap below the arrivals label on desktop and mobile. Doorways and passenger paths follow the shared house geometry.
 
 ### Slightly larger individual travelers — 5 November 2026
 
