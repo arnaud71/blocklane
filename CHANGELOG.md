@@ -4,6 +4,10 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### ESLint development security update — 16 November 2026
+
+- Update ESLint to 10.15.0 so ESLint and its configuration resolver use a patched `minimatch` release for [CVE-2026-118764](https://github.com/advisories/GHSA-g3hv-75wg-m249). The development audit still reports the same advisory through TypeScript-ESLint, which depends on `minimatch` 10. [ESLint release notes](https://eslint.org/blog/2026/11/eslint-v10.15.0-released/).
+
 ### Text-safe responsive layout — 4 November 2026
 
 - Information boards grow with translated labels, large values and wrapped source names; value, unit, status and navigation occupy separate rows without clipping. Narrow Flow and Comparison views stack their details.
