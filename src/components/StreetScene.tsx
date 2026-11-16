@@ -31,7 +31,8 @@ import {
   createQueueLayout,
   type WagonKind,
 } from '../lib/streetGeometry';
-import { number } from '../lib/format';
+import { number as formatNumber } from '../lib/format';
+import { languageTag, useI18n, type Locale } from '../i18n';
 import {
   bitcoinCandidateRepresentation,
   blockUsagePercent,
@@ -57,10 +58,18 @@ const VIEW_START_X = 172;
 const CORRIDOR_X = 298;
 const MIN_VIEW_WIDTH = 236;
 
-function occupancyPercentLabel(percentage: number | null, estimate = false): string {
+function occupancyPercentLabel(
+  percentage: number | null,
+  estimate = false,
+  locale: Locale = 'fr',
+): string {
   if (percentage === null) return '—';
   const value =
-    percentage > 0 && percentage < 0.01 ? '<0,01' : number(percentage, percentage < 1 ? 2 : 1);
+    percentage > 0 && percentage < 0.01
+      ? locale === 'fr'
+        ? '<0,01'
+        : '<0.01'
+      : formatNumber(percentage, percentage < 1 ? 2 : 1, locale);
   return `${estimate ? '≈ ' : ''}${value} %`;
 }
 
@@ -86,6 +95,15 @@ function wagonPassengerClips(
     clips.push({ x: WAGON_X + 72, y: y + EXIT_DOOR_Y - 34, width: 54, height: 56 });
   }
   return clips;
+}
+
+function useSceneText() {
+  const { locale, t } = useI18n();
+  return {
+    locale,
+    t,
+    number: (value: number | null, digits = 0) => formatNumber(value, digits, locale),
+  };
 }
 
 const DEPARTURE_PASSENGER_CLIPS = wagonPassengerClips(NEXT_WAGON_Y, CLOSED_DOORS, true, false);
@@ -206,6 +224,7 @@ function Wagon({
   opacity?: number;
   mirrored: boolean;
 }) {
+  const { locale, t, number } = useSceneText();
   const headlightGradientId = useId().replace(/:/g, '') + '-headlight-beam';
   const templatePatternId = headlightGradientId + '-collective';
   const entryOpen = !moving && doors.entry;
@@ -230,12 +249,16 @@ function Wagon({
   const collectiveBlock =
     confirmedBlock && blockRepresentation?.groupedCount ? blockRepresentation : null;
   const unit = chain === 'bitcoin' ? 'vB' : 'gas';
-  const occupancyLabel = occupancyPercentLabel(occupancy.percentage, occupancy.kind === 'sample');
+  const occupancyLabel = occupancyPercentLabel(
+    occupancy.percentage,
+    occupancy.kind === 'sample',
+    locale,
+  );
   const transactionCountLabel = `${number(occupancy.transactionCount)} TX · ${occupancyLabel}`;
   const retainedObservationCount = passengers.filter(
     (pose) => !pose.sourceObserved && pose.tx.status === 'pending',
   ).length;
-  const transactionCountDescription = `${simulated ? 'Données simulées. ' : ''}${occupancy.kind === 'template' ? `${number(occupancy.transactionCount)} transactions proposées dans le candidat complet du nœud. ${number(templateRepresentation?.individualCount ?? 0)} membres ont un bonhomme individuel dans la scène, y compris ceux encore sur le quai ; ${number(templateRepresentation?.groupedCount ?? occupancy.transactionCount)} sont représentés collectivement. ` : `${number(occupancy.transactionCount)} transactions observées représentées à bord. `}${retainedObservationCount ? `Observations conservées hors de l’échantillon actuel : ${number(retainedObservationCount)}. L’horloge indique que leur présence actuelle dans le mempool est inconnue. ` : ''}${
+  const transactionCountDescriptionFrench = `${simulated ? 'Données simulées. ' : ''}${occupancy.kind === 'template' ? `${number(occupancy.transactionCount)} transactions proposées dans le candidat complet du nœud. ${number(templateRepresentation?.individualCount ?? 0)} membres ont un bonhomme individuel dans la scène, y compris ceux encore sur le quai ; ${number(templateRepresentation?.groupedCount ?? occupancy.transactionCount)} sont représentés collectivement. ` : `${number(occupancy.transactionCount)} transactions observées représentées à bord. `}${retainedObservationCount ? `Observations conservées hors de l’échantillon actuel : ${number(retainedObservationCount)}. L’horloge indique que leur présence actuelle dans le mempool est inconnue. ` : ''}${
     occupancy.kind === 'template'
       ? `Occupation proposée du candidat complet hors coinbase : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. Calcul sur toutes les transactions proposées ; en-tête et coinbase exclus.`
       : occupancy.kind === 'block'
@@ -243,7 +266,20 @@ function Wagon({
         : occupancy.kind === 'sample'
           ? `Estimation de la place représentée à bord : ${number(occupancy.used, 2)} ${unit} sur ${number(occupancy.capacity)} ${unit}, soit ${occupancyLabel}. ${chain === 'ethereum' ? 'Limites de gas déclarées divisées par la limite du dernier bloc observé ; elles ne mesurent pas le gas réellement consommé et la limite du prochain bloc peut évoluer.' : 'Somme des tailles virtuelles divisée par le budget de poids du bloc exprimé en vB ; les frais de structure du bloc ne sont pas inclus.'} Les places réservées hors du wagon sont exclues. Cet échantillon limité ne représente pas tout le futur bloc.`
           : 'Occupation indisponible : capacité ou consommation nécessaire absente.'
-  }${collectiveBlock ? ` Bloc complet : ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' hors coinbase' : ''}, dont ${number(collectiveBlock.individualCount)} individualisées dans toute la scène et ${number(collectiveBlock.groupedCount)} représentées collectivement sans identifiants inventés.` : ''}${nodeTemplate ? ` Candidat du nœud ${nodeTemplate.source}, hauteur ${number(nodeTemplate.height)}, relevé à ${new Date(nodeTemplate.observedAt).toLocaleTimeString('fr-CH')}. Le compteur et le pourcentage concernent tout le candidat ; seuls les détails individuels sont limités. Cette proposition ne prouve aucune inclusion ni qu’un pool minier la mine.` : ''}`;
+  }${collectiveBlock ? ` Bloc complet : ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' hors coinbase' : ''}, dont ${number(collectiveBlock.individualCount)} individualisées dans toute la scène et ${number(collectiveBlock.groupedCount)} représentées collectivement sans identifiants inventés.` : ''}${nodeTemplate ? ` Candidat du nœud ${nodeTemplate.source}, hauteur ${number(nodeTemplate.height)}, relevé à ${new Date(nodeTemplate.observedAt).toLocaleTimeString(languageTag(locale))}. Le compteur et le pourcentage concernent tout le candidat ; seuls les détails individuels sont limités. Cette proposition ne prouve aucune inclusion ni qu’un pool minier la mine.` : ''}`;
+  const transactionCountDescription = t(
+    transactionCountDescriptionFrench,
+    `${simulated ? 'Simulated data. ' : ''}${occupancy.kind === 'template' ? `${number(occupancy.transactionCount)} transactions proposed in the node’s complete candidate. ${number(templateRepresentation?.individualCount ?? 0)} members have individual passengers in the scene, including those still on the platform; ${number(templateRepresentation?.groupedCount ?? occupancy.transactionCount)} are represented collectively. ` : `${number(occupancy.transactionCount)} observed transactions represented aboard. `}${retainedObservationCount ? `Retained observations outside the current sample: ${number(retainedObservationCount)}. The clock indicates that their current mempool presence is unknown. ` : ''}${
+      occupancy.kind === 'template'
+        ? `Proposed occupancy of the complete candidate excluding coinbase: ${number(occupancy.used, 2)} ${unit} out of ${number(occupancy.capacity)} ${unit}, or ${occupancyLabel}. Calculated across all proposed transactions; header and coinbase excluded.`
+        : occupancy.kind === 'block'
+          ? `${simulated ? 'Simulated' : 'Actual'} occupancy of the complete block ${confirmedBlock?.hash}: ${number(occupancy.used, 2)} ${unit} out of ${number(occupancy.capacity)} ${unit}, or ${occupancyLabel}. This percentage covers the whole block, while the TX counter counts only individual passengers aboard.`
+          : occupancy.kind === 'sample'
+            ? `Estimated space represented aboard: ${number(occupancy.used, 2)} ${unit} out of ${number(occupancy.capacity)} ${unit}, or ${occupancyLabel}. ${chain === 'ethereum' ? 'Declared gas limits divided by the latest observed block’s gas limit; these do not measure gas actually consumed, and the next block’s limit may change.' : 'Sum of virtual sizes divided by the block weight budget expressed in vB; block overhead is excluded.'} Reserved places outside the vehicle are excluded. This limited sample does not represent the entire future block.`
+            : 'Occupancy unavailable: required capacity or resource usage is missing.'
+    }${collectiveBlock ? ` Complete block: ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' excluding coinbase' : ''}, including ${number(collectiveBlock.individualCount)} individual passengers throughout the scene and ${number(collectiveBlock.groupedCount)} represented collectively without invented identifiers.` : ''}${nodeTemplate ? ` Candidate from node ${nodeTemplate.source}, height ${number(nodeTemplate.height)}, observed at ${new Date(nodeTemplate.observedAt).toLocaleTimeString(languageTag(locale))}. The counter and percentage cover the entire candidate; only individual details are limited. This proposal proves neither inclusion nor that a mining pool is mining it.` : ''}`,
+  );
+
   return (
     <g
       className={`street-vertical-wagon street-vertical-wagon--${kind} ${kind === 'next' ? 'street-first-wagon' : 'street-later-wagon'}${kind === 'handoff' ? ' street-projection--handoff' : ''}`}
@@ -370,7 +406,10 @@ function Wagon({
         <g
           className="street-template-group"
           role="group"
-          aria-label={`${number(templateRepresentation!.groupedCount)} transactions proposées représentées collectivement, sans identifiants ni frais individuels dessinés. Les ${number(templateRepresentation!.individualCount)} membres individualisés sont exclus de ce groupe, y compris ceux encore sur le quai. Aucune confirmation n’est déduite de ce groupe.`}
+          aria-label={t(
+            `${number(templateRepresentation!.groupedCount)} transactions proposées représentées collectivement, sans identifiants ni frais individuels dessinés. Les ${number(templateRepresentation!.individualCount)} membres individualisés sont exclus de ce groupe, y compris ceux encore sur le quai. Aucune confirmation n’est déduite de ce groupe.`,
+            `${number(templateRepresentation!.groupedCount)} proposed transactions represented collectively, without drawn individual identifiers or fees. The ${number(templateRepresentation!.individualCount)} individual members are excluded from this group, including those still on the platform. No confirmation is inferred from this group.`,
+          )}
           data-template-group-count={templateRepresentation!.groupedCount}
           data-template-individual-count={templateRepresentation!.individualCount}
           pointerEvents="none"
@@ -395,7 +434,7 @@ function Wagon({
             textAnchor="middle"
             aria-hidden="true"
           >
-            +{number(templateRepresentation!.groupedCount)} groupées
+            +{number(templateRepresentation!.groupedCount)} {t('groupées', 'grouped')}
           </ReadableText>
         </g>
       )}
@@ -403,7 +442,10 @@ function Wagon({
         <g
           className="street-block-group"
           role="group"
-          aria-label={`${number(collectiveBlock.groupedCount)} transactions du bloc reçu représentées collectivement, sans identifiants ni détails individuels inventés. Le bloc compte ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' hors coinbase' : ''} ; ${number(collectiveBlock.individualCount)} sont individualisées dans toute la scène, quai et arrivées compris. Ce groupe n’ajoute aucune option au navigateur de transactions.`}
+          aria-label={t(
+            `${number(collectiveBlock.groupedCount)} transactions du bloc reçu représentées collectivement, sans identifiants ni détails individuels inventés. Le bloc compte ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' hors coinbase' : ''} ; ${number(collectiveBlock.individualCount)} sont individualisées dans toute la scène, quai et arrivées compris. Ce groupe n’ajoute aucune option au navigateur de transactions.`,
+            `${number(collectiveBlock.groupedCount)} transactions in the received block represented collectively, without invented identifiers or individual details. The block contains ${number(collectiveBlock.transactionCount)} transactions${chain === 'bitcoin' ? ' excluding coinbase' : ''}; ${number(collectiveBlock.individualCount)} are individual passengers throughout the scene, including the platform and arrivals. This group adds no options to the transaction browser.`,
+          )}
           data-block-group-count={collectiveBlock.groupedCount}
           data-block-individual-count={collectiveBlock.individualCount}
           data-block-transaction-count={collectiveBlock.transactionCount}
@@ -429,7 +471,7 @@ function Wagon({
             textAnchor="middle"
             aria-hidden="true"
           >
-            +{number(collectiveBlock.groupedCount)} collectives
+            +{number(collectiveBlock.groupedCount)} {t('collectives', 'collective')}
           </ReadableText>
         </g>
       )}
@@ -489,19 +531,25 @@ const HistoricalQueueBackdrop = memo(function HistoricalQueueBackdrop({
   mirrored: boolean;
   narrow: boolean;
 }) {
+  const { t, number } = useSceneText();
   const start = projectX(HISTORICAL_QUEUE_AREA.x - 8);
   const end = projectX(HISTORICAL_QUEUE_AREA.x + HISTORICAL_QUEUE_AREA.width + 8);
   const center = (start + end) / 2;
   return (
     <g
       role="group"
-      aria-label={`Zone historique : ${number(count)} voyageurs sur le quai. Présence actuelle inconnue, absence du relevé ou candidature remplacée ; aucune confirmation implicite.`}
+      aria-label={t(
+        `Zone historique : ${number(count)} voyageurs sur le quai. Présence actuelle inconnue, absence du relevé ou candidature remplacée ; aucune confirmation implicite.`,
+        `Historical area: ${number(count)} passengers on the platform. Current presence unknown, absent from the inventory or replaced candidate; no implied confirmation.`,
+      )}
       data-history-area="true"
       data-history-count={count}
     >
       <title>
-        Observations conservées : ces voyageurs restent consultables. Une présence retrouvée les
-        ramène vers la file active ; seule une inclusion vérifiée les fait partir avec un bloc.
+        {t(
+          'Observations conservées : ces voyageurs restent consultables. Une présence retrouvée les ramène vers la file active ; seule une inclusion vérifiée les fait partir avec un bloc.',
+          'Retained observations: these passengers remain accessible. Observed presence brings them back to the active queue; only verified inclusion sends them away with a block.',
+        )}
       </title>
       <rect
         x={start}
@@ -525,7 +573,7 @@ const HistoricalQueueBackdrop = memo(function HistoricalQueueBackdrop({
           fontSize={narrow ? 7.5 : 10}
           letterSpacing=".4"
         >
-          OBSERVATIONS
+          {t('OBSERVATIONS', 'OBSERVATIONS')}
         </ReadableText>
         <ReadableText
           mirrored={mirrored}
@@ -535,7 +583,7 @@ const HistoricalQueueBackdrop = memo(function HistoricalQueueBackdrop({
           fill="#e3d8b4"
           fontSize={narrow ? 7 : 9}
         >
-          {number(count)} {count === 1 ? 'conservée' : 'conservées'}
+          {number(count)} {t(count === 1 ? 'conservée' : 'conservées', 'retained')}
         </ReadableText>
       </g>
     </g>
@@ -555,19 +603,24 @@ function WaitingArchive({
   projectX: (x: number) => number;
   mirrored: boolean;
 }) {
+  const { t, number } = useSceneText();
   if (count === 0) return null;
   const label = (count >= MAX_WAITING_ARCHIVE_COUNT ? '≥ ' : '') + number(count);
   const center = projectX(WAITING_ARCHIVE_POSITION.x);
   return (
     <g
       role="img"
-      aria-label={`${label} observations anciennes regroupées sur le quai. ${number(tracked)} identifiants conservés pour retrouver leurs inclusions, ${number(unknown)} observations sans suivi individuel. Un regroupement ne signifie pas une attente actuelle sur le réseau.`}
+      aria-label={t(
+        `${label} observations anciennes regroupées sur le quai. ${number(tracked)} identifiants conservés pour retrouver leurs inclusions, ${number(unknown)} observations sans suivi individuel. Un regroupement ne signifie pas une attente actuelle sur le réseau.`,
+        `${label} historical observations grouped on the platform. ${number(tracked)} identifiers retained to recover their inclusions, ${number(unknown)} observations without individual tracking. Grouping does not mean current waiting on the network.`,
+      )}
       data-waiting-archive-count={count}
     >
       <title>
-        {label} observations regroupées : {number(tracked)} identifiants conservés,{' '}
-        {number(unknown)} sans suivi. Le suivi est borné à 512 identifiants et 30 minutes ; une
-        confirmation vérifiée peut retrouver son voyageur.
+        {t(
+          `${label} observations regroupées : ${number(tracked)} identifiants conservés, ${number(unknown)} sans suivi. Le suivi est borné à 512 identifiants et 30 minutes ; une confirmation vérifiée peut retrouver son voyageur.`,
+          `${label} grouped observations: ${number(tracked)} retained identifiers, ${number(unknown)} without tracking. Tracking is limited to 512 identifiers and 30 minutes; verified confirmation can recover its passenger.`,
+        )}
       </title>
       <rect
         x={center - 65}
@@ -600,7 +653,7 @@ function WaitingArchive({
           fill="#d3dec0"
           fontSize="9"
         >
-          Observations
+          {t('Observations', 'Observations')}
         </ReadableText>
         <ReadableText
           mirrored={mirrored}
@@ -610,7 +663,7 @@ function WaitingArchive({
           fill="#d3dec0"
           fontSize="9"
         >
-          Suivies : {number(tracked)}
+          {t('Suivies', 'Tracked')} : {number(tracked)}
         </ReadableText>
         <ReadableText
           mirrored={mirrored}
@@ -620,7 +673,7 @@ function WaitingArchive({
           fill="#d3dec0"
           fontSize="8"
         >
-          Sans suivi : {number(unknown)}
+          {t('Sans suivi', 'Untracked')} : {number(unknown)}
         </ReadableText>
       </g>
     </g>
@@ -636,6 +689,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
   projectX: (x: number) => number;
   mirrored: boolean;
 }) {
+  const { t } = useSceneText();
   const viewEnd = VIEW_START_X + viewWidth;
   const arrivalStart = projectX(426);
   const fileStart = projectX(310);
@@ -667,7 +721,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
         fontSize={narrow ? 8 : 10}
         letterSpacing=".6"
       >
-        PASSAGE
+        {t('PASSAGE', 'WALKWAY')}
       </ReadableText>
       <ReadableText
         mirrored={mirrored}
@@ -678,7 +732,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
         fontSize={narrow ? 11 : 13}
         letterSpacing="1"
       >
-        FILE
+        {t('FILE', 'QUEUE')}
       </ReadableText>
       {!narrow && (
         <ReadableText
@@ -689,7 +743,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
           fill="#a6bea0"
           fontSize="9"
         >
-          ORDRE D’ARRIVÉE
+          {t('ORDRE D’ARRIVÉE', 'ARRIVAL ORDER')}
         </ReadableText>
       )}
       <ReadableText
@@ -700,7 +754,7 @@ const PlatformBackdrop = memo(function PlatformBackdrop({
         fill="#d3dec0"
         fontSize={narrow ? 7.5 : 11}
       >
-        {narrow ? 'ENTRÉE' : 'ARRIVÉES'}
+        {narrow ? t('ENTRÉE', 'ENTRY') : t('ARRIVÉES', 'ARRIVALS')}
       </ReadableText>
     </g>
   );
@@ -723,6 +777,7 @@ export const StreetScene = memo(function StreetScene({
   onActivity,
   mirrored = false,
 }: StreetSceneProps) {
+  const { locale, t, number } = useSceneText();
   const id = useId().replace(/:/g, '');
   const nodeTemplate = activeBitcoinBlockTemplate(snapshot);
   const viewport = useRef<HTMLDivElement>(null);
@@ -843,7 +898,7 @@ export const StreetScene = memo(function StreetScene({
   );
   const blockLabel = motion.departingBlock
     ? `#${number(motion.departingBlock.height)}`
-    : 'BLOC REÇU';
+    : t('BLOC REÇU', 'BLOCK RECEIVED');
   const projectionUsed = motion.projectionUsed ?? { next: motion.candidateUsed ?? 0, later: 0 };
   const completeCandidate = !moving && !preparing ? nodeTemplate : null;
   const blockRepresentation = useMemo(
@@ -910,12 +965,12 @@ export const StreetScene = memo(function StreetScene({
       if (cached !== undefined) return cached;
       const label =
         feeDisplayUnit === 'usd'
-          ? `${tx.chain === 'ethereum' ? 'estimation avec limite de gas' : 'frais estimés'} : ${formatTransactionFee(tx, 'usd', currentQuote)} ; taux observé ${formatFeeRate(tx.chain, tx.feeRate, 'native')}`
-          : formatTransactionFee(tx, 'native');
+          ? `${tx.chain === 'ethereum' ? t('estimation avec limite de gas', 'estimate using gas limit') : t('frais estimés', 'estimated fees')} : ${formatTransactionFee(tx, 'usd', currentQuote, locale)} ; ${t('taux observé', 'observed rate')} ${formatFeeRate(tx.chain, tx.feeRate, 'native', null, locale)}`
+          : formatTransactionFee(tx, 'native', null, locale);
       labels.set(tx, label);
       return label;
     };
-  }, [feeDisplayUnit, quote, quoteUsable]);
+  }, [feeDisplayUnit, quote, quoteUsable, locale, t]);
   const departurePassengers = useMemo(
     () =>
       motion.departingPassengers.map((pose) => ({
@@ -1052,23 +1107,35 @@ export const StreetScene = memo(function StreetScene({
             aria-labelledby={`${id}-title ${id}-desc`}
           >
             <title id={`${id}-title`}>
-              La rue de {snapshot.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}
+              {t(
+                `La rue de ${snapshot.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+                `${snapshot.chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'} street`,
+              )}
             </title>
             <desc id={`${id}-desc`}>
               {nodeTemplate
-                ? 'Le premier wagon représente le candidat complet proposé par le nœud Bitcoin pour le compte et le poids, avec des détails individuels limités et les autres membres regroupés. Le second reste une estimation. Ce candidat ne prouve aucune inclusion ni qu’un pool minier le mine.'
-                : 'Les deux wagons à l’arrêt projettent les prochains blocs.'}{' '}
-              À réception d’un bloc réel, le premier est ajusté aux inclusions connues avant son
-              départ, le second prend sa place. Les voyageurs arrivent depuis le bord{' '}
-              {mirrored ? 'gauche' : 'droit'} et circulent sur le quai extérieur. Les portes restent
-              fermées pendant les déplacements. Le déplacement ne confirme aucune transaction. La
-              file active et les observations historiques conservées en bas du quai occupent des
-              zones distinctes. La boîte « Reste du réseau — hors échantillon » représente une
-              source collective sans total mondial ; seules des inclusions identifiées peuvent en
-              sortir comme voyageurs individuels. Une observation historique ne prouve aucune
-              confirmation.{' '}
-              {demo ? 'Données simulées.' : 'Les inclusions sont fournies par la source.'} Cliquez
-              sur un voyageur ou utilisez « Parcourir les transactions » au clavier.
+                ? t(
+                    'Le premier wagon représente le candidat complet proposé par le nœud Bitcoin pour le compte et le poids, avec des détails individuels limités et les autres membres regroupés. Le second reste une estimation. Ce candidat ne prouve aucune inclusion ni qu’un pool minier le mine.',
+                    'The first vehicle represents the complete candidate proposed by the Bitcoin node for count and weight, with limited individual details and other members grouped. The second remains an estimate. This candidate proves neither inclusion nor that a mining pool is mining it.',
+                  )
+                : t(
+                    'Les deux wagons à l’arrêt projettent les prochains blocs.',
+                    'The two stationary vehicles project the next blocks.',
+                  )}{' '}
+              {t(
+                `À réception d’un bloc réel, le premier est ajusté aux inclusions connues avant son départ, le second prend sa place. Les voyageurs arrivent depuis le bord ${mirrored ? 'gauche' : 'droit'} et circulent sur le quai extérieur. Les portes restent fermées pendant les déplacements. Le déplacement ne confirme aucune transaction. La file active et les observations historiques conservées en bas du quai occupent des zones distinctes. La boîte « Reste du réseau — hors échantillon » représente une source collective sans total mondial ; seules des inclusions identifiées peuvent en sortir comme voyageurs individuels. Une observation historique ne prouve aucune confirmation.`,
+                `When a real block is received, the first vehicle is adjusted to known inclusions before departure, and the second takes its place. Passengers arrive from the ${mirrored ? 'left' : 'right'} edge and walk on the outer platform. Doors stay closed while vehicles move. Movement does not confirm any transaction. The active queue and historical observations retained at the bottom of the platform occupy separate areas. The Rest of the network — outside the sample gateway represents a collective source without a worldwide total; only identified inclusions can leave it as individual passengers. A historical observation does not prove confirmation.`,
+              )}{' '}
+              {demo
+                ? t('Données simulées.', 'Simulated data.')
+                : t(
+                    'Les inclusions sont fournies par la source.',
+                    'Inclusions are supplied by the source.',
+                  )}{' '}
+              {t(
+                'Cliquez sur un voyageur ou utilisez « Parcourir les transactions » au clavier.',
+                'Click a passenger or use Browse transactions with the keyboard.',
+              )}
             </desc>
             <g
               transform={
@@ -1107,10 +1174,10 @@ export const StreetScene = memo(function StreetScene({
                   letterSpacing=".5"
                 >
                   {demo
-                    ? 'SIMULATION'
+                    ? t('SIMULATION', 'SIMULATION')
                     : completeCandidate
-                      ? 'CANDIDAT COMPLET · DÉTAILS LIMITÉS'
-                      : 'ÉCHANTILLON OBSERVÉ'}
+                      ? t('CANDIDAT COMPLET · DÉTAILS LIMITÉS', 'FULL CANDIDATE · LIMITED DETAILS')
+                      : t('ÉCHANTILLON OBSERVÉ', 'OBSERVED SAMPLE')}
                 </ReadableText>
                 <rect
                   x={(282 + viewEnd) / 2 - Math.min(172, viewEnd - 298) / 2}
@@ -1129,42 +1196,63 @@ export const StreetScene = memo(function StreetScene({
                   fontSize={viewWidth < 360 ? 8 : 9.5}
                 >
                   {preparing
-                    ? `Embarquement · ${motion.preparationPassengerCount}`
-                    : `${snapshot.chain === 'bitcoin' ? 'vB' : 'gas'} · P ${occupancyPercentLabel(blockUsagePercent(completeCandidate ? completeCandidate.weight / 4 : projectionUsed.next, nextCapacity), !completeCandidate)} · S ${occupancyPercentLabel(blockUsagePercent(projectionUsed.later, motion.candidateCapacity), true)}`}
+                    ? t(
+                        `Embarquement · ${number(motion.preparationPassengerCount)}`,
+                        `Boarding · ${number(motion.preparationPassengerCount)}`,
+                      )
+                    : `${snapshot.chain === 'bitcoin' ? 'vB' : 'gas'} · ${t('P', 'N')} ${occupancyPercentLabel(blockUsagePercent(completeCandidate ? completeCandidate.weight / 4 : projectionUsed.next, nextCapacity), !completeCandidate, locale)} · ${t('S', 'L')} ${occupancyPercentLabel(blockUsagePercent(projectionUsed.later, motion.candidateCapacity), true, locale)}`}
                   <title>
                     {completeCandidate
-                      ? 'Candidat complet proposé hors coinbase : prochain '
-                      : 'Réservations des projections dans l’échantillon : prochain '}
+                      ? t(
+                          'Candidat complet proposé hors coinbase : prochain ',
+                          'Complete proposed candidate excluding coinbase: next ',
+                        )
+                      : t(
+                          'Réservations des projections dans l’échantillon : prochain ',
+                          'Projection reservations in the sample: next ',
+                        )}
                     {number(
                       completeCandidate ? completeCandidate.weight / 4 : projectionUsed.next,
                       2,
                     )}
                     {' / '}
                     {number(nextCapacity)} {snapshot.chain === 'bitcoin' ? 'vB' : 'gas'}
-                    {' ; suivant '}
+                    {t(' ; suivant ', '; later ')}
                     {number(projectionUsed.later, 2)}
                     {' / '}
                     {number(motion.candidateCapacity)} {snapshot.chain === 'bitcoin' ? 'vB' : 'gas'}
                     .
                     {snapshot.chain === 'ethereum' &&
-                      ' Limites de gas déclarées, estimation prudente.'}
+                      t(
+                        ' Limites de gas déclarées, estimation prudente.',
+                        ' Declared gas limits, conservative estimate.',
+                      )}
                   </title>
                 </ReadableText>
               </g>
               <Wagon
                 kind="next"
                 y={NEXT_WAGON_Y}
-                label={moving || preparing ? blockLabel : nodeTemplate ? 'CANDIDAT' : 'PROCHAIN'}
+                label={
+                  moving || preparing
+                    ? blockLabel
+                    : nodeTemplate
+                      ? t('CANDIDAT', 'CANDIDATE')
+                      : t('PROCHAIN', 'NEXT')
+                }
                 caption={
                   moving
-                    ? `${demo ? 'BLOC SIMULÉ' : motion.departureRecovered ? 'INCLUSIONS RETROUVÉES' : 'BLOC CONFIRMÉ'} · DÉPART`
+                    ? `${demo ? t('BLOC SIMULÉ', 'SIMULATED BLOCK') : motion.departureRecovered ? t('INCLUSIONS RETROUVÉES', 'RECOVERED INCLUSIONS') : t('BLOC CONFIRMÉ', 'CONFIRMED BLOCK')} · ${t('DÉPART', 'DEPARTURE')}`
                     : preparing
                       ? motion.departureRecovered
-                        ? 'INCLUSIONS RETROUVÉES · RATTRAPAGE'
-                        : 'BLOC REÇU · AJUSTEMENT'
+                        ? t('INCLUSIONS RETROUVÉES · RATTRAPAGE', 'RECOVERED INCLUSIONS · CATCH-UP')
+                        : t('BLOC REÇU · AJUSTEMENT', 'BLOCK RECEIVED · ADJUSTMENT')
                       : nodeTemplate
-                        ? `CANDIDAT DU NŒUD · #${number(nodeTemplate.height)}`
-                        : 'PROCHAIN BLOC · ESTIMATION'
+                        ? t(
+                            `CANDIDAT DU NŒUD · #${number(nodeTemplate.height)}`,
+                            `NODE CANDIDATE · #${number(nodeTemplate.height)}`,
+                          )
+                        : t('PROCHAIN BLOC · ESTIMATION', 'NEXT BLOCK · ESTIMATE')
                 }
                 passengers={moving ? (motion.departingPassengers ?? []) : next}
                 chain={snapshot.chain}
@@ -1185,8 +1273,18 @@ export const StreetScene = memo(function StreetScene({
               <Wagon
                 kind={moving ? 'handoff' : 'later'}
                 y={wagonY}
-                label={moving ? 'PROCHAIN' : arriving ? 'ARRIVÉE' : 'SUIVANT'}
-                caption={moving ? 'PROCHAIN BLOC · ESTIMATION' : 'BLOC SUIVANT · ESTIMATION'}
+                label={
+                  moving
+                    ? t('PROCHAIN', 'NEXT')
+                    : arriving
+                      ? t('ARRIVÉE', 'ARRIVING')
+                      : t('SUIVANT', 'LATER')
+                }
+                caption={
+                  moving
+                    ? t('PROCHAIN BLOC · ESTIMATION', 'NEXT BLOCK · ESTIMATE')
+                    : t('BLOC SUIVANT · ESTIMATION', 'LATER BLOCK · ESTIMATE')
+                }
                 passengers={moving ? carried : later}
                 chain={snapshot.chain}
                 capacity={motion.candidateCapacity}
@@ -1235,7 +1333,7 @@ export const StreetScene = memo(function StreetScene({
           selectedPoolState={selectedResident?.poolState}
           selectedPoolObservedAt={selectedResident?.poolObservedAt}
           selectedReasonLabel={
-            selectedResident ? passengerPlanningReason(selectedResident) : undefined
+            selectedResident ? passengerPlanningReason(selectedResident, locale) : undefined
           }
           activity={activity}
           paused={paused || snapshot.status !== 'ok'}

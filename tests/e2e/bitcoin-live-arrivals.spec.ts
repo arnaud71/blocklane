@@ -155,31 +155,76 @@ async function closeBrowser(page: Page) {
   await expect(browser(page)).toHaveCount(0);
 }
 async function pixels(page: Page) {
-  return pane(page)
-    .locator('canvas.passenger-canvas')
-    .evaluate((node) => {
-      const canvas = node as HTMLCanvasElement;
-      const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
-      let hash = 2_166_136_261;
-      let point: { x: number; y: number } | null = null;
-      for (let y = 0; y < canvas.height; y += 1)
-        for (let x = 0; x < canvas.width; x += 1) {
-          const offset = (y * canvas.width + x) * 4;
-          for (let channel = 0; channel < 4; channel += 1)
-            hash = Math.imul(hash ^ data[offset + channel]!, 16_777_619);
-          if (!point && data[offset + 3]! > 220) point = { x: x + 0.5, y: y + 0.5 };
+  const canvas = pane(page).locator('canvas.passenger-canvas');
+  // Content-sized panels may need vertical scrolling after using the footer controls.
+  await canvas.scrollIntoViewIfNeeded();
+  return canvas.evaluate((node) => {
+    const canvas = node as HTMLCanvasElement;
+    const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    let hash = 2_166_136_261;
+    let point: { x: number; y: number } | null = null;
+    for (let y = 0; y < canvas.height; y += 1)
+      for (let x = 0; x < canvas.width; x += 1) {
+        const offset = (y * canvas.width + x) * 4;
+        for (let channel = 0; channel < 4; channel += 1)
+          hash = Math.imul(hash ^ data[offset + channel]!, 16_777_619);
+        if (!point && data[offset + 3]! > 220) point = { x: x + 0.5, y: y + 0.5 };
+      }
+    if (point) {
+      // Click inside the first painted figure: MouseEvent rounds CSS coordinates,
+      // so its first hair-edge pixel can fall outside the hit area at mobile scale.
+      const component = [Math.floor(point.y) * canvas.width + Math.floor(point.x)];
+      const visited = new Set(component);
+      let sumX = 0;
+      let sumY = 0;
+      for (let index = 0; index < component.length; index += 1) {
+        const pixel = component[index]!;
+        const x = pixel % canvas.width;
+        const y = Math.floor(pixel / canvas.width);
+        sumX += x + 0.5;
+        sumY += y + 0.5;
+        for (let dy = -1; dy <= 1; dy += 1)
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const nextX = x + dx;
+            const nextY = y + dy;
+            const next = nextY * canvas.width + nextX;
+            if (
+              nextX < 0 ||
+              nextX >= canvas.width ||
+              nextY < 0 ||
+              nextY >= canvas.height ||
+              visited.has(next) ||
+              data[next * 4 + 3]! <= 220
+            )
+              continue;
+            visited.add(next);
+            component.push(next);
+          }
+      }
+      const centerX = sumX / component.length;
+      const centerY = sumY / component.length;
+      let closest = Infinity;
+      for (const pixel of component) {
+        const x = (pixel % canvas.width) + 0.5;
+        const y = Math.floor(pixel / canvas.width) + 0.5;
+        const distance = (x - centerX) ** 2 + (y - centerY) ** 2;
+        if (distance < closest) {
+          closest = distance;
+          point = { x, y };
         }
-      const rect = canvas.getBoundingClientRect();
-      return {
-        hash: hash >>> 0,
-        point: point
-          ? {
-              x: rect.x + (point.x * rect.width) / canvas.width,
-              y: rect.y + (point.y * rect.height) / canvas.height,
-            }
-          : null,
-      };
-    });
+      }
+    }
+    const rect = canvas.getBoundingClientRect();
+    return {
+      hash: hash >>> 0,
+      point: point
+        ? {
+            x: rect.x + (point.x * rect.width) / canvas.width,
+            y: rect.y + (point.y * rect.height) / canvas.height,
+          }
+        : null,
+    };
+  });
 }
 
 test.beforeEach(async ({ page }) => {

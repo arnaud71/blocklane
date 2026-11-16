@@ -1,4 +1,5 @@
 import { BITCOIN_ARRIVALS_MAX_AGE_MS, type Snapshot, type Tx } from '../../shared/model';
+import { languageTag, translate, type Locale } from '../i18n/locale';
 
 export interface BitcoinArrivalObservation {
   source: string;
@@ -75,77 +76,124 @@ function statusKind(observation: PassengerStatusObservation): PassengerStatusKin
   return observation.sourceObserved ? 'observed' : 'unknown';
 }
 
-const poolTime = new Intl.DateTimeFormat('fr-CH', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
+const poolTimes = {
+  fr: new Intl.DateTimeFormat(languageTag('fr'), {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }),
+  en: new Intl.DateTimeFormat(languageTag('en'), {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }),
+};
 
-function observationTime(observedAt: number | undefined): string {
+function observationTime(observedAt: number | undefined, locale: Locale): string {
   return observedAt !== undefined &&
     Number.isSafeInteger(observedAt) &&
     observedAt >= 0 &&
     observedAt <= 8_640_000_000_000_000
-    ? `, relevé à ${poolTime.format(observedAt)}`
+    ? translate(
+        locale,
+        `, relevé à ${poolTimes[locale].format(observedAt)}`,
+        `, observed at ${poolTimes[locale].format(observedAt)}`,
+      )
     : '';
 }
 
 /** Presence has its own dated evidence; old individual details never turn it into history. */
-export function passengerStatus(observation: PassengerStatusObservation): PassengerStatus {
+export function passengerStatus(
+  observation: PassengerStatusObservation,
+  locale: Locale = 'fr',
+): PassengerStatus {
+  const t = (fr: string, en: string) => translate(locale, fr, en);
   const kind = statusKind(observation);
   if (kind === 'confirmed')
     return {
       kind: 'confirmed',
-      label: 'incluse dans un bloc observé',
-      description: 'incluse dans un bloc observé',
+      label: t('incluse dans un bloc observé', 'included in an observed block'),
+      description: t('incluse dans un bloc observé', 'included in an observed block'),
       group: 'confirmed',
     };
 
-  const datedPool = observationTime(observation.poolObservedAt);
+  const datedPool = observationTime(observation.poolObservedAt, locale);
   if (kind === 'absent')
     return {
       kind: 'absent',
-      label: 'absente du dernier relevé complet du fournisseur',
-      description: `absente du dernier relevé complet du fournisseur${datedPool}, sans preuve de confirmation`,
+      label: t(
+        'absente du dernier relevé complet du fournisseur',
+        'absent from the provider’s latest complete inventory',
+      ),
+      description: t(
+        `absente du dernier relevé complet du fournisseur${datedPool}, sans preuve de confirmation`,
+        `absent from the provider’s latest complete inventory${datedPool}, without confirmation evidence`,
+      ),
       group: 'history',
     };
   if (kind === 'replaced')
     return {
       kind: 'replaced',
-      label: 'candidature remplacée',
-      description: `candidature remplacée par une transaction plus récemment observée du même compte et avec le même nonce${datedPool}, sans preuve de confirmation`,
+      label: t('candidature remplacée', 'candidate replaced'),
+      description: t(
+        `candidature remplacée par une transaction plus récemment observée du même compte et avec le même nonce${datedPool}, sans preuve de confirmation`,
+        `candidate replaced by a more recently observed transaction from the same account with the same nonce${datedPool}, without confirmation evidence`,
+      ),
       group: 'history',
     };
   if (kind === 'queued')
     return {
       kind: 'queued',
-      label: 'différée (queued) dans le dernier relevé du fournisseur',
-      description: `différée (queued) dans le dernier relevé du fournisseur${datedPool}`,
+      label: t(
+        'différée (queued) dans le dernier relevé du fournisseur',
+        'queued in the provider’s latest inventory',
+      ),
+      description: t(
+        `différée (queued) dans le dernier relevé du fournisseur${datedPool}`,
+        `queued in the provider’s latest inventory${datedPool}`,
+      ),
       group: 'queued',
     };
   if (kind === 'pending')
     return {
       kind: 'pending',
-      label: 'en attente dans le dernier relevé complet du fournisseur',
-      description: `en attente dans le dernier relevé complet du fournisseur${datedPool}${observation.sourceObserved ? '' : ' ; détails individuels conservés'}`,
+      label: t(
+        'en attente dans le dernier relevé complet du fournisseur',
+        'pending in the provider’s latest complete inventory',
+      ),
+      description: t(
+        `en attente dans le dernier relevé complet du fournisseur${datedPool}${observation.sourceObserved ? '' : ' ; détails individuels conservés'}`,
+        `pending in the provider’s latest complete inventory${datedPool}${observation.sourceObserved ? '' : '; retained individual details'}`,
+      ),
       group: 'current',
     };
   if (kind === 'observed')
     return {
       kind: 'observed',
       label: observation.bitcoinArrival
-        ? `en attente observée par ${observation.bitcoinArrival.source}`
-        : 'en attente dans la source',
+        ? t(
+            `en attente observée par ${observation.bitcoinArrival.source}`,
+            `pending, observed by ${observation.bitcoinArrival.source}`,
+          )
+        : t('en attente dans la source', 'pending in this source'),
       description: observation.bitcoinArrival
-        ? `en attente observée par ${observation.bitcoinArrival.source}${observationTime(observation.bitcoinArrival.observedAt)} ; cette présence ne garantit pas sa présence chez un autre fournisseur et ne prouve aucune inclusion`
-        : 'en attente dans la source',
+        ? t(
+            `en attente observée par ${observation.bitcoinArrival.source}${observationTime(observation.bitcoinArrival.observedAt, locale)} ; cette présence ne garantit pas sa présence chez un autre fournisseur et ne prouve aucune inclusion`,
+            `pending, observed by ${observation.bitcoinArrival.source}${observationTime(observation.bitcoinArrival.observedAt, locale)}; this does not guarantee presence at another provider or prove inclusion`,
+          )
+        : t('en attente dans la source', 'pending in this source'),
       group: 'current',
     };
   return {
     kind: 'unknown',
-    label: 'dernière observation · statut actuel inconnu',
-    description:
+    label: t(
+      'dernière observation · statut actuel inconnu',
+      'last observation · current status unknown',
+    ),
+    description: t(
       'dernière observation conservée, absente de l’échantillon actuel ; statut actuel inconnu',
+      'retained last observation, absent from the current sample; current status unknown',
+    ),
     group: 'history',
   };
 }

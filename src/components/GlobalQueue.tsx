@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { useI18n } from '../i18n';
 import type { ChainId, Snapshot } from '../../shared/model';
 import { number } from '../lib/format';
 import { MAX_GLOBAL_QUEUE_GROUPS } from '../lib/globalQueue';
@@ -17,11 +18,13 @@ const CROWD_COLORS = ['#a8c6b7', '#a4bbc9', '#b9afca', '#c1bda6'];
 
 /** An aggregate of one provider's local pool, never a set of invented transaction IDs. */
 export function GlobalQueue({ snapshot, chain, mode, transactionsPerGroup }: GlobalQueueProps) {
+  const { locale, t } = useI18n();
+  const n = (value: number | null, digits = 0) => number(value, digits, locale);
   const id = useId().replace(/:/g, '');
   const noteId = `global-queue-note-${id}`;
   const personId = `global-queue-person-${id}`;
   const observation = snapshot?.chain === chain && snapshot.mode === mode ? snapshot : null;
-  const pool = providerMempool(observation);
+  const pool = providerMempool(observation, locale);
   const total = pool.total;
   const sharedGroupSize =
     Number.isSafeInteger(transactionsPerGroup) && transactionsPerGroup > 0
@@ -37,43 +40,61 @@ export function GlobalQueue({ snapshot, chain, mode, transactionsPerGroup }: Glo
     total === null || groupCount === 0 ? 0 : total - groupSize * (groupCount - 1);
   const simulated = mode === 'demo' || pool.status === 'demo';
   const state = simulated
-    ? 'Simulation'
+    ? t('Simulation', 'Simulation')
     : pool.status === 'stale'
-      ? 'Ancien relevé'
+      ? t('Ancien relevé', 'Stale observation')
       : pool.status === 'unavailable'
-        ? 'Indisponible'
-        : 'Direct';
+        ? t('Indisponible', 'Unavailable')
+        : t('Direct', 'Live');
   const scaleLabel =
     total !== null
-      ? `1 silhouette ${groupSize === 1 ? '=' : '≈'} ${number(groupSize)} tx`
-      : 'Comptage non fourni';
+      ? t(
+          `1 silhouette ${groupSize === 1 ? '=' : '≈'} ${n(groupSize)} tx`,
+          `1 figure ${groupSize === 1 ? '=' : '≈'} ${n(groupSize)} tx`,
+        )
+      : t('Comptage non fourni', 'Count not supplied');
   const groupingNote =
     groupCount === 0
       ? total === 0
-        ? 'La file mesurée est vide.'
-        : 'Aucune foule n’est dessinée sans comptage disponible.'
-      : `${number(groupCount)} silhouettes regroupent exactement ${number(total)} transactions : chaque groupe contient ${number(groupSize)} transactions, sauf le dernier qui en contient ${number(lastGroupSize)}. Ces silhouettes collectives ne correspondent pas à des transactions identifiées et leurs couleurs n’indiquent aucun frais.`;
+        ? t('La file mesurée est vide.', 'The measured queue is empty.')
+        : t(
+            'Aucune foule n’est dessinée sans comptage disponible.',
+            'No crowd is drawn without an available count.',
+          )
+      : t(
+          `${n(groupCount)} silhouettes regroupent exactement ${n(total)} transactions : chaque groupe contient ${n(groupSize)} transactions, sauf le dernier qui en contient ${n(lastGroupSize)}. Ces silhouettes collectives ne correspondent pas à des transactions identifiées et leurs couleurs n’indiquent aucun frais.`,
+          `${n(groupCount)} figures group exactly ${n(total)} transactions: each group contains ${n(groupSize)} transactions, except the last with ${n(lastGroupSize)}. These collective figures are not identified transactions and their colours do not indicate fees.`,
+        );
   const note = `${pool.note} ${groupingNote}`;
-  const sourceName = pool.source ?? observation?.source ?? 'la source';
+  const sourceName = pool.source ?? observation?.source ?? t('la source', 'the source');
   const breakdown =
     pool.pending !== null && pool.queued !== null
-      ? `Vue locale de ${sourceName} · ${number(pool.pending)} pending + ${number(pool.queued)} queued`
+      ? t(
+          `Vue locale de ${sourceName} · ${n(pool.pending)} pending + ${n(pool.queued)} queued`,
+          `Local view from ${sourceName} · ${n(pool.pending)} pending + ${n(pool.queued)} queued`,
+        )
       : simulated
-        ? 'Mempool simulée'
-        : `Vue locale de ${sourceName} · distincte de l’échantillon`;
+        ? t('Mempool simulée', 'Simulated mempool')
+        : t(
+            `Vue locale de ${sourceName} · distincte de l’échantillon`,
+            `Local view from ${sourceName} · separate from the sample`,
+          );
 
   return (
     <section
       className={`global-queue global-queue--${chain}`}
-      aria-label={`File globale du fournisseur ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`}
+      aria-label={t(
+        `File globale du fournisseur ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+        `Provider-wide queue · ${chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum'}`,
+      )}
       aria-describedby={noteId}
       data-status={pool.status}
       title={note}
     >
       <div className="global-queue-heading">
-        <h3>File globale · fournisseur</h3>
+        <h3>{t('File globale · fournisseur', 'Provider-wide queue')}</h3>
         <p className={`global-queue-total${total === null ? ' global-queue-total--unknown' : ''}`}>
-          {total === null ? 'Non mesurée' : number(total)}
+          {total === null ? t('Non mesurée', 'Not measured') : n(total)}
           {total !== null && <span> tx</span>}
         </p>
       </div>
@@ -109,7 +130,9 @@ export function GlobalQueue({ snapshot, chain, mode, transactionsPerGroup }: Glo
           </svg>
         ) : (
           <p className="global-queue-empty">
-            {total === 0 ? 'File vide' : 'Comptage indisponible'}
+            {total === 0
+              ? t('File vide', 'Empty queue')
+              : t('Comptage indisponible', 'Count unavailable')}
           </p>
         )}
       </div>

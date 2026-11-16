@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useI18n } from '../i18n';
 import type { ChainId } from '../../shared/model';
 import { NETWORK_BOX_RECT, networkBoxExit } from '../lib/streetGeometry';
 import './NetworkRemainder.css';
@@ -17,13 +18,14 @@ export const NetworkRemainder = memo(function NetworkRemainder({
   doorProgress: number;
   active: boolean;
 }) {
+  const { locale, t } = useI18n();
   const { x, y, width, height } = NETWORK_BOX_RECT;
   const exit = networkBoxExit();
   const center = projectX(exit.x);
   // Widen the platform, not this cabinet: it remains anchored to the outer network lane.
   const displayWidth = Math.min(110, projectX(x + width) - projectX(x));
   const left = center - displayWidth / 2;
-  const titleSize = Math.min(16, Math.max(4, (displayWidth - 8) / 3.8));
+  const titleSize = Math.min(16, Math.max(4, (displayWidth - 8) / (locale === 'en' ? 4.6 : 3.8)));
   const captionSize = Math.min(8.3, Math.max(2, (displayWidth - 6) / 8.2));
   const readable = mirrored ? `translate(${2 * center} 0) scale(-1 1)` : undefined;
   const chainName = chain === 'bitcoin' ? 'Bitcoin' : 'Ethereum';
@@ -44,7 +46,10 @@ export const NetworkRemainder = memo(function NetworkRemainder({
     <g
       className={`network-remainder network-remainder--${chain}${active ? ' network-remainder--active' : ''}`}
       role="group"
-      aria-label={`Reste du réseau — hors échantillon · ${chainName}`}
+      aria-label={t(
+        `Reste du réseau — hors échantillon · ${chainName}`,
+        `Rest of the network — outside the sample · ${chainName}`,
+      )}
       data-network-remainder={chain}
       data-network-active={active}
       data-network-box-x={left}
@@ -55,10 +60,10 @@ export const NetworkRemainder = memo(function NetworkRemainder({
       data-network-exit-y={exit.y}
     >
       <title>
-        Transactions hors de notre échantillon de {chainName}, représentées par un réseau de nœuds,
-        sans total mondial ni identifiants inventés. Une inclusion identifiée après coup peut passer
-        par la porte basse puis la voie haute dédiée jusqu’au wagon ; le reste du bloc est
-        représenté collectivement. La borne n’atteste aucune présence actuelle dans le mempool.
+        {t(
+          `Transactions hors de notre échantillon de ${chainName}, représentées par un réseau de nœuds, sans total mondial ni identifiants inventés. Une inclusion identifiée après coup peut passer par la porte basse puis la voie haute dédiée jusqu’au wagon ; le reste du bloc est représenté collectivement. La borne n’atteste aucune présence actuelle dans le mempool.`,
+          `Transactions outside our ${chainName} sample, represented by a network of nodes without a worldwide total or invented identifiers. A later identified inclusion can pass through the lower door and dedicated upper lane to the vehicle; the rest of the block is represented collectively. The gateway does not prove current presence in the mempool.`,
+        )}
       </title>
       <g aria-hidden="true">
         <rect
@@ -94,7 +99,7 @@ export const NetworkRemainder = memo(function NetworkRemainder({
             fontSize={titleSize}
             transform={readable}
           >
-            RÉSEAU
+            {t('RÉSEAU', 'NETWORK')}
           </text>
           <text
             className="network-remainder-caption"
@@ -104,7 +109,7 @@ export const NetworkRemainder = memo(function NetworkRemainder({
             fontSize={captionSize}
             transform={readable}
           >
-            hors échantillon
+            {t('hors échantillon', 'outside sample')}
           </text>
           <g className="network-remainder-graph" data-network-nodes="true">
             <path

@@ -104,13 +104,6 @@ test('le flux compte les entrées brutes, date son relevé et anime une seule ar
   page,
 }, testInfo) => {
   const refresh = await setup(page);
-  const heights = new Map(
-    await Promise.all(
-      CHAINS.map(
-        async (chain) => [chain, (await board(page, chain).boundingBox())!.height] as const,
-      ),
-    ),
-  );
   for (const chain of CHAINS) {
     await expect(board(page, chain)).toHaveAttribute('data-flow-state', 'warming');
     await expect(board(page, chain).locator('.info-billboard-value')).toHaveText('—');
@@ -132,7 +125,12 @@ test('le flux compte les entrées brutes, date son relevé et anime une seule ar
       'data-flow-history-count',
       '1',
     );
-    expect((await panel.boundingBox())!.height).toBe(heights.get(chain));
+    // A dated source and chart may grow the board; they must stay above its controls.
+    const graph = panel.locator('.info-billboard-flow svg');
+    await expect(graph).toBeVisible();
+    const graphBox = (await graph.boundingBox())!;
+    const controlsBox = (await panel.locator('.info-billboard-footer').boundingBox())!;
+    expect(graphBox.y + graphBox.height).toBeLessThanOrEqual(controlsBox.y + 1);
     const group = cohort(page, chain);
     if (chain === 'bitcoin') {
       await expect(group).toHaveCount(0);

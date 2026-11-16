@@ -1,33 +1,33 @@
-# Sécurité de BlockLane
+# BlockLane security
 
-## Périmètre
+## Scope
 
-BlockLane consulte et visualise des données publiques. Il ne gère ni portefeuille, ni clé de signature, ni fonds, ni diffusion de transactions. Les points d'accès blockchain sont configurés par l'opérateur côté serveur. Les visiteurs ne peuvent pas fournir une URL à interroger.
+BlockLane reads and visualizes public data. It does not manage wallets, signing keys, funds or transaction broadcasting. Blockchain endpoints are configured by the operator on the server. Visitors cannot supply a URL to query.
 
-Les données des fournisseurs sont non fiables : elles doivent être validées et bornées avant d'être transmises à l'interface. L'API mutualise son cache entre visiteurs, limite les échantillons et interrompt les appels trop longs. Les URL de fournisseurs sont limitées à HTTPS, avec une exception HTTP pour les adresses de boucle locale.
+Provider data is untrusted: validate and bound it before passing it to the interface. The API shares its cache between visitors, limits samples and interrupts requests that take too long. HTTP provider URLs require HTTPS, with an HTTP exception for loopback addresses; event streams require WSS, with WS allowed only on loopback.
 
-Le serveur public doit fonctionner derrière un reverse proxy HTTPS avec limite de débit, limites de connexion et protection adaptée au trafic. Le serveur Node et le cache en mémoire ne constituent pas une protection contre une attaque distribuée. Pour des points d'accès internes, appliquer aussi une politique réseau sortante au niveau de l'hébergement : la validation de syntaxe d'une URL ne remplace pas ce contrôle.
+A public server must run behind an HTTPS reverse proxy with rate limits, connection limits and protection appropriate to its traffic. The Node server and in-memory cache do not protect against a distributed attack. For internal endpoints, also apply an outbound network policy at the hosting layer: URL syntax validation is not a substitute for that control.
 
-La limite API initiale est de 120 requêtes par minute et adresse cliente. `TRUSTED_PROXY_IPS` est vide par défaut. Lorsqu'un proxy est déclaré par son IP exacte, un `X-Real-IP` unique et valide peut identifier son client ; le proxy doit écraser cet en-tête et l'accès direct au backend doit rester limité. `X-Forwarded-For` est toujours ignoré. Ne pas déclarer un réseau entier ou une adresse supposée : utiliser l'adresse de socket réelle, particulièrement dans Docker. Sans proxy déclaré, ses visiteurs partagent la même limite.
+The initial API limit is 120 requests per minute per client address. `TRUSTED_PROXY_IPS` is empty by default. When a proxy is declared by its exact IP, a single valid `X-Real-IP` can identify its client; the proxy must overwrite this header and direct backend access must remain restricted. `X-Forwarded-For` is always ignored. Do not declare an entire network or a guessed address: use the actual socket address, especially with Docker. Without a declared proxy, its visitors share the same limit.
 
-## Secrets et confidentialité
+## Secrets and privacy
 
-- Mettre les clés fournisseurs dans les secrets de l'hébergeur ou un `.env` local ignoré par Git.
-- Ne jamais les mettre dans une variable `VITE_*`, un fichier client ou un paramètre fourni par un visiteur.
-- Ne pas journaliser les URL RPC complètes, headers d'authentification ou réponses d'erreur du fournisseur.
-- Après une exposition, révoquer la clé, vérifier son usage et la remplacer. Retirer une clé du dernier commit ne suffit pas à la faire disparaître de l'historique.
-- Les identifiants de transaction sont publics mais peuvent être corrélés. N'ajouter des adresses, profils nominatifs ou outils de suivi qu'avec un objectif pédagogique explicite.
+- Store provider keys in the host's secret store or a local `.env` file ignored by Git.
+- Never put them in a `VITE_*` variable, client file or visitor-supplied parameter.
+- Do not log full RPC URLs, authentication headers or provider error responses.
+- After exposure, revoke the key, check its use and replace it. Removing a key from the latest commit does not remove it from history.
+- Transaction identifiers are public but can be correlated. Add addresses, named profiles or tracking tools only for an explicit educational purpose.
 
-La version initiale n'ajoute pas d'outil d'analytics ni de cookie publicitaire. Le fournisseur voit les requêtes sortantes du serveur ; les hébergeurs et reverse proxies peuvent conserver leurs propres journaux. L'opérateur doit documenter leurs règles de conservation avant la mise en ligne.
+The initial version adds no analytics tool or advertising cookie. Providers see the server's outbound requests; hosts and reverse proxies may retain their own logs. The operator must document their retention policies before deployment.
 
-## Vulnérabilités et incident
+## Vulnerabilities and incidents
 
-Pour signaler une vulnérabilité, utiliser le [canal privé GitHub de BlockLane](https://github.com/arnaud71/blocklane/security/advisories/new), activé sur le dépôt public arnaud71/blocklane. Ne pas ouvrir une issue publique contenant un secret ou une procédure d’exploitation non corrigée. Les alertes de dépendances, la détection des secrets et la protection au push sont activées ; elles ne remplacent pas la revue et le contrôle de l’historique avant publication.
+Report vulnerabilities through [BlockLane's private GitHub reporting channel](https://github.com/arnaud71/blocklane/security/advisories/new), enabled on the public arnaud71/blocklane repository. Do not open a public issue containing a secret or an unpatched exploit procedure. Dependency alerts, secret scanning and push protection are enabled; they do not replace review or a history check before publication.
 
-Fournir la version affectée, le comportement observé, des étapes minimales de reproduction et l'impact, sans donnée sensible. Les mainteneurs évaluent l'exposition, préparent le correctif, le vérifient et organisent la livraison et la communication. Aucun délai de réponse contractuel n'est défini par cette version initiale.
+Provide the affected version, observed behavior, minimal reproduction steps and impact, without sensitive data. Maintainers assess exposure, prepare and verify a fix, then arrange release and communication. This initial version defines no contractual response time.
 
-La maintenance cible la dernière version publiée. Il n'existe pas encore de branches LTS applicatives. L'audit runtime CI bloque les vulnérabilités de niveau élevé ou critique connues de npm ; il ne prouve pas l'absence de vulnérabilité. Vérifier périodiquement l'arbre complet, le runtime Node, les images système et les actions CI.
+Maintenance targets the latest published version. There are no application LTS branches yet. The runtime CI audit blocks known npm vulnerabilities rated high or critical; it does not prove the absence of vulnerabilities. Periodically check the full dependency tree, Node runtime, system images and CI actions.
 
-## Garanties de provenance
+## Provenance guarantees
 
-Une donnée ancienne doit rester signalée. Une source indisponible ne doit pas être simulée sous une étiquette de direct. Les illustrations ne garantissent ni l'inclusion, ni la confirmation, ni la finalité d'une transaction. Une altération de ces comportements est un incident d'intégrité des données, même si le serveur reste accessible.
+Stale data must remain labeled as such. An unavailable source must not be simulated under a live-data label. Illustrations do not guarantee transaction inclusion, confirmation or finality. Altering these behaviors is a data-integrity incident even if the server remains accessible.
