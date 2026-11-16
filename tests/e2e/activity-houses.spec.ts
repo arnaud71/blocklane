@@ -167,11 +167,15 @@ test('four houses share existing travelers, keep overlapping categories and rest
   await expect(page.locator('.chain-pane[data-chain="bitcoin"] [data-token-house]')).toHaveCount(0);
   const bounds = await Promise.all(HOUSE_IDS.map((id) => house(page, id).boundingBox()));
   const ethereum = page.locator('.chain-pane[data-chain="ethereum"]');
-  const entrance = await ethereum
+  const entranceClearance = await ethereum
     .locator('.street-scene text')
     .filter({ hasText: /^(ARRIVÉES|ENTRÉE)$/ })
-    .boundingBox();
-  expect(bounds[0]!.y).toBeGreaterThan(entrance!.y + entrance!.height);
+    .evaluate((label) => {
+      // Measure the label and the focus outline in the same layout.
+      const usdt = label.closest('svg')!.querySelector('[data-token-house="usdt"]')!;
+      return usdt.getBoundingClientRect().top - label.getBoundingClientRect().bottom;
+    });
+  expect(entranceClearance).toBeGreaterThanOrEqual(3);
   const network = await ethereum.locator('.network-remainder-body').boundingBox();
   for (const id of HOUSE_IDS) {
     const isToken = id === 'usdt' || id === 'usdc';
