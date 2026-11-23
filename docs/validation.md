@@ -1,5 +1,13 @@
 # Verification status
 
+## Development matcher security update — 23 November 2026
+
+TypeScript-ESLint 8.73.0 supports the project's ESLint 10.15.0 and TypeScript 6.0.3 and updates its parser dependency to `minimatch` 11. Updating the aligned TypeScript-ESLint packages lets npm hoist the patched matcher and remove the remaining vulnerable copy. The lockfile retains the existing compatible `ignore` and `semver` entries. [Official release](https://github.com/typescript-eslint/typescript-eslint/releases/tag/v8.73.0), [parser dependency manifest](https://github.com/typescript-eslint/typescript-eslint/blob/v8.73.0/packages/typescript-estree/package.json), [security advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+
+With the verified Node **24.22.3** distribution and npm **11.19.1**, `npm ci` and `npm run check` passed, including lint, strict TypeScript, **784 tests across 64 files** and the production build. Both the full and runtime-only npm audits reported **zero known vulnerabilities** on 23 November. The previous PR #8 lockfile reported seven moderate entries from the same matcher advisory. Formatting and whitespace checks passed. The existing Vite bundle warning above 500 kB remains visible.
+
+This local verification concerns development tooling. Browser checks will run on the proposed commit in GitHub CI.
+
 ## Text-safe responsive layout — 4 November 2026
 
 Information boards use natural-height rows for translated labels, values, units, controls and provenance. Provider-wide queue captions and coverage notices wrap fully. The outer layout reserves content-sized header/footer rows and at least 120 pixels for the scenes; shorter windows scroll vertically instead of hiding text. Compact laptop spacing preserves the existing requirement that the illustrated areas occupy more than half of a normal desktop viewport.

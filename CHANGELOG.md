@@ -4,6 +4,10 @@ The project follows semantic versioning. Dates use the Europe/Zurich calendar. A
 
 ## Unreleased
 
+### Complete the development matcher security update — 23 November 2026
+
+- Update TypeScript-ESLint to 8.73.0 alongside ESLint 10.15.0 so the remaining lint-tool dependency paths resolve patched `minimatch` 11. The complete npm audit now reports zero known vulnerabilities. [TypeScript-ESLint release](https://github.com/typescript-eslint/typescript-eslint/releases/tag/v8.73.0), [matcher advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+
 ### ESLint development security update — 16 November 2026
 
 - Update ESLint to 10.15.0 so ESLint and its configuration resolver use a patched `minimatch` release for [CVE-2026-118764](https://github.com/advisories/GHSA-g3hv-75wg-m249). The development audit still reports the same advisory through TypeScript-ESLint, which depends on `minimatch` 10. [ESLint release notes](https://eslint.org/blog/2026/11/eslint-v10.15.0-released/).
